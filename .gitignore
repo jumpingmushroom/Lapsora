@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.svelte-kit/
+frontend/build/
+data/
+*.db
+.env
+.DS_Store
