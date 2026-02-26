@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: lapsora
+Version: 0.1.0
+Summary: Self-hosted RTSP timelapse web application
+Requires-Python: >=3.11
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn[standard]>=0.27
+Requires-Dist: sqlalchemy>=2.0
+Requires-Dist: pydantic-settings>=2.1
+Requires-Dist: apscheduler>=3.10
+Requires-Dist: cryptography>=42.0
+Requires-Dist: opencv-python-headless>=4.9
+Requires-Dist: pillow>=10.2
+Requires-Dist: aiofiles>=23.2
+Requires-Dist: python-multipart>=0.0.6
