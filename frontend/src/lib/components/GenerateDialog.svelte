@@ -99,6 +99,7 @@
 						<option value="mp4">MP4</option>
 						<option value="webm">WebM</option>
 						<option value="gif">GIF</option>
+						<option value="mkv">MKV</option>
 					</select>
 				</div>
 

@@ -3,6 +3,7 @@
 	import type { Timelapse, Profile, Stream } from '$lib/types';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
+	import ScheduleManager from '$lib/components/ScheduleManager.svelte';
 
 	let timelapses = $state<Timelapse[]>([]);
 	let loading = $state(true);
@@ -112,6 +113,8 @@
 		</button>
 	</div>
 
+	<ScheduleManager />
+
 	{#if generateMsg}
 		<div class="rounded-lg border border-green-800 bg-green-950/50 p-3 text-sm text-green-400">{generateMsg}</div>
 	{/if}
@@ -137,6 +140,7 @@
 			<option value="mp4">MP4</option>
 			<option value="webm">WebM</option>
 			<option value="gif">GIF</option>
+			<option value="mkv">MKV</option>
 		</select>
 	</div>
 

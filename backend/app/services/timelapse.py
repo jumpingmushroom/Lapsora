@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import tempfile
 from datetime import datetime, timedelta
 
@@ -13,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Capture, Timelapse
+from app.services.deflicker import deflicker_frames
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ def get_period_range(
     period_type: str, reference_date: datetime | None = None
 ) -> tuple[datetime, datetime]:
     """Return (start, end) for a named period relative to reference_date."""
-    ref = reference_date or datetime.utcnow()
+    ref = reference_date or datetime.now()
 
     if period_type == "daily":
         day = ref.date() - timedelta(days=1)
@@ -65,13 +67,14 @@ async def generate_timelapse(
     """Generate a timelapse video and return its database ID."""
     db: Session = SessionLocal()
     tmp_filelist = None
+    deflicker_dir = None
     try:
         # Resolve period bounds
         if period_type != "custom" and (period_start is None or period_end is None):
             period_start, period_end = get_period_range(period_type)
         elif period_start is None or period_end is None:
             # Default custom to last 24 hours
-            period_end = datetime.utcnow()
+            period_end = datetime.now()
             period_start = period_end - timedelta(hours=24)
 
         # Query captures
@@ -100,18 +103,27 @@ async def generate_timelapse(
             frame_count,
         )
 
+        # Deflicker frames to smooth brightness transitions
+        original_paths = [cap.file_path for cap in captures]
+        deflicker_dir = tempfile.mkdtemp(prefix="lapsora_deflicker_")
+        deflickered_paths = [
+            os.path.join(deflicker_dir, f"frame_{i:06d}.jpg")
+            for i in range(frame_count)
+        ]
+        deflicker_frames(original_paths, deflickered_paths, window=10)
+        frame_paths = deflickered_paths
+
         # Write concat file list
         fd, tmp_filelist = tempfile.mkstemp(suffix=".txt", prefix="lapsora_concat_")
         with os.fdopen(fd, "w") as f:
-            for cap in captures:
-                # Each frame shown for 1/fps seconds via duration directive
-                f.write(f"file '{cap.file_path}'\n")
+            for path in frame_paths:
+                f.write(f"file '{path}'\n")
                 f.write(f"duration {1.0 / fps:.6f}\n")
             # Repeat last entry so final frame is shown
-            f.write(f"file '{captures[-1].file_path}'\n")
+            f.write(f"file '{frame_paths[-1]}'\n")
 
         # Output path
-        timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
         ext = format if format != "gif" else "gif"
         out_dir = os.path.join(settings.DATA_DIR, "timelapses", str(profile_id))
         os.makedirs(out_dir, exist_ok=True)
@@ -134,6 +146,8 @@ async def generate_timelapse(
             cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "23"]
         elif format == "webm":
             cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", "30", "-b:v", "0"]
+        elif format == "mkv":
+            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "23"]
         elif format == "gif":
             # GIF needs palette generation filter
             vf_filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
@@ -236,3 +250,5 @@ async def generate_timelapse(
         db.close()
         if tmp_filelist and os.path.exists(tmp_filelist):
             os.unlink(tmp_filelist)
+        if deflicker_dir and os.path.isdir(deflicker_dir):
+            shutil.rmtree(deflicker_dir, ignore_errors=True)
