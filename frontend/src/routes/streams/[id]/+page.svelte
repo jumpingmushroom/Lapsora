@@ -400,6 +400,9 @@
 								{#if profile.hdr_enabled}
 									<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
 								{/if}
+								{#if profile.auto_disabled}
+									<span class="rounded bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-300" title="Automatically disabled due to stream health issues">Auto</span>
+								{/if}
 							</div>
 							<div class="flex items-center gap-2">
 								<button

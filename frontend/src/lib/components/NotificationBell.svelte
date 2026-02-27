@@ -22,6 +22,15 @@
 		onRefresh();
 	}
 
+	async function handleDelete(id: number) {
+		try {
+			await api.deleteNotification(id);
+			onRefresh();
+		} catch {
+			// silently ignore
+		}
+	}
+
 	function levelColor(level: string): string {
 		if (level === 'error') return 'text-red-400';
 		if (level === 'warning') return 'text-yellow-400';
@@ -71,16 +80,24 @@
 					<p class="px-4 py-6 text-center text-sm text-gray-500">No notifications</p>
 				{:else}
 					{#each notifications.slice(0, 20) as n}
-						<button
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
 							onclick={() => { if (!n.read) markRead(n.id); }}
-							class="flex w-full flex-col gap-0.5 border-b border-gray-800/50 px-4 py-3 text-left transition-colors hover:bg-gray-800/50 {n.read ? 'opacity-60' : ''}"
+							class="flex w-full cursor-pointer flex-col gap-0.5 border-b border-gray-800/50 px-4 py-3 text-left transition-colors hover:bg-gray-800/50 {n.read ? 'opacity-60' : ''}"
 						>
 							<div class="flex items-center justify-between">
 								<span class="text-xs font-medium {levelColor(n.level)}">{n.title}</span>
-								<span class="text-[10px] text-gray-500">{timeAgo(n.created_at)}</span>
+								<div class="flex items-center gap-1">
+									<span class="text-[10px] text-gray-500">{timeAgo(n.created_at)}</span>
+									<button
+										onclick={(e: MouseEvent) => { e.stopPropagation(); handleDelete(n.id); }}
+										class="ml-1 h-4 w-4 shrink-0 rounded text-center text-xs leading-4 text-gray-500 transition-colors hover:text-red-400"
+										title="Delete notification"
+									>&times;</button>
+								</div>
 							</div>
 							<span class="text-xs text-gray-400">{n.body}</span>
-						</button>
+						</div>
 					{/each}
 				{/if}
 			</div>

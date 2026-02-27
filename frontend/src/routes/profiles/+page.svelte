@@ -19,6 +19,18 @@
 	let newHdr = $state(false);
 	let creating = $state(false);
 
+	// Edit form
+	let editingTemplate = $state<ProfileTemplate | null>(null);
+	let editName = $state('');
+	let editCategory = $state('');
+	let editDescription = $state('');
+	let editInterval = $state(60);
+	let editWidth = $state<number | null>(1920);
+	let editHeight = $state<number | null>(1080);
+	let editQuality = $state(85);
+	let editHdr = $state(false);
+	let updating = $state(false);
+
 	let categories = $derived([...new Set(templates.map((t) => t.category))].sort());
 	let filtered = $derived(
 		activeCategory ? templates.filter((t) => t.category === activeCategory) : templates
@@ -85,6 +97,43 @@
 		}
 	}
 
+	function startEdit(t: ProfileTemplate) {
+		editingTemplate = t;
+		editName = t.name;
+		editCategory = t.category;
+		editDescription = t.description || '';
+		editInterval = t.interval_seconds;
+		editWidth = t.resolution_width;
+		editHeight = t.resolution_height;
+		editQuality = t.quality;
+		editHdr = t.hdr_enabled;
+		showCreateForm = false;
+	}
+
+	async function handleUpdate(e: SubmitEvent) {
+		e.preventDefault();
+		if (!editingTemplate) return;
+		updating = true;
+		try {
+			await api.updateProfileTemplate(editingTemplate.id, {
+				name: editName,
+				category: editCategory,
+				description: editDescription,
+				interval_seconds: editInterval,
+				resolution_width: editWidth || null,
+				resolution_height: editHeight || null,
+				quality: editQuality,
+				hdr_enabled: editHdr
+			});
+			editingTemplate = null;
+			await load();
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to update template');
+		} finally {
+			updating = false;
+		}
+	}
+
 	async function deleteTemplate(t: ProfileTemplate) {
 		if (!confirm(`Delete template "${t.name}"?`)) return;
 		try {
@@ -100,14 +149,62 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-3xl font-bold text-white">Profile Templates</h1>
 		<button
-			onclick={() => { showCreateForm = !showCreateForm; }}
+			onclick={() => { showCreateForm = !showCreateForm; editingTemplate = null; }}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
 			{showCreateForm ? 'Cancel' : 'Create Template'}
 		</button>
 	</div>
 
-	{#if showCreateForm}
+	{#if editingTemplate}
+		<div class="rounded-xl border border-blue-700 bg-gray-800 p-5">
+			<div class="mb-4 flex items-center justify-between">
+				<h2 class="text-lg font-semibold text-gray-100">Edit Template</h2>
+				<button onclick={() => { editingTemplate = null; }} class="text-sm text-gray-400 hover:text-gray-200">Cancel</button>
+			</div>
+			<form onsubmit={handleUpdate} class="space-y-4">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<div>
+						<label for="edit-tpl-name" class="mb-1 block text-sm font-medium text-gray-300">Name</label>
+						<input id="edit-tpl-name" type="text" bind:value={editName} required class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="edit-tpl-cat" class="mb-1 block text-sm font-medium text-gray-300">Category</label>
+						<input id="edit-tpl-cat" type="text" bind:value={editCategory} required placeholder="e.g. Nature, Traffic" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+				</div>
+				<div>
+					<label for="edit-tpl-desc" class="mb-1 block text-sm font-medium text-gray-300">Description</label>
+					<input id="edit-tpl-desc" type="text" bind:value={editDescription} class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+				</div>
+				<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+					<div>
+						<label for="edit-tpl-int" class="mb-1 block text-sm font-medium text-gray-300">Interval (s)</label>
+						<input id="edit-tpl-int" type="number" bind:value={editInterval} min="1" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="edit-tpl-w" class="mb-1 block text-sm font-medium text-gray-300">Width</label>
+						<input id="edit-tpl-w" type="number" bind:value={editWidth} placeholder="Auto" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="edit-tpl-h" class="mb-1 block text-sm font-medium text-gray-300">Height</label>
+						<input id="edit-tpl-h" type="number" bind:value={editHeight} placeholder="Auto" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="edit-tpl-q" class="mb-1 block text-sm font-medium text-gray-300">Quality: {editQuality}</label>
+						<input id="edit-tpl-q" type="range" bind:value={editQuality} min="1" max="100" class="mt-2 w-full accent-blue-500" />
+					</div>
+				</div>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={editHdr} class="rounded border-gray-600 bg-gray-900 text-blue-500" />
+					<span class="text-sm text-gray-300">HDR enabled</span>
+				</label>
+				<button type="submit" disabled={updating} class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
+					{updating ? 'Updating...' : 'Update Template'}
+				</button>
+			</form>
+		</div>
+	{:else if showCreateForm}
 		<div class="rounded-xl border border-gray-700 bg-gray-800 p-5">
 			<h2 class="mb-4 text-lg font-semibold text-gray-100">New Template</h2>
 			<form onsubmit={handleCreate} class="space-y-4">
@@ -196,12 +293,20 @@
 								{#if t.is_system}
 									<span class="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">System</span>
 								{:else}
-									<button
-										onclick={() => deleteTemplate(t)}
-										class="rounded px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-950 hover:text-red-300"
-									>
-										Delete
-									</button>
+									<div class="flex gap-1">
+										<button
+											onclick={() => startEdit(t)}
+											class="rounded px-2 py-0.5 text-xs text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-200"
+										>
+											Edit
+										</button>
+										<button
+											onclick={() => deleteTemplate(t)}
+											class="rounded px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-950 hover:text-red-300"
+										>
+											Delete
+										</button>
+									</div>
 								{/if}
 							</div>
 							<div class="flex flex-wrap gap-1.5">
