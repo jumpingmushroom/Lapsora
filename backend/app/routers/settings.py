@@ -11,6 +11,7 @@ from app.database import get_db
 from app.models import NotificationURL, Setting
 from app.schemas import (
     HealthConfig,
+    LocationConfig,
     NotificationEventsConfig,
     NotificationURLCreate,
     NotificationURLRead,
@@ -94,6 +95,36 @@ def update_event_toggles(data: NotificationEventsConfig, db: Session = Depends(g
         db.add(Setting(key="notification_events", value=value))
     db.commit()
     return data.model_dump()
+
+
+# --- Location Config ---
+
+
+@router.get("/location", response_model=LocationConfig)
+def get_location_config(db: Session = Depends(get_db)):
+    config = LocationConfig()
+    for field in config.model_fields:
+        key = f"location_{field}"
+        row = db.query(Setting).filter(Setting.key == key).first()
+        if row:
+            try:
+                setattr(config, field, float(row.value))
+            except (ValueError, TypeError):
+                pass
+    return config
+
+
+@router.put("/location", response_model=LocationConfig)
+def update_location_config(data: LocationConfig, db: Session = Depends(get_db)):
+    for field, value in data.model_dump().items():
+        key = f"location_{field}"
+        row = db.query(Setting).filter(Setting.key == key).first()
+        if row:
+            row.value = str(value)
+        else:
+            db.add(Setting(key=key, value=str(value)))
+    db.commit()
+    return data
 
 
 # --- Health Config ---

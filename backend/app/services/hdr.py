@@ -26,25 +26,25 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
     frame_paths = []
 
     try:
-        # Grab 3 sequential frames
-        for i in range(3):
-            frame_path = os.path.join(tmp_dir, f"frame_{i}.jpg")
-            frame_paths.append(frame_path)
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-y",
-                "-rtsp_transport", "tcp",
-                "-i", url,
-                "-frames:v", "1",
-                "-loglevel", "error",
-                "-q:v", "2",
-                frame_path,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-            if proc.returncode != 0:
-                raise RuntimeError(f"ffmpeg frame grab failed: {stderr.decode().strip()}")
+        # Grab 3 sequential frames in a single FFmpeg call
+        frame_pattern = os.path.join(tmp_dir, "frame_%d.jpg")
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y",
+            "-rtsp_transport", "tcp",
+            "-i", url,
+            "-frames:v", "3",
+            "-loglevel", "error",
+            "-q:v", "2",
+            frame_pattern,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg frame grab failed: {stderr.decode().strip()}")
+
+        # FFmpeg %d pattern is 1-indexed
+        frame_paths = [os.path.join(tmp_dir, f"frame_{i}.jpg") for i in range(1, 4)]
 
         # Read frames with OpenCV
         frames = []
@@ -54,6 +54,9 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
                 raise RuntimeError(f"Failed to read frame: {fp}")
             frames.append(img)
 
+        # Average frames for noise reduction
+        base_frame = np.mean(frames, axis=0).astype(np.uint8)
+
         # Synthetic exposure bracketing via gamma correction
         bracketed = []
         for gamma in (0.5, 1.0, 2.0):
@@ -61,8 +64,8 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
             table = np.array(
                 [((i / 255.0) ** inv_gamma) * 255 for i in range(256)]
             ).astype("uint8")
-            # Use the first frame as base for bracketing
-            adjusted = cv2.LUT(frames[0], table)
+            # Use the averaged frame as base for bracketing
+            adjusted = cv2.LUT(base_frame, table)
             bracketed.append(adjusted)
 
         # Mertens exposure fusion

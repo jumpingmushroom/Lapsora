@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { TimelapseSchedule, Profile, Stream } from '$lib/types';
+	import type { CleanupSchedule, Profile } from '$lib/types';
 
-	let schedules = $state<TimelapseSchedule[]>([]);
+	let schedules = $state<CleanupSchedule[]>([]);
 	let profiles = $state<Profile[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -10,20 +10,18 @@
 	// Add form state
 	let showForm = $state(false);
 	let formProfileId = $state<number | null>(null);
-	let formPreset = $state<string | null>(null);
-	let formCron = $state('');
 	let formName = $state('');
-	let formFps = $state(24);
-	let formFormat = $state('mp4');
+	let formCaptureDays = $state(32);
+	let formTimelapseDays = $state(90);
+	let formCron = $state('0 3 * * *');
+	let formPreset = $state<string | null>('daily');
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
 
 	const PRESETS: Record<string, { label: string; cron: string; description: string }> = {
-		daily: { label: 'Daily', cron: '5 0 * * *', description: 'Every day at 00:05' },
-		weekly: { label: 'Weekly', cron: '30 0 * * 0', description: 'Sunday at 00:30' },
-		monthly: { label: 'Monthly', cron: '0 1 1 * *', description: '1st of month at 01:00' },
-		yearly: { label: 'Yearly', cron: '0 2 1 1 *', description: 'Jan 1 at 02:00' }
+		daily: { label: 'Daily 03:00', cron: '0 3 * * *', description: 'Every day at 03:00' },
+		weekly: { label: 'Weekly Sun 03:00', cron: '0 3 * * 0', description: 'Sunday at 03:00' }
 	};
 
 	async function load() {
@@ -31,7 +29,7 @@
 		error = null;
 		try {
 			const [s, streams] = await Promise.all([
-				api.getTimelapseSchedules(),
+				api.getCleanupSchedules(),
 				api.getStreams()
 			]);
 			schedules = s;
@@ -57,28 +55,29 @@
 	function openForm() {
 		editingId = null;
 		formProfileId = profiles.length > 0 ? profiles[0].id : null;
-		formPreset = null;
-		formCron = '';
 		formName = '';
-		formFps = 24;
-		formFormat = 'mp4';
+		formCaptureDays = 32;
+		formTimelapseDays = 90;
+		formPreset = 'daily';
+		formCron = '0 3 * * *';
 		formCustom = false;
 		showForm = true;
 	}
 
-	function openEdit(schedule: TimelapseSchedule) {
+	function openEdit(schedule: CleanupSchedule) {
 		editingId = schedule.id;
 		formProfileId = schedule.profile_id;
 		formName = schedule.name || '';
-		formFps = schedule.fps;
-		formFormat = schedule.format;
-		if (schedule.preset && PRESETS[schedule.preset]) {
-			formPreset = schedule.preset;
-			formCron = PRESETS[schedule.preset].cron;
+		formCaptureDays = schedule.capture_retention_days;
+		formTimelapseDays = schedule.timelapse_retention_days;
+		formCron = schedule.cron_expression;
+		// Detect if cron matches a preset
+		const matchedPreset = Object.entries(PRESETS).find(([, info]) => info.cron === schedule.cron_expression);
+		if (matchedPreset) {
+			formPreset = matchedPreset[0];
 			formCustom = false;
 		} else {
 			formPreset = null;
-			formCron = schedule.cron_expression;
 			formCustom = true;
 		}
 		showForm = true;
@@ -87,41 +86,37 @@
 	function selectPreset(key: string) {
 		formPreset = key;
 		formCron = PRESETS[key].cron;
-		formName = PRESETS[key].label;
 		formCustom = false;
 	}
 
 	function selectCustom() {
 		formPreset = null;
 		formCron = '';
-		formName = 'Custom';
 		formCustom = true;
 	}
 
 	async function saveSchedule() {
 		if (!formProfileId) return;
-		if (!formPreset && !formCron) {
-			alert('Please select a preset or enter a cron expression');
+		if (!formCron) {
+			alert('Please enter a cron expression');
 			return;
 		}
 		saving = true;
 		try {
 			if (editingId) {
-				await api.updateTimelapseSchedule(editingId, {
+				await api.updateCleanupSchedule(editingId, {
 					name: formName,
-					preset: formPreset,
-					cron_expression: formCustom ? formCron : undefined,
-					fps: formFps,
-					format: formFormat
+					capture_retention_days: formCaptureDays,
+					timelapse_retention_days: formTimelapseDays,
+					cron_expression: formCron
 				});
 			} else {
-				await api.createTimelapseSchedule({
+				await api.createCleanupSchedule({
 					profile_id: formProfileId,
 					name: formName,
-					preset: formPreset,
-					cron_expression: formCustom ? formCron : undefined,
-					fps: formFps,
-					format: formFormat
+					capture_retention_days: formCaptureDays,
+					timelapse_retention_days: formTimelapseDays,
+					cron_expression: formCron
 				});
 			}
 			showForm = false;
@@ -133,9 +128,9 @@
 		}
 	}
 
-	async function toggleEnabled(schedule: TimelapseSchedule) {
+	async function toggleEnabled(schedule: CleanupSchedule) {
 		try {
-			await api.updateTimelapseSchedule(schedule.id, { enabled: !schedule.enabled });
+			await api.updateCleanupSchedule(schedule.id, { enabled: !schedule.enabled });
 			await load();
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to update');
@@ -143,9 +138,9 @@
 	}
 
 	async function deleteSchedule(id: number) {
-		if (!confirm('Delete this schedule?')) return;
+		if (!confirm('Delete this cleanup schedule?')) return;
 		try {
-			await api.deleteTimelapseSchedule(id);
+			await api.deleteCleanupSchedule(id);
 			await load();
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to delete');
@@ -154,16 +149,16 @@
 
 	async function triggerNow(id: number) {
 		try {
-			const result = await api.triggerTimelapseSchedule(id);
-			alert(result.message || 'Generation triggered');
+			const result = await api.triggerCleanupSchedule(id);
+			alert(result.message || 'Cleanup triggered');
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to trigger');
 		}
 	}
 
-	function describeCron(schedule: TimelapseSchedule): string {
-		if (schedule.preset && PRESETS[schedule.preset]) {
-			return PRESETS[schedule.preset].description;
+	function describeCron(schedule: CleanupSchedule): string {
+		for (const [, info] of Object.entries(PRESETS)) {
+			if (schedule.cron_expression === info.cron) return info.description;
 		}
 		return schedule.cron_expression;
 	}
@@ -181,7 +176,7 @@
 
 <div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 	<div class="mb-4 flex items-center justify-between">
-		<h2 class="text-lg font-semibold text-white">Schedules</h2>
+		<h2 class="text-lg font-semibold text-white">Cleanup Schedules</h2>
 		<button
 			onclick={openForm}
 			class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
@@ -191,27 +186,24 @@
 	</div>
 
 	{#if loading}
-		<p class="text-sm text-gray-400">Loading schedules...</p>
+		<p class="text-sm text-gray-400">Loading cleanup schedules...</p>
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if schedules.length === 0}
-		<p class="text-sm text-gray-500">No schedules configured. Add one to automate timelapse generation.</p>
+		<p class="text-sm text-gray-500">No cleanup schedules configured. Captures and timelapses will be kept indefinitely.</p>
 	{:else}
 		<div class="space-y-3">
 			{#each schedules as schedule}
 				<div class="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 p-3">
 					<div class="min-w-0 flex-1">
 						<div class="flex items-center gap-2">
-							<span class="font-medium text-gray-100">{schedule.name || (schedule.preset ? PRESETS[schedule.preset]?.label : 'Custom')}</span>
-							{#if schedule.preset}
-								<span class="rounded bg-blue-900/50 px-1.5 py-0.5 text-xs text-blue-300">{schedule.preset}</span>
-							{/if}
+							<span class="font-medium text-gray-100">{schedule.name || 'Cleanup'}</span>
 							<span class="text-xs text-gray-500">{profileName(schedule.profile_id)}</span>
 						</div>
 						<div class="mt-1 flex items-center gap-3 text-xs text-gray-400">
 							<span>{describeCron(schedule)}</span>
-							<span>{schedule.fps}fps</span>
-							<span>{schedule.format.toUpperCase()}</span>
+							<span>Captures: {schedule.capture_retention_days}d</span>
+							<span>Timelapses: {schedule.timelapse_retention_days}d</span>
 							{#if schedule.next_run}
 								<span>Next: {formatNextRun(schedule.next_run)}</span>
 							{/if}
@@ -263,14 +255,14 @@
 	{/if}
 </div>
 
-<!-- Add Schedule Modal -->
+<!-- Add Cleanup Schedule Modal -->
 {#if showForm}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { showForm = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mx-4 w-full max-w-lg rounded-xl bg-gray-900 shadow-xl" onclick={(e) => e.stopPropagation()}>
 			<div class="flex items-center justify-between border-b border-gray-800 p-4">
-				<h2 class="text-lg font-semibold text-gray-100">{editingId ? 'Edit Schedule' : 'Add Schedule'}</h2>
+				<h2 class="text-lg font-semibold text-gray-100">{editingId ? 'Edit Cleanup Schedule' : 'Add Cleanup Schedule'}</h2>
 				<button onclick={() => { showForm = false; }} class="text-gray-400 hover:text-gray-200">
 					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -292,14 +284,47 @@
 					</select>
 				</div>
 
-				<!-- Preset buttons -->
+				<!-- Name -->
 				<div>
-					<label class="mb-2 block text-sm font-medium text-gray-300">Schedule Type</label>
-					<div class="grid grid-cols-5 gap-2">
+					<label class="mb-1 block text-sm font-medium text-gray-300">Name</label>
+					<input
+						type="text"
+						bind:value={formName}
+						placeholder="e.g. Daily cleanup"
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+					/>
+				</div>
+
+				<!-- Retention settings -->
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="mb-1 block text-sm font-medium text-gray-300">Capture retention (days)</label>
+						<input
+							type="number"
+							bind:value={formCaptureDays}
+							min="1"
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+					</div>
+					<div>
+						<label class="mb-1 block text-sm font-medium text-gray-300">Timelapse retention (days)</label>
+						<input
+							type="number"
+							bind:value={formTimelapseDays}
+							min="1"
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+					</div>
+				</div>
+
+				<!-- Frequency presets -->
+				<div>
+					<label class="mb-2 block text-sm font-medium text-gray-300">Frequency</label>
+					<div class="grid grid-cols-3 gap-2">
 						{#each Object.entries(PRESETS) as [key, info]}
 							<button
 								onclick={() => selectPreset(key)}
-								class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors {formPreset === key ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}"
+								class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors {formPreset === key && !formCustom ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}"
 							>
 								{info.label}
 							</button>
@@ -319,66 +344,28 @@
 						<input
 							type="text"
 							bind:value={formCron}
-							placeholder="*/5 * * * *"
+							placeholder="0 3 * * *"
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						/>
 						<p class="mt-1 text-xs text-gray-500">Format: minute hour day month weekday</p>
 					</div>
 				{/if}
-
-				{#if formPreset || formCustom}
-					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-300">Name</label>
-						<input
-							type="text"
-							bind:value={formName}
-							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-					</div>
-
-					<div class="grid grid-cols-2 gap-3">
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
-							<input
-								type="number"
-								bind:value={formFps}
-								min="1"
-								max="60"
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							/>
-						</div>
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Format</label>
-							<select
-								bind:value={formFormat}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="mp4">MP4</option>
-								<option value="webm">WebM</option>
-								<option value="gif">GIF</option>
-								<option value="mkv">MKV</option>
-							</select>
-						</div>
-					</div>
-				{/if}
 			</div>
-			{#if formPreset || formCustom}
-				<div class="flex justify-end gap-2 border-t border-gray-800 p-4">
-					<button
-						onclick={() => { showForm = false; }}
-						class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
-					>
-						Cancel
-					</button>
-					<button
-						onclick={saveSchedule}
-						disabled={saving}
-						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-					>
-						{saving ? 'Saving...' : 'Save Schedule'}
-					</button>
-				</div>
-			{/if}
+			<div class="flex justify-end gap-2 border-t border-gray-800 p-4">
+				<button
+					onclick={() => { showForm = false; }}
+					class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={saveSchedule}
+					disabled={saving}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{saving ? 'Saving...' : 'Save Schedule'}
+				</button>
+			</div>
 		</div>
 	</div>
 {/if}

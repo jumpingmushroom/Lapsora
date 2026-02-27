@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings as app_settings
 from app.database import SessionLocal, engine
 from app.migrations.runner import run_migrations
-from app.routers import captures, notifications, profile_templates, profiles, settings as settings_router, streams, system, timelapses
+from app.routers import captures, cleanup_schedules, notifications, profile_templates, profiles, settings as settings_router, streams, system, timelapse_schedules, timelapses
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,8 +32,8 @@ async def lifespan(app: FastAPI):
 
     # Start capture scheduler and restore jobs
     from app.services.scheduler import (
-        init_scheduler, restore_jobs, add_scheduled_timelapse_jobs,
-        add_retention_job, add_health_check_job, scheduler as _scheduler,
+        init_scheduler, restore_jobs,
+        add_health_check_job, scheduler as _scheduler,
     )
     from app.services.events import on_event
     from app.services.notifications import handle_event
@@ -50,8 +50,6 @@ async def lifespan(app: FastAPI):
         health_interval = int(row.value) if row else 300
     finally:
         db.close()
-    add_scheduled_timelapse_jobs()
-    add_retention_job()
     add_health_check_job(health_interval)
 
     yield
@@ -78,6 +76,8 @@ app.include_router(profiles.router)
 app.include_router(profile_templates.router)
 app.include_router(captures.router)
 app.include_router(timelapses.router)
+app.include_router(timelapse_schedules.router)
+app.include_router(cleanup_schedules.router)
 app.include_router(notifications.router)
 app.include_router(settings_router.router)
 

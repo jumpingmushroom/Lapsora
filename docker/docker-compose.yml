@@ -7,6 +7,10 @@ services:
       - "8000:8000"
     volumes:
       - ../data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      - TZ=Europe/Oslo
     env_file:
       - ../.env
     restart: unless-stopped

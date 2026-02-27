@@ -64,7 +64,7 @@
 </script>
 
 <div class="flex h-screen bg-gray-950 text-gray-100">
-	<aside class="fixed left-0 top-0 flex h-full w-56 flex-col border-r border-gray-800 bg-gray-900">
+	<aside class="fixed left-0 top-0 z-50 flex h-full w-56 flex-col border-r border-gray-800 bg-gray-900">
 		<div class="flex h-14 items-center justify-between border-b border-gray-800 px-4">
 			<h1 class="text-lg font-bold tracking-tight text-white">Lapsora</h1>
 			<NotificationBell {notifications} onRefresh={loadNotifications} />

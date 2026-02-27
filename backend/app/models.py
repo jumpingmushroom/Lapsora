@@ -62,6 +62,10 @@ class Profile(Base):
     hdr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    capture_mode: Mapped[str] = mapped_column(Text, default="always", server_default="always")
+    active_start_time: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active_end_time: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sun_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     source_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
     )
@@ -78,6 +82,53 @@ class Profile(Base):
     timelapses: Mapped[list["Timelapse"]] = relationship(
         back_populates="profile", cascade="all, delete-orphan"
     )
+    timelapse_schedules: Mapped[list["TimelapseSchedule"]] = relationship(
+        back_populates="profile", cascade="all, delete-orphan"
+    )
+    cleanup_schedules: Mapped[list["CleanupSchedule"]] = relationship(
+        back_populates="profile", cascade="all, delete-orphan"
+    )
+
+
+class TimelapseSchedule(Base):
+    __tablename__ = "timelapse_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(Text, default="")
+    preset: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cron_expression: Mapped[str] = mapped_column(Text, nullable=False)
+    fps: Mapped[int] = mapped_column(Integer, default=24)
+    format: Mapped[str] = mapped_column(String, default="mp4")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    profile: Mapped["Profile"] = relationship(back_populates="timelapse_schedules")
+
+
+class CleanupSchedule(Base):
+    __tablename__ = "cleanup_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    profile_id: Mapped[int] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE")
+    )
+    name: Mapped[str] = mapped_column(Text, default="")
+    capture_retention_days: Mapped[int] = mapped_column(Integer, default=32)
+    timelapse_retention_days: Mapped[int] = mapped_column(Integer, default=90)
+    cron_expression: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    profile: Mapped["Profile"] = relationship(back_populates="cleanup_schedules")
 
 
 class Capture(Base):

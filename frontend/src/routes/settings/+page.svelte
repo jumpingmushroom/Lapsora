@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig } from '$lib/types';
+	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let urls = $state<NotificationURL[]>([]);
 	let events = $state<NotificationEventsConfig>({
@@ -17,6 +18,10 @@
 		failure_threshold: 3,
 		low_disk_threshold_percent: 10
 	});
+	let locationConfig = $state<LocationConfig>({
+		latitude: 0.0,
+		longitude: 0.0
+	});
 
 	let loading = $state(true);
 	let newLabel = $state('');
@@ -24,13 +29,15 @@
 	let testingId = $state<number | null>(null);
 	let savingEvents = $state(false);
 	let savingHealth = $state(false);
+	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig()])
-			.then(([notifSettings, hc]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig()])
+			.then(([notifSettings, hc, loc]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
+				locationConfig = loc;
 			})
 			.finally(() => {
 				loading = false;
@@ -76,6 +83,12 @@
 		savingHealth = true;
 		await api.updateHealthConfig(healthConfig);
 		savingHealth = false;
+	}
+
+	async function saveLocation() {
+		savingLocation = true;
+		await api.updateLocationConfig(locationConfig);
+		savingLocation = false;
 	}
 
 	const eventLabels: Record<string, string> = {
@@ -232,6 +245,57 @@
 			>
 				{savingHealth ? 'Saving...' : 'Save Health Settings'}
 			</button>
+		</section>
+		<!-- Location -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">Location</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Used for sunrise/sunset capture scheduling. Set your camera site's coordinates.
+			</p>
+
+			<div class="mb-4 grid grid-cols-2 gap-4">
+				<div>
+					<label for="latitude" class="mb-1 block text-sm text-gray-400">Latitude</label>
+					<input
+						id="latitude"
+						type="number"
+						step="0.0001"
+						min="-90"
+						max="90"
+						bind:value={locationConfig.latitude}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+				<div>
+					<label for="longitude" class="mb-1 block text-sm text-gray-400">Longitude</label>
+					<input
+						id="longitude"
+						type="number"
+						step="0.0001"
+						min="-180"
+						max="180"
+						bind:value={locationConfig.longitude}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+			</div>
+
+			<button
+				onclick={saveLocation}
+				disabled={savingLocation}
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+			>
+				{savingLocation ? 'Saving...' : 'Save Location'}
+			</button>
+		</section>
+
+		<!-- Data Cleanup -->
+		<section>
+			<h2 class="mb-4 text-xl font-semibold text-white">Data Cleanup</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
+			</p>
+			<CleanupScheduleManager />
 		</section>
 	{/if}
 </div>

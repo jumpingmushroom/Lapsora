@@ -31,6 +31,10 @@ export interface Profile {
 	hdr_enabled: boolean;
 	enabled: boolean;
 	auto_disabled: boolean;
+	capture_mode: string;
+	active_start_time: string | null;
+	active_end_time: string | null;
+	sun_offset_minutes: number;
 	source_template_id: number | null;
 	created_at: string;
 	updated_at: string;
@@ -69,6 +73,10 @@ export interface ProfileCreate {
 	resolution_height?: number | null;
 	quality?: number;
 	hdr_enabled?: boolean;
+	capture_mode?: string;
+	active_start_time?: string | null;
+	active_end_time?: string | null;
+	sun_offset_minutes?: number;
 }
 
 export interface ProfileUpdate {
@@ -79,6 +87,15 @@ export interface ProfileUpdate {
 	quality?: number;
 	hdr_enabled?: boolean;
 	enabled?: boolean;
+	capture_mode?: string;
+	active_start_time?: string | null;
+	active_end_time?: string | null;
+	sun_offset_minutes?: number;
+}
+
+export interface LocationConfig {
+	latitude: number;
+	longitude: number;
 }
 
 export interface Capture {
@@ -103,6 +120,69 @@ export interface Timelapse {
 	period_start: string | null;
 	period_end: string | null;
 	created_at: string;
+}
+
+export interface TimelapseSchedule {
+	id: number;
+	profile_id: number;
+	name: string;
+	preset: string | null;
+	cron_expression: string;
+	fps: number;
+	format: string;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+	next_run: string | null;
+}
+
+export interface TimelapseScheduleCreate {
+	profile_id: number;
+	name?: string;
+	preset?: string | null;
+	cron_expression?: string | null;
+	fps?: number;
+	format?: string;
+	enabled?: boolean;
+}
+
+export interface TimelapseScheduleUpdate {
+	name?: string;
+	preset?: string | null;
+	cron_expression?: string | null;
+	fps?: number;
+	format?: string;
+	enabled?: boolean;
+}
+
+export interface CleanupSchedule {
+	id: number;
+	profile_id: number;
+	name: string;
+	capture_retention_days: number;
+	timelapse_retention_days: number;
+	cron_expression: string;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+	next_run: string | null;
+}
+
+export interface CleanupScheduleCreate {
+	profile_id: number;
+	name?: string;
+	capture_retention_days?: number;
+	timelapse_retention_days?: number;
+	cron_expression: string;
+	enabled?: boolean;
+}
+
+export interface CleanupScheduleUpdate {
+	name?: string;
+	capture_retention_days?: number;
+	timelapse_retention_days?: number;
+	cron_expression?: string;
+	enabled?: boolean;
 }
 
 export interface TimelapseGenerate {

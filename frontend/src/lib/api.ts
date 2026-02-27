@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig } from './types';
 
 const BASE = '/api';
 
@@ -69,6 +69,26 @@ export const api = {
 	generateTimelapse: (profileId: number, data: TimelapseGenerate) => request<{ status: string; message: string }>(`/profiles/${profileId}/timelapses/generate`, { method: 'POST', body: JSON.stringify(data) }),
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
 
+	// Timelapse Schedules
+	getTimelapseSchedules: (profileId?: number) => {
+		const qs = profileId ? `?profile_id=${profileId}` : '';
+		return request<TimelapseSchedule[]>(`/timelapse-schedules/${qs}`);
+	},
+	createTimelapseSchedule: (data: TimelapseScheduleCreate) => request<TimelapseSchedule>('/timelapse-schedules/', { method: 'POST', body: JSON.stringify(data) }),
+	updateTimelapseSchedule: (id: number, data: TimelapseScheduleUpdate) => request<TimelapseSchedule>(`/timelapse-schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+	deleteTimelapseSchedule: (id: number) => request<void>(`/timelapse-schedules/${id}`, { method: 'DELETE' }),
+	triggerTimelapseSchedule: (id: number) => request<{ status: string; message: string }>(`/timelapse-schedules/${id}/trigger`, { method: 'POST' }),
+
+	// Cleanup Schedules
+	getCleanupSchedules: (profileId?: number) => {
+		const qs = profileId ? `?profile_id=${profileId}` : '';
+		return request<CleanupSchedule[]>(`/cleanup-schedules/${qs}`);
+	},
+	createCleanupSchedule: (data: CleanupScheduleCreate) => request<CleanupSchedule>('/cleanup-schedules/', { method: 'POST', body: JSON.stringify(data) }),
+	updateCleanupSchedule: (id: number, data: CleanupScheduleUpdate) => request<CleanupSchedule>(`/cleanup-schedules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+	deleteCleanupSchedule: (id: number) => request<void>(`/cleanup-schedules/${id}`, { method: 'DELETE' }),
+	triggerCleanupSchedule: (id: number) => request<{ status: string; message: string }>(`/cleanup-schedules/${id}/trigger`, { method: 'POST' }),
+
 	// Notifications
 	getNotifications: (params?: { read?: boolean; limit?: number; offset?: number }) => {
 		const sp = new URLSearchParams();
@@ -89,6 +109,10 @@ export const api = {
 	deleteNotificationURL: (id: number) => request<void>(`/settings/notifications/urls/${id}`, { method: 'DELETE' }),
 	testNotificationURL: (id: number) => request<{ success: boolean }>(`/settings/notifications/urls/${id}/test`, { method: 'POST' }),
 	updateNotificationEvents: (data: NotificationEventsConfig) => request<NotificationEventsConfig>('/settings/notifications/events', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Settings — Location
+	getLocationConfig: () => request<LocationConfig>('/settings/location'),
+	updateLocationConfig: (data: LocationConfig) => request<LocationConfig>('/settings/location', { method: 'PUT', body: JSON.stringify(data) }),
 
 	// Settings — Health
 	getHealthConfig: () => request<HealthConfig>('/settings/health'),

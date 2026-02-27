@@ -5,7 +5,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
 
-from app.models import Profile
+from app.models import CleanupSchedule, Profile, TimelapseSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -60,54 +60,131 @@ def restore_jobs(db: Session) -> None:
             logger.exception("Failed to restore job for profile %d", profile.id)
     logger.info("Restored %d capture jobs", len(profiles))
 
+    # Restore timelapse schedule jobs
+    schedules = db.query(TimelapseSchedule).filter(TimelapseSchedule.enabled.is_(True)).all()
+    for schedule in schedules:
+        try:
+            add_timelapse_schedule_job(schedule)
+        except Exception:
+            logger.exception("Failed to restore timelapse schedule job %d", schedule.id)
+    logger.info("Restored %d timelapse schedule jobs", len(schedules))
 
-def add_scheduled_timelapse_jobs() -> None:
-    """Add periodic timelapse generation jobs."""
+    # Restore cleanup schedule jobs
+    cleanup_schedules = db.query(CleanupSchedule).filter(CleanupSchedule.enabled.is_(True)).all()
+    for cs in cleanup_schedules:
+        try:
+            add_cleanup_schedule_job(cs)
+        except Exception:
+            logger.exception("Failed to restore cleanup schedule job %d", cs.id)
+    logger.info("Restored %d cleanup schedule jobs", len(cleanup_schedules))
+
+
+def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
+    """Register an APScheduler cron job for a timelapse schedule."""
     from app.services.timelapse import generate_timelapse, get_period_range
 
-    async def _run_scheduled(period_type: str):
+    async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None, fps: int, fmt: str):
         from app.database import SessionLocal
         db = SessionLocal()
         try:
-            profiles = db.query(Profile).filter(Profile.enabled.is_(True)).all()
-            for profile in profiles:
-                try:
-                    start, end = get_period_range(period_type)
-                    await generate_timelapse(
-                        profile_id=profile.id,
-                        period_type=period_type,
-                        period_start=start,
-                        period_end=end,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Scheduled %s timelapse failed for profile %d",
-                        period_type, profile.id,
-                    )
+            # Re-check the schedule is still enabled
+            sched = db.get(TimelapseSchedule, schedule_id)
+            if not sched or not sched.enabled:
+                return
+            period = preset or "daily"
+            start, end = get_period_range(period)
+            await generate_timelapse(
+                profile_id=profile_id,
+                period_type=period,
+                period_start=start,
+                period_end=end,
+                fps=fps,
+                format=fmt,
+            )
+        except Exception:
+            logger.exception(
+                "Scheduled timelapse failed for schedule %d (profile %d)",
+                schedule_id, profile_id,
+            )
         finally:
             db.close()
 
-    # Daily at 00:05
+    parts = schedule.cron_expression.strip().split()
+    job_id = f"timelapse_schedule_{schedule.id}"
     scheduler.add_job(
-        _run_scheduled, "cron", hour=0, minute=5,
-        id="timelapse_daily", replace_existing=True, args=["daily"],
+        _run_schedule,
+        "cron",
+        minute=parts[0],
+        hour=parts[1],
+        day=parts[2],
+        month=parts[3],
+        day_of_week=parts[4],
+        id=job_id,
+        replace_existing=True,
+        args=[schedule.id, schedule.profile_id, schedule.preset, schedule.fps, schedule.format],
     )
-    # Weekly on Sunday at 00:30
+    logger.info("Added timelapse schedule job %s (cron: %s)", job_id, schedule.cron_expression)
+
+
+def remove_timelapse_schedule_job(schedule_id: int) -> None:
+    """Remove an APScheduler job for a timelapse schedule."""
+    job_id = f"timelapse_schedule_{schedule_id}"
+    try:
+        scheduler.remove_job(job_id)
+        logger.info("Removed timelapse schedule job %s", job_id)
+    except Exception:
+        logger.debug("Job %s not found, nothing to remove", job_id)
+
+
+def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
+    """Register an APScheduler cron job for a cleanup schedule."""
+    from app.services.retention import run_profile_cleanup
+
+    async def _run_cleanup(schedule_id: int, profile_id: int, capture_days: int, timelapse_days: int):
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            sched = db.get(CleanupSchedule, schedule_id)
+            if not sched or not sched.enabled:
+                return
+            await run_profile_cleanup(
+                profile_id=profile_id,
+                capture_retention_days=capture_days,
+                timelapse_retention_days=timelapse_days,
+            )
+        except Exception:
+            logger.exception(
+                "Scheduled cleanup failed for schedule %d (profile %d)",
+                schedule_id, profile_id,
+            )
+        finally:
+            db.close()
+
+    parts = schedule.cron_expression.strip().split()
+    job_id = f"cleanup_schedule_{schedule.id}"
     scheduler.add_job(
-        _run_scheduled, "cron", day_of_week="sun", hour=0, minute=30,
-        id="timelapse_weekly", replace_existing=True, args=["weekly"],
+        _run_cleanup,
+        "cron",
+        minute=parts[0],
+        hour=parts[1],
+        day=parts[2],
+        month=parts[3],
+        day_of_week=parts[4],
+        id=job_id,
+        replace_existing=True,
+        args=[schedule.id, schedule.profile_id, schedule.capture_retention_days, schedule.timelapse_retention_days],
     )
-    # Monthly on 1st at 01:00
-    scheduler.add_job(
-        _run_scheduled, "cron", day=1, hour=1, minute=0,
-        id="timelapse_monthly", replace_existing=True, args=["monthly"],
-    )
-    # Yearly on Jan 1 at 02:00
-    scheduler.add_job(
-        _run_scheduled, "cron", month=1, day=1, hour=2, minute=0,
-        id="timelapse_yearly", replace_existing=True, args=["yearly"],
-    )
-    logger.info("Scheduled timelapse generation jobs added")
+    logger.info("Added cleanup schedule job %s (cron: %s)", job_id, schedule.cron_expression)
+
+
+def remove_cleanup_schedule_job(schedule_id: int) -> None:
+    """Remove an APScheduler job for a cleanup schedule."""
+    job_id = f"cleanup_schedule_{schedule_id}"
+    try:
+        scheduler.remove_job(job_id)
+        logger.info("Removed cleanup schedule job %s", job_id)
+    except Exception:
+        logger.debug("Job %s not found, nothing to remove", job_id)
 
 
 def add_health_check_job(interval_seconds: int = 300) -> None:
@@ -121,12 +198,3 @@ def add_health_check_job(interval_seconds: int = 300) -> None:
     logger.info("Health check job scheduled every %ds", interval_seconds)
 
 
-def add_retention_job() -> None:
-    """Add daily retention cleanup job at 03:00."""
-    from app.services.retention import run_retention_cleanup
-
-    scheduler.add_job(
-        run_retention_cleanup, "cron", hour=3, minute=0,
-        id="retention_cleanup", replace_existing=True,
-    )
-    logger.info("Retention cleanup job scheduled at 03:00 daily")

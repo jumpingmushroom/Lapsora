@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -42,6 +44,10 @@ class ProfileCreate(BaseModel):
     resolution_height: int | None = None
     quality: int = 85
     hdr_enabled: bool = False
+    capture_mode: Literal["always", "manual", "sun"] = "always"
+    active_start_time: str | None = None
+    active_end_time: str | None = None
+    sun_offset_minutes: int = 0
 
 
 class ProfileUpdate(BaseModel):
@@ -52,6 +58,10 @@ class ProfileUpdate(BaseModel):
     quality: int | None = None
     hdr_enabled: bool | None = None
     enabled: bool | None = None
+    capture_mode: Literal["always", "manual", "sun"] | None = None
+    active_start_time: str | None = None
+    active_end_time: str | None = None
+    sun_offset_minutes: int | None = None
 
 
 class ProfileRead(BaseModel):
@@ -67,6 +77,10 @@ class ProfileRead(BaseModel):
     hdr_enabled: bool
     enabled: bool
     auto_disabled: bool
+    capture_mode: str
+    active_start_time: str | None
+    active_end_time: str | None
+    sun_offset_minutes: int
     source_template_id: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -161,6 +175,79 @@ class TimelapseGenerate(BaseModel):
     timestamp_overlay: bool = False
 
 
+# --- Timelapse Schedules ---
+
+
+class TimelapseScheduleCreate(BaseModel):
+    profile_id: int
+    name: str = ""
+    preset: str | None = None
+    cron_expression: str | None = None
+    fps: int = 24
+    format: str = "mp4"
+    enabled: bool = True
+
+
+class TimelapseScheduleUpdate(BaseModel):
+    name: str | None = None
+    preset: str | None = None
+    cron_expression: str | None = None
+    fps: int | None = None
+    format: str | None = None
+    enabled: bool | None = None
+
+
+class TimelapseScheduleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    profile_id: int
+    name: str
+    preset: str | None
+    cron_expression: str
+    fps: int
+    format: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    next_run: str | None = None
+
+
+# --- Cleanup Schedules ---
+
+
+class CleanupScheduleCreate(BaseModel):
+    profile_id: int
+    name: str = ""
+    capture_retention_days: int = 32
+    timelapse_retention_days: int = 90
+    cron_expression: str
+    enabled: bool = True
+
+
+class CleanupScheduleUpdate(BaseModel):
+    name: str | None = None
+    capture_retention_days: int | None = None
+    timelapse_retention_days: int | None = None
+    cron_expression: str | None = None
+    enabled: bool | None = None
+
+
+class CleanupScheduleRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    profile_id: int
+    name: str
+    capture_retention_days: int
+    timelapse_retention_days: int
+    cron_expression: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    next_run: str | None = None
+
+
 # --- Notifications ---
 
 
@@ -196,6 +283,11 @@ class NotificationRead(BaseModel):
 
 
 # --- Settings ---
+
+
+class LocationConfig(BaseModel):
+    latitude: float = 0.0
+    longitude: float = 0.0
 
 
 class HealthConfig(BaseModel):
