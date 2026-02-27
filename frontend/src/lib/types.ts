@@ -240,4 +240,9 @@ export interface NotificationEventsConfig {
 	timelapse_failure: boolean;
 	retention_summary: boolean;
 	low_disk_space: boolean;
+	capture_gap: boolean;
+}
+
+export interface CaptureGapConfig {
+	enabled: boolean;
 }

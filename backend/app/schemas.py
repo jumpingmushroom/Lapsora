@@ -304,3 +304,4 @@ class NotificationEventsConfig(BaseModel):
     timelapse_failure: bool = True
     retention_summary: bool = False
     low_disk_space: bool = True
+    capture_gap: bool = True

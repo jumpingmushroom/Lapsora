@@ -187,6 +187,26 @@ def remove_cleanup_schedule_job(schedule_id: int) -> None:
         logger.debug("Job %s not found, nothing to remove", job_id)
 
 
+def add_capture_gap_job() -> None:
+    """Add periodic capture gap check job (every 60 minutes)."""
+    from app.services.capture_gap import check_capture_gaps
+
+    scheduler.add_job(
+        check_capture_gaps, "interval", seconds=3600,
+        id="capture_gap_check", replace_existing=True,
+    )
+    logger.info("Capture gap check job scheduled every 3600s")
+
+
+def remove_capture_gap_job() -> None:
+    """Remove the capture gap check job."""
+    try:
+        scheduler.remove_job("capture_gap_check")
+        logger.info("Removed capture gap check job")
+    except Exception:
+        logger.debug("Capture gap check job not found, nothing to remove")
+
+
 def add_health_check_job(interval_seconds: int = 300) -> None:
     """Add periodic stream health check job."""
     from app.services.health import check_all_streams

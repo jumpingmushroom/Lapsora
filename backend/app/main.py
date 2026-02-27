@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     # Start capture scheduler and restore jobs
     from app.services.scheduler import (
         init_scheduler, restore_jobs,
-        add_health_check_job, scheduler as _scheduler,
+        add_health_check_job, add_capture_gap_job, scheduler as _scheduler,
     )
     from app.services.events import on_event
     from app.services.notifications import handle_event
@@ -48,9 +48,14 @@ async def lifespan(app: FastAPI):
         from app.models import Setting
         row = db.query(Setting).filter(Setting.key == "health_check_interval_seconds").first()
         health_interval = int(row.value) if row else 300
+        # Capture gap alerting
+        gap_row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
+        gap_enabled = not gap_row or gap_row.value != "false"
     finally:
         db.close()
     add_health_check_job(health_interval)
+    if gap_enabled:
+        add_capture_gap_job()
 
     yield
 

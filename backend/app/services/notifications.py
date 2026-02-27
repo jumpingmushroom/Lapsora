@@ -25,6 +25,7 @@ DEFAULT_EVENT_TOGGLES = {
     "timelapse_failure": True,
     "retention_summary": False,
     "low_disk_space": True,
+    "capture_gap": True,
 }
 
 

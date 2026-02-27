@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig } from './types';
 
 const BASE = '/api';
 
@@ -117,6 +117,10 @@ export const api = {
 	// Settings — Health
 	getHealthConfig: () => request<HealthConfig>('/settings/health'),
 	updateHealthConfig: (data: HealthConfig) => request<HealthConfig>('/settings/health', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Settings — Capture Gap
+	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),
+	updateCaptureGapConfig: (data: CaptureGapConfig) => request<CaptureGapConfig>('/settings/capture-gap', { method: 'PUT', body: JSON.stringify(data) }),
 
 	// SSE helper
 	getNotificationStreamUrl: () => `${BASE}/notifications/stream`,

@@ -163,3 +163,33 @@ def update_health_config(data: HealthConfig, db: Session = Depends(get_db)):
 
     db.commit()
     return data
+
+
+# --- Capture Gap Alerting ---
+
+
+@router.get("/capture-gap")
+def get_capture_gap_config(db: Session = Depends(get_db)):
+    row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
+    enabled = True if not row else row.value != "false"
+    return {"enabled": enabled}
+
+
+@router.put("/capture-gap")
+def update_capture_gap_config(data: dict, db: Session = Depends(get_db)):
+    enabled = data.get("enabled", True)
+    row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
+    value = "true" if enabled else "false"
+    if row:
+        row.value = value
+    else:
+        db.add(Setting(key="capture_gap_enabled", value=value))
+    db.commit()
+
+    from app.services.scheduler import add_capture_gap_job, remove_capture_gap_job
+    if enabled:
+        add_capture_gap_job()
+    else:
+        remove_capture_gap_job()
+
+    return {"enabled": enabled}

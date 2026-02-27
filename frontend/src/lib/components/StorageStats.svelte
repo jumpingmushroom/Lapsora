@@ -16,7 +16,9 @@
 
 	let capturesPct = $derived(stats.disk_total_bytes > 0 ? (stats.captures_size_bytes / stats.disk_total_bytes) * 100 : 0);
 	let timelapsesPct = $derived(stats.disk_total_bytes > 0 ? (stats.timelapses_size_bytes / stats.disk_total_bytes) * 100 : 0);
-	let freePct = $derived(stats.disk_total_bytes > 0 ? (stats.disk_free_bytes / stats.disk_total_bytes) * 100 : 0);
+	let capturesDisplay = $derived(capturesPct > 0 ? Math.max(capturesPct, 1) : 0);
+	let timelapsesDisplay = $derived(timelapsesPct > 0 ? Math.max(timelapsesPct, 1) : 0);
+	let freeDisplay = $derived(100 - capturesDisplay - timelapsesDisplay);
 </script>
 
 <div class="rounded-lg bg-gray-800 p-4">
@@ -24,13 +26,13 @@
 
 	<div class="mb-4 flex h-4 w-full overflow-hidden rounded-full bg-gray-900">
 		{#if capturesPct > 0}
-			<div class="bg-blue-500" style="width: {capturesPct}%" title="Captures"></div>
+			<div class="bg-blue-500" style="width: {capturesDisplay}%" title="Captures: {formatBytes(stats.captures_size_bytes)}"></div>
 		{/if}
 		{#if timelapsesPct > 0}
-			<div class="bg-purple-500" style="width: {timelapsesPct}%" title="Timelapses"></div>
+			<div class="bg-purple-500" style="width: {timelapsesDisplay}%" title="Timelapses: {formatBytes(stats.timelapses_size_bytes)}"></div>
 		{/if}
-		{#if freePct > 0}
-			<div class="bg-gray-700" style="width: {freePct}%" title="Free"></div>
+		{#if freeDisplay > 0}
+			<div class="bg-gray-700" style="width: {freeDisplay}%" title="Free: {formatBytes(stats.disk_free_bytes)}"></div>
 		{/if}
 	</div>
 

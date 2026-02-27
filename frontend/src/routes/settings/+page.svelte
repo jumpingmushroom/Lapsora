@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let urls = $state<NotificationURL[]>([]);
@@ -23,6 +23,9 @@
 		longitude: 0.0
 	});
 
+	let captureGapConfig = $state<CaptureGapConfig>({ enabled: true });
+	let savingCaptureGap = $state(false);
+
 	let loading = $state(true);
 	let newLabel = $state('');
 	let newUrl = $state('');
@@ -32,12 +35,13 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig()])
-			.then(([notifSettings, hc, loc]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig()])
+			.then(([notifSettings, hc, loc, gapCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
 				locationConfig = loc;
+				captureGapConfig = gapCfg;
 			})
 			.finally(() => {
 				loading = false;
@@ -91,6 +95,12 @@
 		savingLocation = false;
 	}
 
+	async function saveCaptureGap() {
+		savingCaptureGap = true;
+		await api.updateCaptureGapConfig(captureGapConfig);
+		savingCaptureGap = false;
+	}
+
 	const eventLabels: Record<string, string> = {
 		capture_failure: 'Capture failure',
 		stream_unhealthy: 'Stream unhealthy',
@@ -98,7 +108,8 @@
 		timelapse_complete: 'Timelapse complete',
 		timelapse_failure: 'Timelapse failure',
 		retention_summary: 'Retention summary',
-		low_disk_space: 'Low disk space'
+		low_disk_space: 'Low disk space',
+		capture_gap: 'Capture gap'
 	};
 </script>
 
@@ -289,13 +300,41 @@
 			</button>
 		</section>
 
-		<!-- Data Cleanup -->
-		<section>
-			<h2 class="mb-4 text-xl font-semibold text-white">Data Cleanup</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
-			</p>
-			<CleanupScheduleManager />
+		<!-- Jobs -->
+		<section class="space-y-6">
+			<h2 class="text-xl font-semibold text-white">Jobs</h2>
+
+			<!-- Capture Gap Alerting -->
+			<div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h3 class="mb-2 text-lg font-medium text-white">Capture Gap Alerting</h3>
+				<p class="mb-4 text-sm text-gray-400">
+					Alert when no frame is captured within 3× a profile's configured interval. Checks run every 60 minutes.
+				</p>
+				<label class="mb-4 flex items-center gap-3">
+					<input
+						type="checkbox"
+						bind:checked={captureGapConfig.enabled}
+						class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
+					/>
+					<span class="text-sm text-gray-200">Enable capture gap alerting</span>
+				</label>
+				<button
+					onclick={saveCaptureGap}
+					disabled={savingCaptureGap}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{savingCaptureGap ? 'Saving...' : 'Save'}
+				</button>
+			</div>
+
+			<!-- Data Cleanup -->
+			<div>
+				<h3 class="mb-2 text-lg font-medium text-white">Data Cleanup</h3>
+				<p class="mb-4 text-sm text-gray-400">
+					Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
+				</p>
+				<CleanupScheduleManager />
+			</div>
 		</section>
 	{/if}
 </div>

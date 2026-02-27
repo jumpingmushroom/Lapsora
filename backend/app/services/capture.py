@@ -236,6 +236,10 @@ async def capture_frame(profile_id: int) -> None:
         )
         db.add(capture)
         db.commit()
+
+        from app.services.capture_gap import clear_alert
+        clear_alert(profile_id)
+
         logger.info(
             "Captured frame for profile %d: %s (%dx%d, %d bytes)",
             profile_id, rel_path, width, height, file_size,
