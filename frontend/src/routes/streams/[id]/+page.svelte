@@ -23,6 +23,12 @@
 	let showProfileForm = $state(false);
 	let profileLoading = $state(false);
 
+	// Profile actions
+	let editingProfile = $state<Profile | null>(null);
+	let confirmDelete = $state<Profile | null>(null);
+	let activeMenu = $state<number | null>(null);
+	let replaceMode = $state(false);
+
 	// Template picker
 	let showTemplatePicker = $state(false);
 	let templates = $state<ProfileTemplate[]>([]);
@@ -103,6 +109,7 @@
 	async function openTemplatePicker() {
 		showTemplatePicker = true;
 		showProfileForm = false;
+		editingProfile = null;
 		if (templates.length === 0) {
 			try {
 				templates = await api.getProfileTemplates();
@@ -129,6 +136,63 @@
 		if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)}h`;
 		if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
 		return `${seconds}s`;
+	}
+
+	async function handleUpdateProfile(data: ProfileCreate | ProfileUpdate) {
+		if (!editingProfile) return;
+		profileLoading = true;
+		try {
+			await api.updateProfile(editingProfile.id, data as ProfileUpdate);
+			profiles = await api.getStreamProfiles(id);
+			editingProfile = null;
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to update profile');
+		} finally {
+			profileLoading = false;
+		}
+	}
+
+	async function handleDeleteProfile() {
+		if (!confirmDelete) return;
+		profileLoading = true;
+		const shouldReplace = replaceMode;
+		try {
+			await api.deleteProfile(confirmDelete.id);
+			profiles = await api.getStreamProfiles(id);
+			confirmDelete = null;
+			replaceMode = false;
+			if (shouldReplace) {
+				openTemplatePicker();
+			}
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete profile');
+		} finally {
+			profileLoading = false;
+		}
+	}
+
+	async function handleDuplicateProfile(profile: Profile) {
+		profileLoading = true;
+		activeMenu = null;
+		try {
+			await api.createProfile(id, {
+				name: profile.name + ' (copy)',
+				interval_seconds: profile.interval_seconds,
+				resolution_width: profile.resolution_width,
+				resolution_height: profile.resolution_height,
+				quality: profile.quality,
+				hdr_enabled: profile.hdr_enabled,
+				capture_mode: profile.capture_mode,
+				active_start_time: profile.active_start_time,
+				active_end_time: profile.active_end_time,
+				sun_offset_minutes: profile.sun_offset_minutes
+			});
+			profiles = await api.getStreamProfiles(id);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to duplicate profile');
+		} finally {
+			profileLoading = false;
+		}
 	}
 
 	async function toggleProfile(profile: Profile) {
@@ -240,7 +304,7 @@
 						{showTemplatePicker ? 'Cancel' : 'From Template'}
 					</button>
 					<button
-						onclick={() => { showProfileForm = !showProfileForm; showTemplatePicker = false; }}
+						onclick={() => { showProfileForm = !showProfileForm; showTemplatePicker = false; editingProfile = null; }}
 						class="rounded-lg border border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
 					>
 						{showProfileForm ? 'Cancel' : 'Custom'}
@@ -292,9 +356,31 @@
 				</div>
 			{/if}
 
-			{#if showProfileForm}
+			{#if editingProfile}
+				<div class="mb-4 rounded-lg border border-blue-700 bg-gray-800 p-4">
+					<div class="mb-3 flex items-center justify-between">
+						<h3 class="text-sm font-semibold text-gray-200">Edit Profile</h3>
+						<button onclick={() => { editingProfile = null; }} class="text-xs text-gray-400 hover:text-gray-200">Cancel</button>
+					</div>
+					{#key editingProfile.id}
+						<ProfileForm profile={editingProfile} onsubmit={handleUpdateProfile} />
+					{/key}
+				</div>
+			{:else if showProfileForm}
 				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
 					<ProfileForm onsubmit={handleCreateProfile} />
+				</div>
+			{/if}
+
+			{#if confirmDelete}
+				<div class="mb-4 flex items-center justify-between rounded-lg border border-red-800 bg-red-950/50 p-3">
+					<p class="text-sm text-gray-300">
+						{replaceMode ? 'Replace' : 'Delete'} <strong class="text-white">{confirmDelete.name}</strong>? All captures, timelapses, and schedules will be permanently removed.
+					</p>
+					<div class="flex shrink-0 gap-2">
+						<button onclick={() => { confirmDelete = null; replaceMode = false; }} class="rounded px-3 py-1 text-xs font-medium text-gray-400 hover:text-gray-200">Cancel</button>
+						<button onclick={handleDeleteProfile} disabled={profileLoading} class="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50">Delete</button>
+					</div>
 				</div>
 			{/if}
 
@@ -306,7 +392,7 @@
 						<div class="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/50 p-3">
 							<div class="flex items-center gap-3">
 								<span class="text-sm font-medium text-gray-200">{profile.name}</span>
-								<span class="text-xs text-gray-500">every {profile.interval_seconds}s</span>
+								<span class="text-xs text-gray-500">every {formatInterval(profile.interval_seconds)}</span>
 								{#if profile.resolution_width && profile.resolution_height}
 									<span class="text-xs text-gray-500">{profile.resolution_width}x{profile.resolution_height}</span>
 								{/if}
@@ -315,12 +401,46 @@
 									<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
 								{/if}
 							</div>
-							<button
-								onclick={() => toggleProfile(profile)}
-								class="rounded px-3 py-1 text-xs font-medium transition-colors {profile.enabled ? 'bg-green-900 text-green-300 hover:bg-green-800' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}"
-							>
-								{profile.enabled ? 'Enabled' : 'Disabled'}
-							</button>
+							<div class="flex items-center gap-2">
+								<button
+									onclick={() => toggleProfile(profile)}
+									class="rounded px-3 py-1 text-xs font-medium transition-colors {profile.enabled ? 'bg-green-900 text-green-300 hover:bg-green-800' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}"
+								>
+									{profile.enabled ? 'Enabled' : 'Disabled'}
+								</button>
+								<div class="relative">
+									<button
+										onclick={(e: MouseEvent) => { e.stopPropagation(); activeMenu = activeMenu === profile.id ? null : profile.id; }}
+										class="rounded p-1 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+									>
+										<svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+											<path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
+										</svg>
+									</button>
+									{#if activeMenu === profile.id}
+										<!-- svelte-ignore a11y_no_static_element_interactions -->
+										<div class="fixed inset-0 z-10" onclick={() => { activeMenu = null; }}></div>
+										<div class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-lg">
+											<button
+												onclick={() => { editingProfile = profile; showProfileForm = false; showTemplatePicker = false; confirmDelete = null; activeMenu = null; }}
+												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
+											>Edit</button>
+											<button
+												onclick={() => { handleDuplicateProfile(profile); }}
+												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
+											>Duplicate</button>
+											<button
+												onclick={() => { confirmDelete = profile; replaceMode = true; editingProfile = null; activeMenu = null; }}
+												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
+											>Replace</button>
+											<button
+												onclick={() => { confirmDelete = profile; replaceMode = false; editingProfile = null; activeMenu = null; }}
+												class="block w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-gray-700"
+											>Delete</button>
+										</div>
+									{/if}
+								</div>
+							</div>
 						</div>
 					{/each}
 				</div>
