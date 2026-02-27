@@ -110,6 +110,17 @@ def add_scheduled_timelapse_jobs() -> None:
     logger.info("Scheduled timelapse generation jobs added")
 
 
+def add_health_check_job(interval_seconds: int = 300) -> None:
+    """Add periodic stream health check job."""
+    from app.services.health import check_all_streams
+
+    scheduler.add_job(
+        check_all_streams, "interval", seconds=interval_seconds,
+        id="health_check", replace_existing=True,
+    )
+    logger.info("Health check job scheduled every %ds", interval_seconds)
+
+
 def add_retention_job() -> None:
     """Add daily retention cleanup job at 03:00."""
     from app.services.retention import run_retention_cleanup

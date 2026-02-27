@@ -9,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.config import settings
+from app.config import settings as app_settings
 from app.database import SessionLocal, engine
 from app.migrations.runner import run_migrations
-from app.routers import captures, profiles, streams, system, timelapses
+from app.routers import captures, notifications, profile_templates, profiles, settings as settings_router, streams, system, timelapses
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create data directories
-    data_dir = Path(settings.DATA_DIR)
+    data_dir = Path(app_settings.DATA_DIR)
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "captures").mkdir(exist_ok=True)
     (data_dir / "timelapses").mkdir(exist_ok=True)
@@ -33,17 +33,26 @@ async def lifespan(app: FastAPI):
     # Start capture scheduler and restore jobs
     from app.services.scheduler import (
         init_scheduler, restore_jobs, add_scheduled_timelapse_jobs,
-        add_retention_job, scheduler as _scheduler,
+        add_retention_job, add_health_check_job, scheduler as _scheduler,
     )
+    from app.services.events import on_event
+    from app.services.notifications import handle_event
+
+    on_event(handle_event)
 
     init_scheduler()
     db = SessionLocal()
     try:
         restore_jobs(db)
+        # Load health check interval from settings
+        from app.models import Setting
+        row = db.query(Setting).filter(Setting.key == "health_check_interval_seconds").first()
+        health_interval = int(row.value) if row else 300
     finally:
         db.close()
     add_scheduled_timelapse_jobs()
     add_retention_job()
+    add_health_check_job(health_interval)
 
     yield
 
@@ -66,11 +75,14 @@ app.add_middleware(
 app.include_router(system.router)
 app.include_router(streams.router)
 app.include_router(profiles.router)
+app.include_router(profile_templates.router)
 app.include_router(captures.router)
 app.include_router(timelapses.router)
+app.include_router(notifications.router)
+app.include_router(settings_router.router)
 
 # Static file mounts
-data_dir = Path(settings.DATA_DIR)
+data_dir = Path(app_settings.DATA_DIR)
 data_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(data_dir)), name="static")
 

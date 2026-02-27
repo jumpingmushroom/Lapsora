@@ -17,6 +17,9 @@ class Stream(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    health_status: Mapped[str] = mapped_column(Text, default="unknown")
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_checked_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
@@ -24,6 +27,25 @@ class Stream(Base):
 
     profiles: Mapped[list["Profile"]] = relationship(
         back_populates="stream", cascade="all, delete-orphan"
+    )
+
+
+class ProfileTemplate(Base):
+    __tablename__ = "profile_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="")
+    interval_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    resolution_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resolution_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality: Mapped[int] = mapped_column(Integer, default=85)
+    hdr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
 
@@ -39,12 +61,17 @@ class Profile(Base):
     quality: Mapped[int] = mapped_column(Integer, default=85)
     hdr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
 
     stream: Mapped["Stream"] = relationship(back_populates="profiles")
+    source_template: Mapped["ProfileTemplate | None"] = relationship()
     captures: Mapped[list["Capture"]] = relationship(
         back_populates="profile", cascade="all, delete-orphan"
     )
@@ -96,3 +123,25 @@ class Setting(Base):
 
     key: Mapped[str] = mapped_column(Text, primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class NotificationURL(Base):
+    __tablename__ = "notification_urls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    level: Mapped[str] = mapped_column(Text, default="info")
+    read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

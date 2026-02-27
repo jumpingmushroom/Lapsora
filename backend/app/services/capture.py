@@ -67,10 +67,18 @@ async def capture_frame(profile_id: int) -> None:
             )
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
             if proc.returncode != 0:
+                err_msg = stderr.decode().strip()
                 logger.error(
                     "ffmpeg capture failed for profile %d: %s",
                     profile_id,
-                    stderr.decode().strip(),
+                    err_msg,
+                )
+                from app.services.events import emit
+                await emit(
+                    "capture_failure",
+                    f"Capture failed: {profile.name}",
+                    f"ffmpeg error for profile '{profile.name}' on stream '{stream.name}': {err_msg}",
+                    level="error",
                 )
                 return
             is_hdr = False
@@ -113,7 +121,17 @@ async def capture_frame(profile_id: int) -> None:
             profile_id, rel_path, width, height, file_size,
         )
 
-    except Exception:
+    except Exception as exc:
         logger.exception("Capture failed for profile %d", profile_id)
+        try:
+            from app.services.events import emit
+            await emit(
+                "capture_failure",
+                f"Capture failed: profile {profile_id}",
+                f"Unexpected error during capture for profile {profile_id}: {exc}",
+                level="error",
+            )
+        except Exception:
+            pass
     finally:
         db.close()

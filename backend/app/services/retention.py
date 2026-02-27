@@ -124,6 +124,43 @@ async def run_retention_cleanup() -> dict:
                     summary["empty_dirs_removed"] += 1
 
         logger.info("Retention cleanup complete: %s", summary)
+
+        # Emit retention summary event
+        try:
+            from app.services.events import emit
+            await emit(
+                "retention_summary",
+                "Retention cleanup complete",
+                f"Deleted {summary['captures_deleted']} captures, {summary['timelapses_deleted']} timelapses. "
+                f"Cleaned {summary['orphan_records_cleaned']} orphan records, {summary['orphan_files_cleaned']} orphan files.",
+            )
+        except Exception:
+            pass
+
+        # Check low disk space
+        try:
+            usage = shutil.disk_usage(settings.DATA_DIR)
+            free_pct = usage.free / usage.total * 100 if usage.total > 0 else 100
+            # Load threshold from settings
+            threshold_db = SessionLocal()
+            try:
+                from app.models import Setting
+                row = threshold_db.query(Setting).filter(Setting.key == "health_low_disk_threshold_percent").first()
+                threshold = int(row.value) if row else 10
+            finally:
+                threshold_db.close()
+
+            if free_pct < threshold:
+                from app.services.events import emit
+                await emit(
+                    "low_disk_space",
+                    "Low disk space warning",
+                    f"Only {free_pct:.1f}% disk space remaining ({usage.free // (1024**3)} GB free of {usage.total // (1024**3)} GB).",
+                    level="warning",
+                )
+        except Exception:
+            pass
+
         return summary
 
     finally:

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
-	import type { Stream, Profile, ProfileCreate, ProfileUpdate, Capture } from '$lib/types';
+	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture } from '$lib/types';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 
 	let id = $derived(Number($page.params.id));
@@ -22,6 +22,15 @@
 	// Profile form
 	let showProfileForm = $state(false);
 	let profileLoading = $state(false);
+
+	// Template picker
+	let showTemplatePicker = $state(false);
+	let templates = $state<ProfileTemplate[]>([]);
+	let templateCategory = $state<string | null>(null);
+	let templateCategories = $derived([...new Set(templates.map((t) => t.category))].sort());
+	let filteredTemplates = $derived(
+		templateCategory ? templates.filter((t) => t.category === templateCategory) : templates
+	);
 
 	// Preview
 	let previewKey = $state(0);
@@ -89,6 +98,37 @@
 		} finally {
 			profileLoading = false;
 		}
+	}
+
+	async function openTemplatePicker() {
+		showTemplatePicker = true;
+		showProfileForm = false;
+		if (templates.length === 0) {
+			try {
+				templates = await api.getProfileTemplates();
+			} catch {
+				templates = [];
+			}
+		}
+	}
+
+	async function applyTemplate(t: ProfileTemplate) {
+		profileLoading = true;
+		try {
+			await api.applyProfileTemplate(t.id, id);
+			profiles = await api.getStreamProfiles(id);
+			showTemplatePicker = false;
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to apply template');
+		} finally {
+			profileLoading = false;
+		}
+	}
+
+	function formatInterval(seconds: number): string {
+		if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)}h`;
+		if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
+		return `${seconds}s`;
 	}
 
 	async function toggleProfile(profile: Profile) {
@@ -192,13 +232,65 @@
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-gray-100">Profiles</h2>
-				<button
-					onclick={() => { showProfileForm = !showProfileForm; }}
-					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-				>
-					{showProfileForm ? 'Cancel' : 'Add Profile'}
-				</button>
+				<div class="flex gap-2">
+					<button
+						onclick={openTemplatePicker}
+						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+					>
+						{showTemplatePicker ? 'Cancel' : 'From Template'}
+					</button>
+					<button
+						onclick={() => { showProfileForm = !showProfileForm; showTemplatePicker = false; }}
+						class="rounded-lg border border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
+					>
+						{showProfileForm ? 'Cancel' : 'Custom'}
+					</button>
+				</div>
 			</div>
+
+			{#if showTemplatePicker}
+				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
+					<div class="mb-3 flex flex-wrap gap-1.5">
+						<button
+							onclick={() => { templateCategory = null; }}
+							class="rounded px-2 py-1 text-xs font-medium transition-colors {templateCategory === null ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-gray-200'}"
+						>All</button>
+						{#each templateCategories as cat}
+							<button
+								onclick={() => { templateCategory = cat; }}
+								class="rounded px-2 py-1 text-xs font-medium transition-colors {templateCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-gray-200'}"
+							>{cat}</button>
+						{/each}
+					</div>
+					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+						{#each filteredTemplates as t}
+							<button
+								onclick={() => applyTemplate(t)}
+								disabled={profileLoading}
+								class="flex flex-col items-start rounded-lg border border-gray-600 p-3 text-left transition-colors hover:border-blue-500 hover:bg-gray-700 disabled:opacity-50"
+							>
+								<span class="text-sm font-medium text-gray-100">{t.name}</span>
+								{#if t.description}
+									<span class="mt-0.5 text-xs text-gray-500">{t.description}</span>
+								{/if}
+								<div class="mt-1.5 flex flex-wrap gap-1">
+									<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{formatInterval(t.interval_seconds)}</span>
+									{#if t.resolution_width && t.resolution_height}
+										<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{t.resolution_width}x{t.resolution_height}</span>
+									{/if}
+									<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">Q{t.quality}</span>
+									{#if t.hdr_enabled}
+										<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
+									{/if}
+								</div>
+							</button>
+						{/each}
+					</div>
+					{#if filteredTemplates.length === 0}
+						<p class="text-sm text-gray-500">No templates available.</p>
+					{/if}
+				</div>
+			{/if}
 
 			{#if showProfileForm}
 				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">

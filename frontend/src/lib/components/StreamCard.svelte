@@ -20,8 +20,27 @@
 
 	let previewSrc = $derived(`${api.getStreamPreviewUrl(stream.id)}?t=${previewKey}`);
 
+	let healthDotClass = $derived(
+		stream.health_status === 'healthy'
+			? 'bg-green-500'
+			: stream.health_status === 'unhealthy'
+				? 'bg-red-500'
+				: 'bg-gray-500'
+	);
+
 	function formatDate(iso: string): string {
 		return new Date(iso).toLocaleDateString();
+	}
+
+	function timeAgo(iso: string | null): string {
+		if (!iso) return 'never';
+		const diff = Date.now() - new Date(iso).getTime();
+		const mins = Math.floor(diff / 60000);
+		if (mins < 1) return 'just now';
+		if (mins < 60) return `${mins}m ago`;
+		const hrs = Math.floor(mins / 60);
+		if (hrs < 24) return `${hrs}h ago`;
+		return `${Math.floor(hrs / 24)}d ago`;
 	}
 </script>
 
@@ -39,7 +58,10 @@
 	</div>
 
 	<div class="flex items-center justify-between">
-		<h3 class="text-lg font-semibold text-gray-100">{stream.name}</h3>
+		<div class="flex items-center gap-2">
+			<span class="h-2.5 w-2.5 rounded-full {healthDotClass}" title="{stream.health_status}"></span>
+			<h3 class="text-lg font-semibold text-gray-100">{stream.name}</h3>
+		</div>
 		<span
 			class="rounded-full px-2 py-0.5 text-xs font-medium {stream.enabled
 				? 'bg-green-900 text-green-300'
@@ -51,6 +73,6 @@
 
 	<div class="mt-2 flex items-center justify-between text-sm text-gray-400">
 		<span>{profileCount} profile{profileCount !== 1 ? 's' : ''}</span>
-		<span>Created {formatDate(stream.created_at)}</span>
+		<span>Checked {timeAgo(stream.last_checked_at)}</span>
 	</div>
 </a>

@@ -3,10 +3,11 @@
 
 	interface Props {
 		profile?: Profile | null;
+		mode?: 'profile' | 'template';
 		onsubmit: (data: ProfileCreate | ProfileUpdate) => void;
 	}
 
-	let { profile = null, onsubmit }: Props = $props();
+	let { profile = null, mode = 'profile', onsubmit }: Props = $props();
 
 	let name = $state(profile?.name ?? '');
 	let interval_seconds = $state(profile?.interval_seconds ?? 300);

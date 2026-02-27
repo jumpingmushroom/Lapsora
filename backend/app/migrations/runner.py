@@ -43,7 +43,15 @@ def run_migrations(engine: Engine) -> None:
             for statement in sql.split(";"):
                 statement = statement.strip()
                 if statement:
-                    conn.execute(text(statement))
+                    try:
+                        conn.execute(text(statement))
+                    except Exception as exc:
+                        # SQLite doesn't support IF NOT EXISTS on ALTER TABLE;
+                        # safely skip duplicate column errors
+                        if "duplicate column name" in str(exc):
+                            logger.info("Column already exists, skipping: %s", exc)
+                        else:
+                            raise
 
             conn.execute(
                 text("INSERT INTO _migrations (filename) VALUES (:f)"),

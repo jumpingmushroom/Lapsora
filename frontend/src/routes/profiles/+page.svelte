@@ -1,150 +1,227 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Stream, Profile } from '$lib/types';
+	import type { ProfileTemplate, ProfileTemplateCreate } from '$lib/types';
 
-	interface StreamWithProfiles {
-		stream: Stream;
-		profiles: Profile[];
-	}
-
-	let groups = $state<StreamWithProfiles[]>([]);
+	let templates = $state<ProfileTemplate[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let expandedProfile = $state<number | null>(null);
-	let captures = $state<Record<number, { id: number; url: string }[]>>({});
+	let activeCategory = $state<string | null>(null);
 
-	$effect(() => {
-		api.getStreams()
-			.then(async (streams) => {
-				const results: StreamWithProfiles[] = [];
-				await Promise.all(
-					streams.map(async (stream) => {
-						try {
-							const profiles = await api.getStreamProfiles(stream.id);
-							results.push({ stream, profiles });
-						} catch {
-							results.push({ stream, profiles: [] });
-						}
-					})
-				);
-				results.sort((a, b) => a.stream.name.localeCompare(b.stream.name));
-				groups = results;
-			})
-			.catch((err) => { error = err instanceof Error ? err.message : 'Failed to load'; })
-			.finally(() => { loading = false; });
+	// Create form
+	let showCreateForm = $state(false);
+	let newName = $state('');
+	let newCategory = $state('');
+	let newDescription = $state('');
+	let newInterval = $state(60);
+	let newWidth = $state<number | null>(1920);
+	let newHeight = $state<number | null>(1080);
+	let newQuality = $state(85);
+	let newHdr = $state(false);
+	let creating = $state(false);
+
+	let categories = $derived([...new Set(templates.map((t) => t.category))].sort());
+	let filtered = $derived(
+		activeCategory ? templates.filter((t) => t.category === activeCategory) : templates
+	);
+	let grouped = $derived(() => {
+		const map = new Map<string, ProfileTemplate[]>();
+		for (const t of filtered) {
+			const list = map.get(t.category) || [];
+			list.push(t);
+			map.set(t.category, list);
+		}
+		return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
 	});
 
-	async function toggleProfile(profile: Profile) {
+	async function load() {
+		loading = true;
+		error = null;
 		try {
-			if (profile.enabled) {
-				await api.disableProfile(profile.id);
-			} else {
-				await api.enableProfile(profile.id);
-			}
-			// Refresh the profile in-place
-			const updated = await api.getProfile(profile.id);
-			groups = groups.map((g) => ({
-				...g,
-				profiles: g.profiles.map((p) => (p.id === updated.id ? updated : p))
-			}));
+			templates = await api.getProfileTemplates();
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to toggle');
+			error = err instanceof Error ? err.message : 'Failed to load templates';
+		} finally {
+			loading = false;
 		}
 	}
 
-	async function toggleExpand(profileId: number) {
-		if (expandedProfile === profileId) {
-			expandedProfile = null;
-			return;
-		}
-		expandedProfile = profileId;
-		if (!captures[profileId]) {
-			try {
-				const caps = await api.getProfileCaptures(profileId, 8);
-				captures = { ...captures, [profileId]: caps.map((c) => ({ id: c.id, url: api.getCaptureImageUrl(c.id) })) };
-			} catch {
-				captures = { ...captures, [profileId]: [] };
-			}
-		}
-	}
+	$effect(() => { load(); });
 
 	function formatInterval(seconds: number): string {
-		if (seconds >= 3600) return `${(seconds / 3600).toFixed(1)}h`;
+		if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)}h`;
 		if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
 		return `${seconds}s`;
+	}
+
+	async function handleCreate(e: SubmitEvent) {
+		e.preventDefault();
+		creating = true;
+		try {
+			const data: ProfileTemplateCreate = {
+				name: newName,
+				category: newCategory,
+				description: newDescription,
+				interval_seconds: newInterval,
+				resolution_width: newWidth || null,
+				resolution_height: newHeight || null,
+				quality: newQuality,
+				hdr_enabled: newHdr
+			};
+			await api.createProfileTemplate(data);
+			showCreateForm = false;
+			newName = '';
+			newCategory = '';
+			newDescription = '';
+			newInterval = 60;
+			newWidth = 1920;
+			newHeight = 1080;
+			newQuality = 85;
+			newHdr = false;
+			await load();
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to create template');
+		} finally {
+			creating = false;
+		}
+	}
+
+	async function deleteTemplate(t: ProfileTemplate) {
+		if (!confirm(`Delete template "${t.name}"?`)) return;
+		try {
+			await api.deleteProfileTemplate(t.id);
+			await load();
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete');
+		}
 	}
 </script>
 
 <div class="space-y-6">
-	<h1 class="text-3xl font-bold text-white">Profiles</h1>
+	<div class="flex items-center justify-between">
+		<h1 class="text-3xl font-bold text-white">Profile Templates</h1>
+		<button
+			onclick={() => { showCreateForm = !showCreateForm; }}
+			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+		>
+			{showCreateForm ? 'Cancel' : 'Create Template'}
+		</button>
+	</div>
+
+	{#if showCreateForm}
+		<div class="rounded-xl border border-gray-700 bg-gray-800 p-5">
+			<h2 class="mb-4 text-lg font-semibold text-gray-100">New Template</h2>
+			<form onsubmit={handleCreate} class="space-y-4">
+				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+					<div>
+						<label for="tpl-name" class="mb-1 block text-sm font-medium text-gray-300">Name</label>
+						<input id="tpl-name" type="text" bind:value={newName} required class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="tpl-cat" class="mb-1 block text-sm font-medium text-gray-300">Category</label>
+						<input id="tpl-cat" type="text" bind:value={newCategory} required placeholder="e.g. Nature, Traffic" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+				</div>
+				<div>
+					<label for="tpl-desc" class="mb-1 block text-sm font-medium text-gray-300">Description</label>
+					<input id="tpl-desc" type="text" bind:value={newDescription} class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+				</div>
+				<div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+					<div>
+						<label for="tpl-int" class="mb-1 block text-sm font-medium text-gray-300">Interval (s)</label>
+						<input id="tpl-int" type="number" bind:value={newInterval} min="1" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="tpl-w" class="mb-1 block text-sm font-medium text-gray-300">Width</label>
+						<input id="tpl-w" type="number" bind:value={newWidth} placeholder="Auto" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="tpl-h" class="mb-1 block text-sm font-medium text-gray-300">Height</label>
+						<input id="tpl-h" type="number" bind:value={newHeight} placeholder="Auto" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none" />
+					</div>
+					<div>
+						<label for="tpl-q" class="mb-1 block text-sm font-medium text-gray-300">Quality: {newQuality}</label>
+						<input id="tpl-q" type="range" bind:value={newQuality} min="1" max="100" class="mt-2 w-full accent-blue-500" />
+					</div>
+				</div>
+				<label class="flex items-center gap-2">
+					<input type="checkbox" bind:checked={newHdr} class="rounded border-gray-600 bg-gray-900 text-blue-500" />
+					<span class="text-sm text-gray-300">HDR enabled</span>
+				</label>
+				<button type="submit" disabled={creating} class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
+					{creating ? 'Creating...' : 'Create Template'}
+				</button>
+			</form>
+		</div>
+	{/if}
 
 	{#if loading}
-		<p class="text-gray-400">Loading profiles...</p>
+		<p class="text-gray-400">Loading templates...</p>
 	{:else if error}
 		<div class="rounded-xl border border-red-800 bg-red-950/50 p-4">
 			<p class="text-sm text-red-400">{error}</p>
 		</div>
-	{:else if groups.length === 0}
-		<p class="text-gray-500">No streams configured.</p>
 	{:else}
-		{#each groups as { stream, profiles }}
-			<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-				<div class="mb-3 flex items-center gap-2">
-					<a href="/streams/{stream.id}" class="text-lg font-semibold text-gray-100 hover:text-blue-400">{stream.name}</a>
-					<span class="text-sm text-gray-500">({profiles.length} profile{profiles.length !== 1 ? 's' : ''})</span>
-				</div>
+		<!-- Category filter tabs -->
+		<div class="flex flex-wrap gap-2">
+			<button
+				onclick={() => { activeCategory = null; }}
+				class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors {activeCategory === null ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}"
+			>
+				All
+			</button>
+			{#each categories as cat}
+				<button
+					onclick={() => { activeCategory = cat; }}
+					class="rounded-lg px-3 py-1.5 text-sm font-medium transition-colors {activeCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}"
+				>
+					{cat}
+				</button>
+			{/each}
+		</div>
 
-				{#if profiles.length === 0}
-					<p class="text-sm text-gray-500">No profiles.</p>
-				{:else}
-					<div class="space-y-2">
-						{#each profiles as profile}
-							<div>
-								<!-- svelte-ignore a11y_no_static_element_interactions -->
-								<div
-									onclick={() => toggleExpand(profile.id)}
-									class="flex w-full items-center justify-between rounded-lg border border-gray-800 bg-gray-800/50 p-3 text-left transition-colors hover:border-gray-700"
-								>
-									<div class="flex flex-wrap items-center gap-2">
-										<span class="text-sm font-medium text-gray-200">{profile.name}</span>
-										<span class="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">{formatInterval(profile.interval_seconds)}</span>
-										{#if profile.resolution_width && profile.resolution_height}
-											<span class="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">{profile.resolution_width}x{profile.resolution_height}</span>
-										{/if}
-										<span class="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">Q{profile.quality}</span>
-										{#if profile.hdr_enabled}
-											<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
-										{/if}
-									</div>
-									<button
-										onclick={(e) => { e.stopPropagation(); toggleProfile(profile); }}
-										class="rounded px-3 py-1 text-xs font-medium transition-colors {profile.enabled ? 'bg-green-900 text-green-300 hover:bg-green-800' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}"
-									>
-										{profile.enabled ? 'Enabled' : 'Disabled'}
-									</button>
+		<!-- Grouped template cards -->
+		{#each grouped() as [category, items]}
+			<div>
+				<h2 class="mb-3 text-lg font-semibold text-gray-300">{category}</h2>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					{#each items as t}
+						<div class="rounded-xl border border-gray-800 bg-gray-900 p-4">
+							<div class="mb-2 flex items-start justify-between">
+								<div>
+									<h3 class="text-sm font-semibold text-gray-100">{t.name}</h3>
+									{#if t.description}
+										<p class="mt-0.5 text-xs text-gray-500">{t.description}</p>
+									{/if}
 								</div>
-
-								{#if expandedProfile === profile.id}
-									<div class="mt-1 rounded-lg border border-gray-800 bg-gray-800/30 p-3">
-										{#if captures[profile.id] && captures[profile.id].length > 0}
-											<p class="mb-2 text-xs text-gray-500">Recent captures</p>
-											<div class="grid grid-cols-4 gap-2">
-												{#each captures[profile.id] as cap}
-													<div class="aspect-video overflow-hidden rounded bg-gray-900">
-														<img src={cap.url} alt="Capture" class="h-full w-full object-cover" loading="lazy" />
-													</div>
-												{/each}
-											</div>
-										{:else}
-											<p class="text-sm text-gray-500">No captures yet.</p>
-										{/if}
-									</div>
+								{#if t.is_system}
+									<span class="rounded bg-gray-700 px-1.5 py-0.5 text-xs text-gray-400">System</span>
+								{:else}
+									<button
+										onclick={() => deleteTemplate(t)}
+										class="rounded px-2 py-0.5 text-xs text-red-400 transition-colors hover:bg-red-950 hover:text-red-300"
+									>
+										Delete
+									</button>
 								{/if}
 							</div>
-						{/each}
-					</div>
-				{/if}
+							<div class="flex flex-wrap gap-1.5">
+								<span class="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">{formatInterval(t.interval_seconds)}</span>
+								{#if t.resolution_width && t.resolution_height}
+									<span class="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">{t.resolution_width}x{t.resolution_height}</span>
+								{/if}
+								<span class="rounded bg-gray-800 px-1.5 py-0.5 text-xs text-gray-400">Q{t.quality}</span>
+								{#if t.hdr_enabled}
+									<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
+								{/if}
+							</div>
+						</div>
+					{/each}
+				</div>
 			</div>
 		{/each}
+
+		{#if templates.length === 0}
+			<p class="text-gray-500">No templates yet.</p>
+		{/if}
 	{/if}
 </div>

@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, Capture, Timelapse, TimelapseGenerate, TestResult, StorageStats } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig } from './types';
 
 const BASE = '/api';
 
@@ -38,6 +38,17 @@ export const api = {
 	enableProfile: (id: number) => request<Profile>(`/profiles/${id}/enable`, { method: 'POST' }),
 	disableProfile: (id: number) => request<Profile>(`/profiles/${id}/disable`, { method: 'POST' }),
 
+	// Profile Templates
+	getProfileTemplates: (category?: string) => {
+		const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+		return request<ProfileTemplate[]>(`/profile-templates/${qs}`);
+	},
+	getProfileTemplate: (id: number) => request<ProfileTemplate>(`/profile-templates/${id}`),
+	createProfileTemplate: (data: ProfileTemplateCreate) => request<ProfileTemplate>('/profile-templates/', { method: 'POST', body: JSON.stringify(data) }),
+	updateProfileTemplate: (id: number, data: Partial<ProfileTemplateCreate>) => request<ProfileTemplate>(`/profile-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+	deleteProfileTemplate: (id: number) => request<void>(`/profile-templates/${id}`, { method: 'DELETE' }),
+	applyProfileTemplate: (id: number, streamId: number, name?: string) => request<Profile>(`/profile-templates/${id}/apply`, { method: 'POST', body: JSON.stringify({ stream_id: streamId, name }) }),
+
 	// Captures
 	getProfileCaptures: (profileId: number, limit = 50, offset = 0) => request<Capture[]>(`/profiles/${profileId}/captures?limit=${limit}&offset=${offset}`),
 	getCaptureImageUrl: (id: number) => `${BASE}/captures/${id}/image`,
@@ -57,4 +68,32 @@ export const api = {
 	getTimelapseVideoUrl: (id: number) => `${BASE}/timelapses/${id}/video`,
 	generateTimelapse: (profileId: number, data: TimelapseGenerate) => request<{ status: string; message: string }>(`/profiles/${profileId}/timelapses/generate`, { method: 'POST', body: JSON.stringify(data) }),
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
+
+	// Notifications
+	getNotifications: (params?: { read?: boolean; limit?: number; offset?: number }) => {
+		const sp = new URLSearchParams();
+		if (params?.read !== undefined) sp.set('read', String(params.read));
+		if (params?.limit) sp.set('limit', String(params.limit));
+		if (params?.offset) sp.set('offset', String(params.offset));
+		const qs = sp.toString();
+		return request<Notification[]>(`/notifications/${qs ? '?' + qs : ''}`);
+	},
+	markNotificationRead: (id: number) => request<Notification>(`/notifications/${id}/read`, { method: 'PUT' }),
+	markAllNotificationsRead: () => request<{ status: string }>('/notifications/read-all', { method: 'PUT' }),
+	deleteNotification: (id: number) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
+
+	// Settings — Notifications
+	getNotificationSettings: () => request<{ urls: NotificationURL[]; events: NotificationEventsConfig }>('/settings/notifications'),
+	addNotificationURL: (data: { label: string; url: string }) => request<NotificationURL>('/settings/notifications/urls', { method: 'POST', body: JSON.stringify(data) }),
+	updateNotificationURL: (id: number, data: { label?: string; enabled?: boolean }) => request<NotificationURL>(`/settings/notifications/urls/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+	deleteNotificationURL: (id: number) => request<void>(`/settings/notifications/urls/${id}`, { method: 'DELETE' }),
+	testNotificationURL: (id: number) => request<{ success: boolean }>(`/settings/notifications/urls/${id}/test`, { method: 'POST' }),
+	updateNotificationEvents: (data: NotificationEventsConfig) => request<NotificationEventsConfig>('/settings/notifications/events', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Settings — Health
+	getHealthConfig: () => request<HealthConfig>('/settings/health'),
+	updateHealthConfig: (data: HealthConfig) => request<HealthConfig>('/settings/health', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// SSE helper
+	getNotificationStreamUrl: () => `${BASE}/notifications/stream`,
 };

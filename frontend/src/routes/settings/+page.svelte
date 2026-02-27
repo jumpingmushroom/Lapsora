@@ -1,0 +1,237 @@
+<script lang="ts">
+	import { api } from '$lib/api';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig } from '$lib/types';
+
+	let urls = $state<NotificationURL[]>([]);
+	let events = $state<NotificationEventsConfig>({
+		capture_failure: true,
+		stream_unhealthy: true,
+		stream_recovered: true,
+		timelapse_complete: true,
+		timelapse_failure: true,
+		retention_summary: false,
+		low_disk_space: true
+	});
+	let healthConfig = $state<HealthConfig>({
+		check_interval_seconds: 300,
+		failure_threshold: 3,
+		low_disk_threshold_percent: 10
+	});
+
+	let loading = $state(true);
+	let newLabel = $state('');
+	let newUrl = $state('');
+	let testingId = $state<number | null>(null);
+	let savingEvents = $state(false);
+	let savingHealth = $state(false);
+
+	$effect(() => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig()])
+			.then(([notifSettings, hc]) => {
+				urls = notifSettings.urls;
+				events = notifSettings.events;
+				healthConfig = hc;
+			})
+			.finally(() => {
+				loading = false;
+			});
+	});
+
+	async function addUrl() {
+		if (!newLabel.trim() || !newUrl.trim()) return;
+		const nu = await api.addNotificationURL({ label: newLabel.trim(), url: newUrl.trim() });
+		urls = [...urls, nu];
+		newLabel = '';
+		newUrl = '';
+	}
+
+	async function removeUrl(id: number) {
+		await api.deleteNotificationURL(id);
+		urls = urls.filter((u) => u.id !== id);
+	}
+
+	async function toggleUrl(nu: NotificationURL) {
+		const updated = await api.updateNotificationURL(nu.id, { enabled: !nu.enabled });
+		urls = urls.map((u) => (u.id === updated.id ? updated : u));
+	}
+
+	async function testUrl(id: number) {
+		testingId = id;
+		try {
+			const result = await api.testNotificationURL(id);
+			alert(result.success ? 'Test notification sent!' : 'Test notification failed.');
+		} catch {
+			alert('Failed to send test notification.');
+		}
+		testingId = null;
+	}
+
+	async function saveEvents() {
+		savingEvents = true;
+		await api.updateNotificationEvents(events);
+		savingEvents = false;
+	}
+
+	async function saveHealth() {
+		savingHealth = true;
+		await api.updateHealthConfig(healthConfig);
+		savingHealth = false;
+	}
+
+	const eventLabels: Record<string, string> = {
+		capture_failure: 'Capture failure',
+		stream_unhealthy: 'Stream unhealthy',
+		stream_recovered: 'Stream recovered',
+		timelapse_complete: 'Timelapse complete',
+		timelapse_failure: 'Timelapse failure',
+		retention_summary: 'Retention summary',
+		low_disk_space: 'Low disk space'
+	};
+</script>
+
+<div class="space-y-8">
+	<h1 class="text-3xl font-bold text-white">Settings</h1>
+
+	{#if loading}
+		<p class="text-gray-400">Loading settings...</p>
+	{:else}
+		<!-- Notification URLs -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">Notification URLs</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Add Apprise-compatible URLs to receive alerts via Discord, Telegram, email, ntfy, and 100+ services.
+			</p>
+
+			{#if urls.length > 0}
+				<div class="mb-4 space-y-2">
+					{#each urls as nu}
+						<div class="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/50 p-3">
+							<div class="flex items-center gap-3">
+								<button
+									onclick={() => toggleUrl(nu)}
+									class="rounded px-2 py-1 text-xs font-medium transition-colors {nu.enabled ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}"
+								>
+									{nu.enabled ? 'On' : 'Off'}
+								</button>
+								<span class="text-sm text-gray-200">{nu.label}</span>
+							</div>
+							<div class="flex items-center gap-2">
+								<button
+									onclick={() => testUrl(nu.id)}
+									disabled={testingId === nu.id}
+									class="rounded bg-blue-900 px-3 py-1 text-xs text-blue-300 transition-colors hover:bg-blue-800 disabled:opacity-50"
+								>
+									{testingId === nu.id ? 'Testing...' : 'Test'}
+								</button>
+								<button
+									onclick={() => removeUrl(nu.id)}
+									class="rounded bg-red-900 px-3 py-1 text-xs text-red-300 transition-colors hover:bg-red-800"
+								>
+									Delete
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="flex gap-2">
+				<input
+					bind:value={newLabel}
+					placeholder="Label (e.g. Discord)"
+					class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+				/>
+				<input
+					bind:value={newUrl}
+					placeholder="Apprise URL (e.g. discord://...)"
+					class="flex-[2] rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+				/>
+				<button
+					onclick={addUrl}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+				>
+					Add
+				</button>
+			</div>
+		</section>
+
+		<!-- Event Toggles -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">Notification Events</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Choose which events trigger external notifications (Apprise). All events always appear in the in-app notification panel.
+			</p>
+
+			<div class="mb-4 grid grid-cols-2 gap-3">
+				{#each Object.entries(eventLabels) as [key, label]}
+					<label class="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-800/50 p-3">
+						<input
+							type="checkbox"
+							bind:checked={events[key as keyof NotificationEventsConfig]}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
+						/>
+						<span class="text-sm text-gray-200">{label}</span>
+					</label>
+				{/each}
+			</div>
+
+			<button
+				onclick={saveEvents}
+				disabled={savingEvents}
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+			>
+				{savingEvents ? 'Saving...' : 'Save Event Settings'}
+			</button>
+		</section>
+
+		<!-- Health Monitoring -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">Health Monitoring</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Configure how often streams are checked and when they're marked as unhealthy.
+			</p>
+
+			<div class="mb-4 grid grid-cols-3 gap-4">
+				<div>
+					<label for="check-interval" class="mb-1 block text-sm text-gray-400">Check interval (seconds)</label>
+					<input
+						id="check-interval"
+						type="number"
+						min="30"
+						bind:value={healthConfig.check_interval_seconds}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+				<div>
+					<label for="failure-threshold" class="mb-1 block text-sm text-gray-400">Failure threshold</label>
+					<input
+						id="failure-threshold"
+						type="number"
+						min="1"
+						bind:value={healthConfig.failure_threshold}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+				<div>
+					<label for="disk-threshold" class="mb-1 block text-sm text-gray-400">Low disk threshold (%)</label>
+					<input
+						id="disk-threshold"
+						type="number"
+						min="1"
+						max="50"
+						bind:value={healthConfig.low_disk_threshold_percent}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+			</div>
+
+			<button
+				onclick={saveHealth}
+				disabled={savingHealth}
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+			>
+				{savingHealth ? 'Saving...' : 'Save Health Settings'}
+			</button>
+		</section>
+	{/if}
+</div>

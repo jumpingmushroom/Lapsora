@@ -206,8 +206,32 @@ async def generate_timelapse(
             file_size,
             duration_seconds or 0,
         )
+
+        try:
+            from app.services.events import emit
+            await emit(
+                "timelapse_complete",
+                f"Timelapse generated: {period_type}",
+                f"Timelapse for profile {profile_id} ({period_type}): {frame_count} frames, {duration_seconds or 0:.1f}s duration.",
+            )
+        except Exception:
+            pass
+
         return timelapse.id
 
+    except Exception as exc:
+        logger.exception("Timelapse generation failed for profile %d", profile_id)
+        try:
+            from app.services.events import emit
+            await emit(
+                "timelapse_failure",
+                f"Timelapse failed: profile {profile_id}",
+                f"Timelapse generation failed for profile {profile_id} ({period_type}): {exc}",
+                level="error",
+            )
+        except Exception:
+            pass
+        raise
     finally:
         db.close()
         if tmp_filelist and os.path.exists(tmp_filelist):

@@ -2,6 +2,9 @@ export interface Stream {
 	id: number;
 	name: string;
 	enabled: boolean;
+	health_status: string;
+	consecutive_failures: number;
+	last_checked_at: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -27,8 +30,36 @@ export interface Profile {
 	quality: number;
 	hdr_enabled: boolean;
 	enabled: boolean;
+	auto_disabled: boolean;
+	source_template_id: number | null;
 	created_at: string;
 	updated_at: string;
+}
+
+export interface ProfileTemplate {
+	id: number;
+	name: string;
+	category: string;
+	description: string;
+	interval_seconds: number;
+	resolution_width: number | null;
+	resolution_height: number | null;
+	quality: number;
+	hdr_enabled: boolean;
+	is_system: boolean;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface ProfileTemplateCreate {
+	name: string;
+	category: string;
+	description?: string;
+	interval_seconds?: number;
+	resolution_width?: number | null;
+	resolution_height?: number | null;
+	quality?: number;
+	hdr_enabled?: boolean;
 }
 
 export interface ProfileCreate {
@@ -96,4 +127,37 @@ export interface StorageStats {
 	total_size_bytes: number;
 	disk_free_bytes: number;
 	disk_total_bytes: number;
+}
+
+export interface Notification {
+	id: number;
+	event_type: string;
+	title: string;
+	body: string;
+	level: string;
+	read: boolean;
+	created_at: string;
+}
+
+export interface NotificationURL {
+	id: number;
+	label: string;
+	enabled: boolean;
+	created_at: string;
+}
+
+export interface HealthConfig {
+	check_interval_seconds: number;
+	failure_threshold: number;
+	low_disk_threshold_percent: number;
+}
+
+export interface NotificationEventsConfig {
+	capture_failure: boolean;
+	stream_unhealthy: boolean;
+	stream_recovered: boolean;
+	timelapse_complete: boolean;
+	timelapse_failure: boolean;
+	retention_summary: boolean;
+	low_disk_space: boolean;
 }
