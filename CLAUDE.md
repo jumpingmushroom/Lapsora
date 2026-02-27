@@ -28,8 +28,10 @@ After completing any feature, fix, or change:
    - Verify cosmetic changes, bug fixes, and new features visually
    - Test interactive flows (clicks, form submissions, navigation)
 
-4. **Push to GitHub once verified:**
+4. **Commit and push once verified:**
    ```bash
+   git add -A
+   git commit -m "descriptive message"
    git push
    ```
 
