@@ -57,7 +57,7 @@
 	{#if open}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div onclick={() => (open = false)} class="fixed inset-0 z-40"></div>
-		<div class="absolute right-0 top-full z-50 mt-2 w-80 rounded-xl border border-gray-700 bg-gray-900 shadow-xl">
+		<div class="absolute left-0 top-full z-50 mt-2 w-80 rounded-xl border border-gray-700 bg-gray-900 shadow-xl">
 			<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
 				<span class="text-sm font-semibold text-white">Notifications</span>
 				{#if unreadCount > 0}
