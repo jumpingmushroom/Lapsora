@@ -1,5 +1,6 @@
 """Stream management endpoints."""
 
+from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
@@ -67,7 +68,10 @@ async def test_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-    url = decrypt(stream.url)
+    try:
+        url = decrypt(stream.url)
+    except (InvalidToken, Exception):
+        raise HTTPException(400, "Stream URL could not be decrypted. Please re-enter the RTSP URL.")
     return await rtsp.test_connection(url)
 
 
@@ -76,7 +80,10 @@ async def preview_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-    url = decrypt(stream.url)
+    try:
+        url = decrypt(stream.url)
+    except (InvalidToken, Exception):
+        raise HTTPException(400, "Stream URL could not be decrypted. Please re-enter the RTSP URL.")
     try:
         jpeg_bytes = await rtsp.grab_frame(url)
     except RuntimeError as exc:
