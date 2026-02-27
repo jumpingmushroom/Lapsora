@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint } from './types';
 
 const BASE = '/api';
 
@@ -100,6 +100,7 @@ export const api = {
 	},
 	markNotificationRead: (id: number) => request<Notification>(`/notifications/${id}/read`, { method: 'PUT' }),
 	markAllNotificationsRead: () => request<{ status: string }>('/notifications/read-all', { method: 'PUT' }),
+	clearReadNotifications: () => request<void>('/notifications/read', { method: 'DELETE' }),
 	deleteNotification: (id: number) => request<void>(`/notifications/${id}`, { method: 'DELETE' }),
 
 	// Settings — Notifications
@@ -121,6 +122,20 @@ export const api = {
 	// Settings — Capture Gap
 	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),
 	updateCaptureGapConfig: (data: CaptureGapConfig) => request<CaptureGapConfig>('/settings/capture-gap', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Statistics
+	getStatsSummary: () => request<StatsSummary>('/statistics/summary'),
+	getStorageTrend: (days = 90) => request<StorageTrendPoint[]>(`/statistics/storage-trend?days=${days}`),
+	getCaptureActivity: (days = 30, profileId?: number) => {
+		const sp = new URLSearchParams({ days: String(days) });
+		if (profileId !== undefined) sp.set('profile_id', String(profileId));
+		return request<CaptureActivityPoint[]>(`/statistics/capture-activity?${sp}`);
+	},
+	getProfileStorage: (days = 30, profileId?: number) => {
+		const sp = new URLSearchParams({ days: String(days) });
+		if (profileId !== undefined) sp.set('profile_id', String(profileId));
+		return request<ProfileStoragePoint[]>(`/statistics/profile-storage?${sp}`);
+	},
 
 	// SSE helper
 	getNotificationStreamUrl: () => `${BASE}/notifications/stream`,

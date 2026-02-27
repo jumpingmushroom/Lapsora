@@ -49,6 +49,12 @@ def mark_all_read(db: Session = Depends(get_db)):
     return {"status": "ok"}
 
 
+@router.delete("/read", status_code=204)
+def delete_read_notifications(db: Session = Depends(get_db)):
+    db.query(Notification).filter(Notification.read.is_(True)).delete()
+    db.commit()
+
+
 @router.delete("/{notification_id}", status_code=204)
 def delete_notification(notification_id: int, db: Session = Depends(get_db)):
     n = db.query(Notification).filter(Notification.id == notification_id).first()

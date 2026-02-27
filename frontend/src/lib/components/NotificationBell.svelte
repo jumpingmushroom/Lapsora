@@ -11,6 +11,7 @@
 	let open = $state(false);
 
 	let unreadCount = $derived(notifications.filter((n) => !n.read).length);
+	let readCount = $derived(notifications.filter((n) => n.read).length);
 
 	async function markRead(id: number) {
 		await api.markNotificationRead(id);
@@ -20,6 +21,15 @@
 	async function markAllRead() {
 		await api.markAllNotificationsRead();
 		onRefresh();
+	}
+
+	async function handleClearRead() {
+		try {
+			await api.clearReadNotifications();
+			onRefresh();
+		} catch {
+			// silently ignore
+		}
 	}
 
 	async function handleDelete(id: number) {
@@ -69,11 +79,18 @@
 		<div class="absolute left-0 top-full z-50 mt-2 w-80 rounded-xl border border-gray-700 bg-gray-900 shadow-xl">
 			<div class="flex items-center justify-between border-b border-gray-800 px-4 py-3">
 				<span class="text-sm font-semibold text-white">Notifications</span>
-				{#if unreadCount > 0}
-					<button onclick={markAllRead} class="text-xs text-blue-400 hover:text-blue-300">
-						Mark all read
-					</button>
-				{/if}
+				<div class="flex gap-3">
+					{#if unreadCount > 0}
+						<button onclick={markAllRead} class="text-xs text-blue-400 hover:text-blue-300">
+							Mark all read
+						</button>
+					{/if}
+					{#if readCount > 0}
+						<button onclick={handleClearRead} class="text-xs text-gray-400 hover:text-red-400">
+							Clear read
+						</button>
+					{/if}
+				</div>
 			</div>
 			<div class="max-h-80 overflow-y-auto">
 				{#if notifications.length === 0}
