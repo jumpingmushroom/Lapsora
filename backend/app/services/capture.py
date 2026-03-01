@@ -139,7 +139,6 @@ async def capture_frame(profile_id: int) -> None:
             logger.error("Stream not found for profile %d", profile_id)
             return
 
-        url = decrypt(stream.url)
         now = datetime.now()
 
         if not _is_within_active_window(profile, db, now):
@@ -155,7 +154,39 @@ async def capture_frame(profile_id: int) -> None:
         abs_path = os.path.join(settings.DATA_DIR, rel_path)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
-        if profile.hdr_enabled:
+        if stream.source_type == "go2rtc":
+            from app.services.go2rtc import get_go2rtc_url, grab_frame as go2rtc_grab
+
+            base_url = get_go2rtc_url(db)
+            if not base_url:
+                logger.error("go2rtc URL not configured for profile %d", profile_id)
+                return
+
+            jpeg_bytes = await go2rtc_grab(base_url, stream.go2rtc_name)
+            with open(abs_path, "wb") as f:
+                f.write(jpeg_bytes)
+
+            if _is_frame_corrupt(abs_path):
+                logger.warning("go2rtc frame corrupt for profile %d, discarding", profile_id)
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+                return
+
+            # Apply resize/quality via PIL
+            img = Image.open(abs_path)
+            if profile.resolution_width and profile.resolution_height:
+                img = img.resize(
+                    (profile.resolution_width, profile.resolution_height),
+                    Image.LANCZOS,
+                )
+            img.save(abs_path, "JPEG", quality=profile.quality)
+            width, height = img.size
+            img.close()
+            file_size = os.path.getsize(abs_path)
+            is_hdr = False
+
+        elif profile.hdr_enabled:
+            url = decrypt(stream.url)
             from app.services.hdr import capture_hdr_frame
 
             valid_frame = False
@@ -192,6 +223,7 @@ async def capture_frame(profile_id: int) -> None:
             is_hdr = True
         else:
             # Standard single-frame capture via ffmpeg with corruption retry
+            url = decrypt(stream.url)
             valid_frame = False
             for attempt in range(1, MAX_CAPTURE_ATTEMPTS + 1):
                 proc = await asyncio.create_subprocess_exec(
@@ -273,6 +305,18 @@ async def capture_frame(profile_id: int) -> None:
             img.close()
             file_size = os.path.getsize(abs_path)
 
+        # Fetch weather data if enabled
+        weather_temp = None
+        weather_code = None
+        if profile.weather_enabled:
+            from app.services.weather import get_current_weather
+            lat_row = db.query(Setting).filter(Setting.key == "location_latitude").first()
+            lon_row = db.query(Setting).filter(Setting.key == "location_longitude").first()
+            if lat_row and lon_row:
+                result = get_current_weather(float(lat_row.value), float(lon_row.value))
+                if result:
+                    weather_temp, weather_code = result
+
         # Create DB record
         capture = Capture(
             profile_id=profile_id,
@@ -281,6 +325,8 @@ async def capture_frame(profile_id: int) -> None:
             width=width,
             height=height,
             is_hdr=is_hdr,
+            weather_temp=weather_temp,
+            weather_code=weather_code,
             captured_at=now,
         )
         db.add(capture)

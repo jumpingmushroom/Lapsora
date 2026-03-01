@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings as app_settings
 from app.database import SessionLocal, engine
 from app.migrations.runner import run_migrations
-from app.routers import captures, cleanup_schedules, notifications, profile_templates, profiles, settings as settings_router, streams, system, timelapse_schedules, timelapses
+from app.routers import captures, cleanup_schedules, notifications, profile_templates, profiles, settings as settings_router, statistics, streams, system, timelapse_schedules, timelapses
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ app.include_router(timelapse_schedules.router)
 app.include_router(cleanup_schedules.router)
 app.include_router(notifications.router)
 app.include_router(settings_router.router)
+app.include_router(statistics.router)
 
 # Static file mounts
 data_dir = Path(app_settings.DATA_DIR)

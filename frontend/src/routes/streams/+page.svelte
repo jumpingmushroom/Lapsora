@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Stream, TestResult } from '$lib/types';
+	import type { Stream, TestResult, Go2rtcStreamInfo } from '$lib/types';
 	import StreamCard from '$lib/components/StreamCard.svelte';
 
 	let streams = $state<Stream[]>([]);
@@ -14,6 +14,11 @@
 	let newUrl = $state('');
 	let addLoading = $state(false);
 	let addError = $state('');
+	let addSourceType = $state<'rtsp' | 'go2rtc'>('rtsp');
+	let go2rtcStreams = $state<Go2rtcStreamInfo[]>([]);
+	let go2rtcLoading = $state(false);
+	let go2rtcError = $state('');
+	let selectedGo2rtcName = $state('');
 
 	// Delete confirmation
 	let deleteTarget = $state<Stream | null>(null);
@@ -54,16 +59,34 @@
 		addLoading = true;
 		addError = '';
 		try {
-			await api.createStream({ name: newName, url: newUrl });
+			if (addSourceType === 'go2rtc') {
+				await api.createStream({ name: newName, source_type: 'go2rtc', go2rtc_name: selectedGo2rtcName });
+			} else {
+				await api.createStream({ name: newName, url: newUrl });
+			}
 			showAddModal = false;
 			newName = '';
 			newUrl = '';
+			selectedGo2rtcName = '';
 			loading = true;
 			await loadStreams();
 		} catch (err) {
 			addError = err instanceof Error ? err.message : 'Failed to create stream';
 		} finally {
 			addLoading = false;
+		}
+	}
+
+	async function loadGo2rtcStreams() {
+		go2rtcLoading = true;
+		go2rtcError = '';
+		try {
+			go2rtcStreams = await api.discoverGo2rtcStreams();
+		} catch (err) {
+			go2rtcError = err instanceof Error ? err.message : 'Failed to discover streams';
+			go2rtcStreams = [];
+		} finally {
+			go2rtcLoading = false;
 		}
 	}
 
@@ -154,6 +177,21 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mx-4 w-full max-w-md rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
 			<h2 class="mb-4 text-lg font-semibold text-gray-100">Add Stream</h2>
+
+			<!-- Source type tabs -->
+			<div class="mb-4 flex rounded-lg border border-gray-700 bg-gray-800 p-0.5">
+				<button
+					type="button"
+					onclick={() => { addSourceType = 'rtsp'; }}
+					class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors {addSourceType === 'rtsp' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+				>RTSP</button>
+				<button
+					type="button"
+					onclick={() => { addSourceType = 'go2rtc'; loadGo2rtcStreams(); }}
+					class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors {addSourceType === 'go2rtc' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+				>go2rtc</button>
+			</div>
+
 			{#if addError}
 				<p class="mb-3 rounded bg-red-950 px-3 py-2 text-sm text-red-400">{addError}</p>
 			{/if}
@@ -169,17 +207,47 @@
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 					/>
 				</div>
-				<div>
-					<label for="add-url" class="mb-1 block text-sm font-medium text-gray-300">RTSP URL</label>
-					<input
-						id="add-url"
-						type="text"
-						bind:value={newUrl}
-						required
-						placeholder="rtsp://..."
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
+
+				{#if addSourceType === 'rtsp'}
+					<div>
+						<label for="add-url" class="mb-1 block text-sm font-medium text-gray-300">RTSP URL</label>
+						<input
+							id="add-url"
+							type="text"
+							bind:value={newUrl}
+							required
+							placeholder="rtsp://..."
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+					</div>
+				{:else}
+					<div>
+						<label for="add-go2rtc" class="mb-1 block text-sm font-medium text-gray-300">go2rtc Stream</label>
+						{#if go2rtcLoading}
+							<p class="text-sm text-gray-400">Loading streams...</p>
+						{:else if go2rtcError}
+							<p class="text-sm text-red-400">{go2rtcError}</p>
+							{#if go2rtcError.includes('not configured') || go2rtcError.includes('400')}
+								<a href="/settings" class="mt-1 text-sm text-blue-400 hover:text-blue-300">Configure go2rtc in Settings</a>
+							{/if}
+						{:else if go2rtcStreams.length === 0}
+							<p class="text-sm text-gray-500">No streams found on go2rtc server.</p>
+						{:else}
+							<select
+								id="add-go2rtc"
+								bind:value={selectedGo2rtcName}
+								required
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="" disabled>Select a stream</option>
+								{#each go2rtcStreams as s}
+									<option value={s.name}>{s.name}</option>
+								{/each}
+							</select>
+						{/if}
+					</div>
+				{/if}
+
 				<div class="flex justify-end gap-3">
 					<button
 						type="button"
@@ -190,7 +258,7 @@
 					</button>
 					<button
 						type="submit"
-						disabled={addLoading}
+						disabled={addLoading || (addSourceType === 'go2rtc' && !selectedGo2rtcName)}
 						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
 					>
 						{addLoading ? 'Adding...' : 'Add Stream'}

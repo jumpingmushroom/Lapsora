@@ -84,6 +84,8 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
     from app.services.timelapse import generate_timelapse, get_period_range
 
     async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None, fps: int, fmt: str):
+        from datetime import datetime, timedelta
+
         from app.database import SessionLocal
         db = SessionLocal()
         try:
@@ -91,8 +93,13 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
             sched = db.get(TimelapseSchedule, schedule_id)
             if not sched or not sched.enabled:
                 return
-            period = preset or "daily"
-            start, end = get_period_range(period)
+            if sched.lookback_hours is not None:
+                end = datetime.now()
+                start = end - timedelta(hours=sched.lookback_hours)
+                period = sched.preset or "custom"
+            else:
+                period = preset or "daily"
+                start, end = get_period_range(period)
             await generate_timelapse(
                 profile_id=profile_id,
                 period_type=period,

@@ -1,6 +1,8 @@
 export interface Stream {
 	id: number;
 	name: string;
+	source_type: string;
+	go2rtc_name: string | null;
 	enabled: boolean;
 	health_status: string;
 	consecutive_failures: number;
@@ -11,7 +13,18 @@ export interface Stream {
 
 export interface StreamCreate {
 	name: string;
+	url?: string;
+	source_type?: 'rtsp' | 'go2rtc';
+	go2rtc_name?: string;
+}
+
+export interface Go2rtcConfig {
 	url: string;
+}
+
+export interface Go2rtcStreamInfo {
+	name: string;
+	producers: unknown[];
 }
 
 export interface StreamUpdate {
@@ -29,6 +42,7 @@ export interface Profile {
 	resolution_height: number | null;
 	quality: number;
 	hdr_enabled: boolean;
+	weather_enabled: boolean;
 	enabled: boolean;
 	auto_disabled: boolean;
 	capture_mode: string;
@@ -73,6 +87,7 @@ export interface ProfileCreate {
 	resolution_height?: number | null;
 	quality?: number;
 	hdr_enabled?: boolean;
+	weather_enabled?: boolean;
 	capture_mode?: string;
 	active_start_time?: string | null;
 	active_end_time?: string | null;
@@ -86,6 +101,7 @@ export interface ProfileUpdate {
 	resolution_height?: number | null;
 	quality?: number;
 	hdr_enabled?: boolean;
+	weather_enabled?: boolean;
 	enabled?: boolean;
 	capture_mode?: string;
 	active_start_time?: string | null;
@@ -105,6 +121,8 @@ export interface Capture {
 	width: number | null;
 	height: number | null;
 	is_hdr: boolean;
+	weather_temp: number | null;
+	weather_code: number | null;
 	captured_at: string;
 }
 
@@ -130,6 +148,7 @@ export interface TimelapseSchedule {
 	cron_expression: string;
 	fps: number;
 	format: string;
+	lookback_hours: number | null;
 	enabled: boolean;
 	created_at: string;
 	updated_at: string;
@@ -143,6 +162,7 @@ export interface TimelapseScheduleCreate {
 	cron_expression?: string | null;
 	fps?: number;
 	format?: string;
+	lookback_hours?: number;
 	enabled?: boolean;
 }
 
@@ -152,6 +172,7 @@ export interface TimelapseScheduleUpdate {
 	cron_expression?: string | null;
 	fps?: number;
 	format?: string;
+	lookback_hours?: number;
 	enabled?: boolean;
 }
 
@@ -191,6 +212,10 @@ export interface TimelapseGenerate {
 	fps?: number;
 	format?: string;
 	timestamp_overlay?: boolean;
+	weather_overlay?: boolean;
+	weather_position?: string;
+	weather_font_size?: number;
+	weather_unit?: string;
 }
 
 export interface TestResult {
@@ -245,4 +270,30 @@ export interface NotificationEventsConfig {
 
 export interface CaptureGapConfig {
 	enabled: boolean;
+}
+
+export interface StatsSummary {
+	total_captures: number;
+	avg_captures_per_day: number;
+	avg_bytes_per_day: number;
+	days_until_full: number | null;
+}
+
+export interface StorageTrendPoint {
+	date: string;
+	bytes_added: number;
+	cumulative_bytes: number;
+}
+
+export interface CaptureActivityPoint {
+	profile_id: number;
+	date: string;
+	count: number;
+}
+
+export interface ProfileStoragePoint {
+	profile_id: number;
+	date: string;
+	bytes: number;
+	count: number;
 }

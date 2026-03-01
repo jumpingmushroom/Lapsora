@@ -56,6 +56,10 @@ async def generate(
         fps=body.fps,
         format=body.format,
         timestamp_overlay=body.timestamp_overlay,
+        weather_overlay=body.weather_overlay,
+        weather_position=body.weather_position,
+        weather_font_size=body.weather_font_size,
+        weather_unit=body.weather_unit,
     )
     return {"status": "generating", "message": "Timelapse generation started"}
 

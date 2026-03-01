@@ -31,6 +31,8 @@ PRESET_CRONS = {
     "yearly": "0 2 1 1 *",
 }
 
+PRESET_LOOKBACK = {"daily": 24, "weekly": 168, "monthly": 730, "yearly": 8760}
+
 
 def _validate_cron(expr: str) -> None:
     """Validate a cron expression by trying to build a trigger."""
@@ -93,6 +95,10 @@ def create_schedule(
 
     _validate_cron(cron)
 
+    lookback = body.lookback_hours
+    if body.preset and lookback is None:
+        lookback = PRESET_LOOKBACK.get(body.preset)
+
     schedule = TimelapseSchedule(
         profile_id=body.profile_id,
         name=body.name,
@@ -100,6 +106,7 @@ def create_schedule(
         cron_expression=cron,
         fps=body.fps,
         format=body.format,
+        lookback_hours=lookback,
         enabled=body.enabled,
     )
     db.add(schedule)
@@ -124,11 +131,13 @@ def update_schedule(
 
     updates = body.model_dump(exclude_unset=True)
 
-    # If preset is being changed, update cron_expression
+    # If preset is being changed, update cron_expression and lookback
     if "preset" in updates and updates["preset"]:
         if updates["preset"] not in PRESET_CRONS:
             raise HTTPException(422, f"Unknown preset: {updates['preset']}")
         updates["cron_expression"] = PRESET_CRONS[updates["preset"]]
+        if "lookback_hours" not in updates:
+            updates["lookback_hours"] = PRESET_LOOKBACK.get(updates["preset"])
 
     if "cron_expression" in updates:
         _validate_cron(updates["cron_expression"])
@@ -171,15 +180,22 @@ async def trigger_schedule(
     if not schedule:
         raise HTTPException(404, "Schedule not found")
 
+    from datetime import datetime, timedelta
+
     from app.services.timelapse import generate_timelapse, get_period_range
 
-    preset = schedule.preset or "daily"
-    start, end = get_period_range(preset)
+    if schedule.lookback_hours is not None:
+        end = datetime.now()
+        start = end - timedelta(hours=schedule.lookback_hours)
+        period = schedule.preset or "custom"
+    else:
+        period = schedule.preset or "daily"
+        start, end = get_period_range(period)
 
     background_tasks.add_task(
         generate_timelapse,
         profile_id=schedule.profile_id,
-        period_type=preset,
+        period_type=period,
         period_start=start,
         period_end=end,
         fps=schedule.fps,

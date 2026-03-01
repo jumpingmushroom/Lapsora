@@ -12,7 +12,9 @@ from pydantic import BaseModel, ConfigDict
 
 class StreamCreate(BaseModel):
     name: str
-    url: str
+    url: str | None = None
+    source_type: Literal["rtsp", "go2rtc"] = "rtsp"
+    go2rtc_name: str | None = None
 
 
 class StreamUpdate(BaseModel):
@@ -26,12 +28,23 @@ class StreamRead(BaseModel):
 
     id: int
     name: str
+    source_type: str
+    go2rtc_name: str | None
     enabled: bool
     health_status: str
     consecutive_failures: int
     last_checked_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class Go2rtcConfig(BaseModel):
+    url: str
+
+
+class Go2rtcStreamInfo(BaseModel):
+    name: str
+    producers: list
 
 
 # --- Profiles ---
@@ -48,6 +61,7 @@ class ProfileCreate(BaseModel):
     active_start_time: str | None = None
     active_end_time: str | None = None
     sun_offset_minutes: int = 0
+    weather_enabled: bool = False
 
 
 class ProfileUpdate(BaseModel):
@@ -62,6 +76,7 @@ class ProfileUpdate(BaseModel):
     active_start_time: str | None = None
     active_end_time: str | None = None
     sun_offset_minutes: int | None = None
+    weather_enabled: bool | None = None
 
 
 class ProfileRead(BaseModel):
@@ -81,6 +96,7 @@ class ProfileRead(BaseModel):
     active_start_time: str | None
     active_end_time: str | None
     sun_offset_minutes: int
+    weather_enabled: bool
     source_template_id: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -145,6 +161,8 @@ class CaptureRead(BaseModel):
     width: int | None
     height: int | None
     is_hdr: bool
+    weather_temp: float | None = None
+    weather_code: int | None = None
     captured_at: datetime
 
 
@@ -173,6 +191,10 @@ class TimelapseGenerate(BaseModel):
     fps: int = 24
     format: str = "mp4"
     timestamp_overlay: bool = False
+    weather_overlay: bool = False
+    weather_position: str = "bottom-right"
+    weather_font_size: int = 24
+    weather_unit: str = "C"
 
 
 # --- Timelapse Schedules ---

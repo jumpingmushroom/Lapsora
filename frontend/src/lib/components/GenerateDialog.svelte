@@ -14,6 +14,10 @@
 	let fps = $state(24);
 	let format = $state('mp4');
 	let timestamp_overlay = $state(false);
+	let weather_overlay = $state(false);
+	let weather_position = $state('bottom-right');
+	let weather_font_size = $state(24);
+	let weather_unit = $state('C');
 	let loading = $state(false);
 	let error = $state('');
 
@@ -27,7 +31,11 @@
 				period_end: period_end || undefined,
 				fps,
 				format,
-				timestamp_overlay
+				timestamp_overlay,
+			weather_overlay,
+			weather_position: weather_overlay ? weather_position : undefined,
+			weather_font_size: weather_overlay ? weather_font_size : undefined,
+			weather_unit: weather_overlay ? weather_unit : undefined
 			});
 			onclose();
 		} catch (err) {
@@ -112,6 +120,58 @@
 					/>
 					<label for="gen-overlay" class="text-sm font-medium text-gray-300">Timestamp overlay</label>
 				</div>
+
+				<div class="flex items-center gap-3">
+					<input
+						id="gen-weather"
+						type="checkbox"
+						bind:checked={weather_overlay}
+						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+					/>
+					<label for="gen-weather" class="text-sm font-medium text-gray-300">Weather overlay</label>
+				</div>
+
+				{#if weather_overlay}
+					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
+						<div>
+							<label for="gen-weather-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+							<select
+								id="gen-weather-pos"
+								bind:value={weather_position}
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="top-left">Top Left</option>
+								<option value="top-right">Top Right</option>
+								<option value="bottom-left">Bottom Left</option>
+								<option value="bottom-right">Bottom Right</option>
+							</select>
+						</div>
+						<div>
+							<label for="gen-weather-size" class="mb-1 block text-sm font-medium text-gray-300">Font size</label>
+							<input
+								id="gen-weather-size"
+								type="number"
+								bind:value={weather_font_size}
+								min="10"
+								max="72"
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							/>
+						</div>
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Unit</label>
+							<div class="flex gap-4">
+								<label class="flex items-center gap-2 text-sm text-gray-300">
+									<input type="radio" bind:group={weather_unit} value="C" class="text-blue-500" />
+									°C
+								</label>
+								<label class="flex items-center gap-2 text-sm text-gray-300">
+									<input type="radio" bind:group={weather_unit} value="F" class="text-blue-500" />
+									°F
+								</label>
+							</div>
+						</div>
+					</div>
+				{/if}
 
 				<div class="flex gap-3">
 					<button

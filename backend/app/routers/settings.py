@@ -10,6 +10,7 @@ from app.config import encrypt
 from app.database import get_db
 from app.models import NotificationURL, Setting
 from app.schemas import (
+    Go2rtcConfig,
     HealthConfig,
     LocationConfig,
     NotificationEventsConfig,
@@ -163,6 +164,33 @@ def update_health_config(data: HealthConfig, db: Session = Depends(get_db)):
 
     db.commit()
     return data
+
+
+# --- go2rtc Config ---
+
+
+@router.get("/go2rtc")
+def get_go2rtc_config(db: Session = Depends(get_db)):
+    row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
+    return {"url": row.value if row else ""}
+
+
+@router.put("/go2rtc")
+def update_go2rtc_config(data: Go2rtcConfig, db: Session = Depends(get_db)):
+    url = data.url.rstrip("/")
+    row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
+    if row:
+        row.value = url
+    else:
+        db.add(Setting(key="go2rtc_url", value=url))
+    db.commit()
+    return {"url": url}
+
+
+@router.post("/go2rtc/test")
+async def test_go2rtc_server(data: Go2rtcConfig):
+    from app.services.go2rtc import test_server
+    return await test_server(data.url.rstrip("/"))
 
 
 # --- Capture Gap Alerting ---

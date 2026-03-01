@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo } from './types';
 
 const BASE = '/api';
 
@@ -28,6 +28,8 @@ export const api = {
 	deleteStream: (id: number) => request<void>(`/streams/${id}`, { method: 'DELETE' }),
 	testStream: (id: number) => request<TestResult>(`/streams/${id}/test`, { method: 'POST' }),
 	getStreamPreviewUrl: (id: number) => `${BASE}/streams/${id}/preview`,
+	discoverGo2rtcStreams: () => request<Go2rtcStreamInfo[]>('/streams/go2rtc/discover'),
+	getStreamLiveUrl: (id: number) => request<{ ws_url: string }>(`/streams/${id}/live-url`),
 
 	// Profiles
 	getStreamProfiles: (streamId: number) => request<Profile[]>(`/streams/${streamId}/profiles`),
@@ -120,6 +122,11 @@ export const api = {
 	// Settings — Health
 	getHealthConfig: () => request<HealthConfig>('/settings/health'),
 	updateHealthConfig: (data: HealthConfig) => request<HealthConfig>('/settings/health', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Settings — go2rtc
+	getGo2rtcConfig: () => request<Go2rtcConfig>('/settings/go2rtc'),
+	updateGo2rtcConfig: (data: Go2rtcConfig) => request<Go2rtcConfig>('/settings/go2rtc', { method: 'PUT', body: JSON.stringify(data) }),
+	testGo2rtcServer: (data: Go2rtcConfig) => request<TestResult>('/settings/go2rtc/test', { method: 'POST', body: JSON.stringify(data) }),
 
 	// Settings — Capture Gap
 	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),

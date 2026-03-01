@@ -47,21 +47,38 @@ def deflicker_frames(
         for src, dst in zip(frame_paths, output_paths):
             if src != dst:
                 img = cv2.imread(src)
+                if img is None:
+                    logger.warning("Skipping unreadable frame: %s", src)
+                    continue
                 cv2.imwrite(dst, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return
 
-    # Pass 1: compute brightness of each frame
+    # Pass 1: compute brightness of each frame, skipping unreadable ones
     brightness = np.empty(n, dtype=np.float64)
+    readable = [False] * n
     for i, path in enumerate(frame_paths):
         img = cv2.imread(path)
+        if img is None:
+            logger.warning("Skipping unreadable frame: %s", path)
+            brightness[i] = 0.0
+            continue
+        readable[i] = True
         brightness[i] = calc_brightness(img, sigma=sigma)
+
+    if not any(readable):
+        logger.warning("No readable frames to deflicker")
+        return
 
     # Compute target brightness via rolling mean
     target = rolling_mean(brightness, window)
 
     # Pass 2: scale each frame and write
     for i, (src, dst) in enumerate(zip(frame_paths, output_paths)):
+        if not readable[i]:
+            continue
         img = cv2.imread(src)
+        if img is None:
+            continue
         if brightness[i] > 0:
             scale = target[i] / brightness[i]
             img = np.clip(img.astype(np.float64) * scale, 0, 255).astype(np.uint8)

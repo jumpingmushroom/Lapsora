@@ -63,6 +63,10 @@ async def generate_timelapse(
     fps: int = 24,
     format: str = "mp4",
     timestamp_overlay: bool = False,
+    weather_overlay: bool = False,
+    weather_position: str = "bottom-right",
+    weather_font_size: int = 24,
+    weather_unit: str = "C",
 ) -> int:
     """Generate a timelapse video and return its database ID."""
     db: Session = SessionLocal()
@@ -103,15 +107,70 @@ async def generate_timelapse(
             frame_count,
         )
 
+        try:
+            from app.services.events import emit
+            await emit(
+                "timelapse_started",
+                f"Timelapse generating: {period_type}",
+                f"Generating {format} timelapse for profile {profile_id}: {frame_count} frames.",
+            )
+        except Exception:
+            pass
+
         # Deflicker frames to smooth brightness transitions
-        original_paths = [cap.file_path for cap in captures]
+        original_paths = [os.path.join(settings.DATA_DIR, cap.file_path) for cap in captures]
         deflicker_dir = tempfile.mkdtemp(prefix="lapsora_deflicker_")
         deflickered_paths = [
             os.path.join(deflicker_dir, f"frame_{i:06d}.jpg")
             for i in range(frame_count)
         ]
-        deflicker_frames(original_paths, deflickered_paths, window=10)
-        frame_paths = deflickered_paths
+        await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, 10)
+        frame_paths = [p for p in deflickered_paths if os.path.exists(p)]
+        if not frame_paths:
+            raise ValueError(
+                f"No readable frames for profile {profile_id} — "
+                f"{len(captures)} captures found but none could be read from disk"
+            )
+
+        frame_count = len(frame_paths)
+
+        # Apply weather overlay to deflickered frames
+        if weather_overlay:
+            from PIL import Image, ImageDraw, ImageFont
+            from app.services.weather import format_weather_text
+
+            for i, path in enumerate(frame_paths):
+                if i >= len(captures):
+                    break
+                cap = captures[i]
+                if cap.weather_temp is None:
+                    continue
+                try:
+                    img = Image.open(path)
+                    draw = ImageDraw.Draw(img)
+                    text = format_weather_text(cap.weather_temp, cap.weather_code or 0, weather_unit)
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", weather_font_size)
+                    except Exception:
+                        font = ImageFont.load_default()
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                    w, h = img.size
+                    pad = 10
+                    positions = {
+                        "top-left": (pad, pad),
+                        "top-right": (w - tw - pad, pad),
+                        "bottom-left": (pad, h - th - pad),
+                        "bottom-right": (w - tw - pad, h - th - pad),
+                    }
+                    x, y = positions.get(weather_position, positions["bottom-right"])
+                    # Draw background box
+                    draw.rectangle([x - 5, y - 5, x + tw + 5, y + th + 5], fill=(0, 0, 0, 128))
+                    draw.text((x, y), text, font=font, fill="white")
+                    img.save(path, "JPEG", quality=95)
+                    img.close()
+                except Exception:
+                    logger.warning("Failed to apply weather overlay to frame %d", i)
 
         # Write concat file list
         fd, tmp_filelist = tempfile.mkstemp(suffix=".txt", prefix="lapsora_concat_")

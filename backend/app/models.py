@@ -16,6 +16,8 @@ class Stream(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, default="rtsp", server_default="rtsp")
+    go2rtc_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     health_status: Mapped[str] = mapped_column(Text, default="unknown")
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
@@ -66,6 +68,7 @@ class Profile(Base):
     active_start_time: Mapped[str | None] = mapped_column(Text, nullable=True)
     active_end_time: Mapped[str | None] = mapped_column(Text, nullable=True)
     sun_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     source_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
     )
@@ -102,6 +105,7 @@ class TimelapseSchedule(Base):
     cron_expression: Mapped[str] = mapped_column(Text, nullable=False)
     fps: Mapped[int] = mapped_column(Integer, default=24)
     format: Mapped[str] = mapped_column(String, default="mp4")
+    lookback_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
@@ -143,6 +147,8 @@ class Capture(Base):
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_hdr: Mapped[bool] = mapped_column(Boolean, default=False)
+    weather_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weather_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     profile: Mapped["Profile"] = relationship(back_populates="captures")

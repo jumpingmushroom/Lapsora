@@ -21,6 +21,7 @@ DEFAULT_EVENT_TOGGLES = {
     "capture_failure": True,
     "stream_unhealthy": True,
     "stream_recovered": True,
+    "timelapse_started": True,
     "timelapse_complete": True,
     "timelapse_failure": True,
     "retention_summary": False,

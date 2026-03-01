@@ -4,6 +4,7 @@
 
 	let schedules = $state<TimelapseSchedule[]>([]);
 	let profiles = $state<Profile[]>([]);
+	let streams = $state<Stream[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -15,9 +16,12 @@
 	let formName = $state('');
 	let formFps = $state(24);
 	let formFormat = $state('mp4');
+	let formLookbackHours = $state<number | null>(null);
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
+
+	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
 
 	const PRESETS: Record<string, { label: string; cron: string; description: string }> = {
 		daily: { label: 'Daily', cron: '5 0 * * *', description: 'Every day at 00:05' },
@@ -30,14 +34,15 @@
 		loading = true;
 		error = null;
 		try {
-			const [s, streams] = await Promise.all([
+			const [s, fetchedStreams] = await Promise.all([
 				api.getTimelapseSchedules(),
 				api.getStreams()
 			]);
 			schedules = s;
+			streams = fetchedStreams;
 			const allProfiles: Profile[] = [];
 			await Promise.all(
-				streams.map(async (st) => {
+				fetchedStreams.map(async (st) => {
 					const p = await api.getStreamProfiles(st.id);
 					allProfiles.push(...p);
 				})
@@ -62,6 +67,7 @@
 		formName = '';
 		formFps = 24;
 		formFormat = 'mp4';
+		formLookbackHours = null;
 		formCustom = false;
 		showForm = true;
 	}
@@ -72,6 +78,7 @@
 		formName = schedule.name || '';
 		formFps = schedule.fps;
 		formFormat = schedule.format;
+		formLookbackHours = schedule.lookback_hours;
 		if (schedule.preset && PRESETS[schedule.preset]) {
 			formPreset = schedule.preset;
 			formCron = PRESETS[schedule.preset].cron;
@@ -88,6 +95,7 @@
 		formPreset = key;
 		formCron = PRESETS[key].cron;
 		formName = PRESETS[key].label;
+		formLookbackHours = PRESET_LOOKBACK[key] ?? null;
 		formCustom = false;
 	}
 
@@ -95,6 +103,7 @@
 		formPreset = null;
 		formCron = '';
 		formName = 'Custom';
+		formLookbackHours = null;
 		formCustom = true;
 	}
 
@@ -112,7 +121,8 @@
 					preset: formPreset,
 					cron_expression: formCustom ? formCron : undefined,
 					fps: formFps,
-					format: formFormat
+					format: formFormat,
+					lookback_hours: formLookbackHours ?? undefined
 				});
 			} else {
 				await api.createTimelapseSchedule({
@@ -121,7 +131,8 @@
 					preset: formPreset,
 					cron_expression: formCustom ? formCron : undefined,
 					fps: formFps,
-					format: formFormat
+					format: formFormat,
+					lookback_hours: formLookbackHours ?? undefined
 				});
 			}
 			showForm = false;
@@ -161,6 +172,14 @@
 		}
 	}
 
+	function formatLookback(hours: number | null): string {
+		if (hours === null) return '';
+		if (hours < 24) return `Last ${hours}h`;
+		if (hours < 168) return `Last ${Math.round(hours / 24)}d`;
+		if (hours < 730) return `Last ${Math.round(hours / 168)}w`;
+		return `Last ${Math.round(hours / 730)}mo`;
+	}
+
 	function describeCron(schedule: TimelapseSchedule): string {
 		if (schedule.preset && PRESETS[schedule.preset]) {
 			return PRESETS[schedule.preset].description;
@@ -175,7 +194,9 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		return p ? p.name : `Profile #${id}`;
+		if (!p) return `Profile #${id}`;
+		const s = streams.find((s) => s.id === p.stream_id);
+		return s ? `${s.name} — ${p.name}` : p.name;
 	}
 </script>
 
@@ -210,6 +231,9 @@
 						</div>
 						<div class="mt-1 flex items-center gap-3 text-xs text-gray-400">
 							<span>{describeCron(schedule)}</span>
+							{#if schedule.lookback_hours}
+								<span class="rounded bg-purple-900/50 px-1.5 py-0.5 text-purple-300">{formatLookback(schedule.lookback_hours)}</span>
+							{/if}
 							<span>{schedule.fps}fps</span>
 							<span>{schedule.format.toUpperCase()}</span>
 							{#if schedule.next_run}
@@ -286,8 +310,12 @@
 						disabled={!!editingId}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
 					>
-						{#each profiles as p}
-							<option value={p.id}>{p.name}</option>
+						{#each streams as stream}
+							<optgroup label={stream.name}>
+								{#each profiles.filter(p => p.stream_id === stream.id) as p}
+									<option value={p.id}>{p.name}</option>
+								{/each}
+							</optgroup>
 						{/each}
 					</select>
 				</div>
@@ -327,6 +355,24 @@
 				{/if}
 
 				{#if formPreset || formCustom}
+					<div>
+						<label class="mb-1 block text-sm font-medium text-gray-300">Lookback Window (hours)</label>
+						<input
+							type="number"
+							bind:value={formLookbackHours}
+							min="1"
+							placeholder={formPreset ? String(PRESET_LOOKBACK[formPreset] ?? '') : 'e.g. 1 for hourly'}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+						<p class="mt-1 text-xs text-gray-500">
+							{#if formLookbackHours}
+								Captures from the last {formLookbackHours}h ({formLookbackHours >= 24 ? `${Math.round(formLookbackHours / 24)} days` : `${formLookbackHours} hours`})
+							{:else}
+								How far back to include captures
+							{/if}
+						</p>
+					</div>
+
 					<div>
 						<label class="mb-1 block text-sm font-medium text-gray-300">Name</label>
 						<input

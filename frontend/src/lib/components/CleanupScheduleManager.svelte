@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { CleanupSchedule, Profile } from '$lib/types';
+	import type { CleanupSchedule, Profile, Stream } from '$lib/types';
 
 	let schedules = $state<CleanupSchedule[]>([]);
 	let profiles = $state<Profile[]>([]);
+	let streams = $state<Stream[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
@@ -28,14 +29,15 @@
 		loading = true;
 		error = null;
 		try {
-			const [s, streams] = await Promise.all([
+			const [s, fetchedStreams] = await Promise.all([
 				api.getCleanupSchedules(),
 				api.getStreams()
 			]);
 			schedules = s;
+			streams = fetchedStreams;
 			const allProfiles: Profile[] = [];
 			await Promise.all(
-				streams.map(async (st) => {
+				fetchedStreams.map(async (st) => {
 					const p = await api.getStreamProfiles(st.id);
 					allProfiles.push(...p);
 				})
@@ -170,7 +172,9 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		return p ? p.name : `Profile #${id}`;
+		if (!p) return `Profile #${id}`;
+		const s = streams.find((s) => s.id === p.stream_id);
+		return s ? `${s.name} — ${p.name}` : p.name;
 	}
 </script>
 
@@ -278,8 +282,12 @@
 						disabled={!!editingId}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
 					>
-						{#each profiles as p}
-							<option value={p.id}>{p.name}</option>
+						{#each streams as stream}
+							<optgroup label={stream.name}>
+								{#each profiles.filter(p => p.stream_id === stream.id) as p}
+									<option value={p.id}>{p.name}</option>
+								{/each}
+							</optgroup>
 						{/each}
 					</select>
 				</div>

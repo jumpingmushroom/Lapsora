@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let urls = $state<NotificationURL[]>([]);
@@ -26,6 +26,11 @@
 	let captureGapConfig = $state<CaptureGapConfig>({ enabled: true });
 	let savingCaptureGap = $state(false);
 
+	let go2rtcConfig = $state<Go2rtcConfig>({ url: '' });
+	let savingGo2rtc = $state(false);
+	let testingGo2rtc = $state(false);
+	let go2rtcTestResult = $state<string | null>(null);
+
 	let loading = $state(true);
 	let newLabel = $state('');
 	let newUrl = $state('');
@@ -35,13 +40,14 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig()])
-			.then(([notifSettings, hc, loc, gapCfg]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig()])
+			.then(([notifSettings, hc, loc, gapCfg, g2rCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
 				locationConfig = loc;
 				captureGapConfig = gapCfg;
+				go2rtcConfig = g2rCfg;
 			})
 			.finally(() => {
 				loading = false;
@@ -99,6 +105,25 @@
 		savingCaptureGap = true;
 		await api.updateCaptureGapConfig(captureGapConfig);
 		savingCaptureGap = false;
+	}
+
+	async function saveGo2rtc() {
+		savingGo2rtc = true;
+		go2rtcTestResult = null;
+		await api.updateGo2rtcConfig(go2rtcConfig);
+		savingGo2rtc = false;
+	}
+
+	async function testGo2rtc() {
+		testingGo2rtc = true;
+		go2rtcTestResult = null;
+		try {
+			const result = await api.testGo2rtcServer(go2rtcConfig);
+			go2rtcTestResult = result.success ? 'Connected successfully' : result.message || 'Connection failed';
+		} catch (err) {
+			go2rtcTestResult = err instanceof Error ? err.message : 'Test failed';
+		}
+		testingGo2rtc = false;
 	}
 
 	const eventLabels: Record<string, string> = {
@@ -298,6 +323,46 @@
 			>
 				{savingLocation ? 'Saving...' : 'Save Location'}
 			</button>
+		</section>
+
+		<!-- go2rtc -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">go2rtc</h2>
+			<p class="mb-4 text-sm text-gray-400">
+				Connect to an external go2rtc server for stream discovery, live MSE video, and HTTP snapshot capture.
+			</p>
+
+			<div class="mb-4">
+				<label for="go2rtc-url" class="mb-1 block text-sm text-gray-400">Server URL</label>
+				<input
+					id="go2rtc-url"
+					type="text"
+					bind:value={go2rtcConfig.url}
+					placeholder="http://192.168.1.100:1984"
+					class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+				/>
+			</div>
+
+			{#if go2rtcTestResult}
+				<p class="mb-3 text-sm {go2rtcTestResult.startsWith('Connected') ? 'text-green-400' : 'text-red-400'}">{go2rtcTestResult}</p>
+			{/if}
+
+			<div class="flex gap-2">
+				<button
+					onclick={testGo2rtc}
+					disabled={testingGo2rtc || !go2rtcConfig.url}
+					class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50"
+				>
+					{testingGo2rtc ? 'Testing...' : 'Test Connection'}
+				</button>
+				<button
+					onclick={saveGo2rtc}
+					disabled={savingGo2rtc}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{savingGo2rtc ? 'Saving...' : 'Save'}
+				</button>
+			</div>
 		</section>
 
 		<!-- Jobs -->

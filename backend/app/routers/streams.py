@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.config import decrypt, encrypt
 from app.database import get_db
-from app.models import Stream
+from app.models import Setting, Stream
 from app.schemas import StreamCreate, StreamRead, StreamUpdate
 from app.services import rtsp
+from app.services import go2rtc
 
 router = APIRouter(prefix="/api/streams", tags=["streams"])
 
@@ -19,9 +20,32 @@ def list_streams(db: Session = Depends(get_db)):
     return db.query(Stream).order_by(Stream.id).all()
 
 
+@router.get("/go2rtc/discover")
+async def discover_go2rtc_streams(db: Session = Depends(get_db)):
+    base_url = go2rtc.get_go2rtc_url(db)
+    if not base_url:
+        raise HTTPException(400, "go2rtc URL not configured")
+    try:
+        return await go2rtc.list_streams(base_url)
+    except Exception as exc:
+        raise HTTPException(502, f"Failed to fetch go2rtc streams: {exc}")
+
+
 @router.post("/", response_model=StreamRead, status_code=201)
 def create_stream(body: StreamCreate, db: Session = Depends(get_db)):
-    stream = Stream(name=body.name, url=encrypt(body.url))
+    if body.source_type == "go2rtc":
+        if not body.go2rtc_name:
+            raise HTTPException(400, "go2rtc_name is required for go2rtc streams")
+        stream = Stream(
+            name=body.name,
+            url=encrypt(""),
+            source_type="go2rtc",
+            go2rtc_name=body.go2rtc_name,
+        )
+    else:
+        if not body.url:
+            raise HTTPException(400, "url is required for RTSP streams")
+        stream = Stream(name=body.name, url=encrypt(body.url), source_type="rtsp")
     db.add(stream)
     db.commit()
     db.refresh(stream)
@@ -68,6 +92,13 @@ async def test_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
+
+    if stream.source_type == "go2rtc":
+        base_url = go2rtc.get_go2rtc_url(db)
+        if not base_url:
+            raise HTTPException(400, "go2rtc URL not configured")
+        return await go2rtc.test_stream(base_url, stream.go2rtc_name)
+
     try:
         url = decrypt(stream.url)
     except (InvalidToken, Exception):
@@ -80,6 +111,17 @@ async def preview_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
+
+    if stream.source_type == "go2rtc":
+        base_url = go2rtc.get_go2rtc_url(db)
+        if not base_url:
+            raise HTTPException(400, "go2rtc URL not configured")
+        try:
+            jpeg_bytes = await go2rtc.grab_frame(base_url, stream.go2rtc_name)
+        except Exception as exc:
+            raise HTTPException(502, str(exc))
+        return Response(content=jpeg_bytes, media_type="image/jpeg")
+
     try:
         url = decrypt(stream.url)
     except (InvalidToken, Exception):
@@ -89,3 +131,20 @@ async def preview_stream(stream_id: int, db: Session = Depends(get_db)):
     except RuntimeError as exc:
         raise HTTPException(502, str(exc))
     return Response(content=jpeg_bytes, media_type="image/jpeg")
+
+
+@router.get("/{stream_id}/live-url")
+def get_live_url(stream_id: int, db: Session = Depends(get_db)):
+    stream = db.get(Stream, stream_id)
+    if not stream:
+        raise HTTPException(404, "Stream not found")
+    if stream.source_type != "go2rtc":
+        raise HTTPException(400, "Live view is only available for go2rtc streams")
+
+    base_url = go2rtc.get_go2rtc_url(db)
+    if not base_url:
+        raise HTTPException(400, "go2rtc URL not configured")
+
+    # Convert http(s) to ws(s) for WebSocket URL
+    ws_url = base_url.replace("https://", "wss://").replace("http://", "ws://")
+    return {"ws_url": f"{ws_url}/api/ws?src={stream.go2rtc_name}"}

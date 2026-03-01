@@ -15,6 +15,7 @@
 	let resolution_height = $state<number | null>(profile?.resolution_height ?? null);
 	let quality = $state(profile?.quality ?? 85);
 	let hdr_enabled = $state(profile?.hdr_enabled ?? false);
+	let weather_enabled = $state(profile?.weather_enabled ?? false);
 	let capture_mode = $state(profile?.capture_mode ?? 'always');
 	let active_start_time = $state(profile?.active_start_time ?? '06:00');
 	let active_end_time = $state(profile?.active_end_time ?? '20:00');
@@ -29,6 +30,7 @@
 			resolution_height: resolution_height || null,
 			quality,
 			hdr_enabled,
+			weather_enabled,
 			capture_mode,
 			active_start_time: capture_mode === 'manual' ? active_start_time : null,
 			active_end_time: capture_mode === 'manual' ? active_end_time : null,
@@ -104,6 +106,16 @@
 			class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
 		/>
 		<label for="hdr" class="text-sm font-medium text-gray-300">HDR enabled</label>
+	</div>
+
+	<div class="flex items-center gap-3">
+		<input
+			id="weather"
+			type="checkbox"
+			bind:checked={weather_enabled}
+			class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+		/>
+		<label for="weather" class="text-sm font-medium text-gray-300">Collect weather data</label>
 	</div>
 
 	<!-- Capture Mode -->

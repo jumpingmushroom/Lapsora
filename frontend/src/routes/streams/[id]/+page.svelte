@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture } from '$lib/types';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
+	import MsePlayer from '$lib/components/MsePlayer.svelte';
 
 	let id = $derived(Number($page.params.id));
 
@@ -41,6 +42,10 @@
 	// Preview
 	let previewKey = $state(0);
 	let previewSrc = $derived(`${api.getStreamPreviewUrl(id)}?t=${previewKey}`);
+
+	// Live view (go2rtc)
+	let liveWsUrl = $state<string | null>(null);
+	let showLiveView = $state(false);
 
 	$effect(() => {
 		const currentId = id;
@@ -182,6 +187,7 @@
 				resolution_height: profile.resolution_height,
 				quality: profile.quality,
 				hdr_enabled: profile.hdr_enabled,
+				weather_enabled: profile.weather_enabled,
 				capture_mode: profile.capture_mode,
 				active_start_time: profile.active_start_time,
 				active_end_time: profile.active_end_time,
@@ -232,16 +238,41 @@
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Live Preview -->
 			<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-				<h2 class="mb-3 text-lg font-semibold text-gray-100">Live Preview</h2>
-				<div class="aspect-video w-full overflow-hidden rounded-lg bg-black">
-					<img
-						src={previewSrc}
-						alt="{stream.name} live preview"
-						class="h-full w-full object-contain"
-						onerror={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0.3'; }}
-					/>
+				<div class="mb-3 flex items-center justify-between">
+					<h2 class="text-lg font-semibold text-gray-100">Live Preview</h2>
+					{#if stream.source_type === 'go2rtc'}
+						<button
+							onclick={async () => {
+								if (showLiveView) {
+									showLiveView = false;
+									liveWsUrl = null;
+								} else {
+									try {
+										const data = await api.getStreamLiveUrl(id);
+										liveWsUrl = data.ws_url;
+										showLiveView = true;
+									} catch { /* ignore */ }
+								}
+							}}
+							class="rounded px-3 py-1 text-xs font-medium transition-colors {showLiveView ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}"
+						>
+							{showLiveView ? 'Stop Live' : 'Live View'}
+						</button>
+					{/if}
 				</div>
-				<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 5 seconds</p>
+				{#if showLiveView && liveWsUrl}
+					<MsePlayer wsUrl={liveWsUrl} />
+				{:else}
+					<div class="aspect-video w-full overflow-hidden rounded-lg bg-black">
+						<img
+							src={previewSrc}
+							alt="{stream.name} live preview"
+							class="h-full w-full object-contain"
+							onerror={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0.3'; }}
+						/>
+					</div>
+					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 5 seconds</p>
+				{/if}
 			</div>
 
 			<!-- Edit Form -->
@@ -258,6 +289,7 @@
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						/>
 					</div>
+					{#if stream.source_type !== 'go2rtc'}
 					<div>
 						<label for="edit-url" class="mb-1 block text-sm font-medium text-gray-300">New RTSP URL (leave blank to keep current)</label>
 						<input
@@ -268,6 +300,12 @@
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						/>
 					</div>
+				{:else}
+					<div>
+						<span class="mb-1 block text-sm font-medium text-gray-300">Source</span>
+						<span class="text-sm text-gray-400">go2rtc: {stream.go2rtc_name}</span>
+					</div>
+				{/if}
 					<label class="flex items-center gap-2">
 						<input
 							type="checkbox"
@@ -399,6 +437,9 @@
 								<span class="text-xs text-gray-500">Q{profile.quality}</span>
 								{#if profile.hdr_enabled}
 									<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
+								{/if}
+								{#if profile.weather_enabled}
+									<span class="rounded bg-cyan-900 px-1.5 py-0.5 text-xs font-medium text-cyan-300">Weather</span>
 								{/if}
 								{#if profile.auto_disabled}
 									<span class="rounded bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-300" title="Automatically disabled due to stream health issues">Auto</span>
