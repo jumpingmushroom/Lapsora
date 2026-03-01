@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Timelapse
-from app.schemas import TimelapseGenerate, TimelapseRead
+from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
 from app.services.timelapse import generate_timelapse
 
 router = APIRouter(prefix="/api", tags=["timelapses"])
@@ -81,6 +81,16 @@ def get_timelapse_video(timelapse_id: int, db: Session = Depends(get_db)):
         media_type=media_type,
         filename=os.path.basename(tl.file_path),
     )
+
+
+@router.delete("/timelapses/bulk", status_code=204)
+def bulk_delete_timelapses(body: BulkDeleteRequest, db: Session = Depends(get_db)):
+    tls = db.query(Timelapse).filter(Timelapse.id.in_(body.ids)).all()
+    for tl in tls:
+        if os.path.exists(tl.file_path):
+            os.unlink(tl.file_path)
+        db.delete(tl)
+    db.commit()
 
 
 @router.delete("/timelapses/{timelapse_id}", status_code=204)

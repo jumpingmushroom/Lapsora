@@ -25,7 +25,84 @@
 
 	// Delete confirmation
 	let deleteTarget = $state<{ type: 'capture' | 'timelapse'; id: number } | null>(null);
+	let bulkDeleteTarget = $state<{ type: 'captures' | 'timelapses'; ids: number[] } | null>(null);
 	let deleting = $state(false);
+
+	// Selection state — use plain objects for Svelte 5 reactivity
+	let selectedCaptures: Record<number, true> = $state({});
+	let selectedTimelapses: Record<number, true> = $state({});
+	let lastClickedCaptureIdx = $state<number | null>(null);
+	let lastClickedTimelapseIdx = $state<number | null>(null);
+	let selectedCaptureIds = $derived(Object.keys(selectedCaptures).map(Number));
+	let selectedTimelapseIds = $derived(Object.keys(selectedTimelapses).map(Number));
+	let selectionCount = $derived(selectedCaptureIds.length + selectedTimelapseIds.length);
+
+	function clearSelection() {
+		selectedCaptures = {};
+		selectedTimelapses = {};
+		lastClickedCaptureIdx = null;
+		lastClickedTimelapseIdx = null;
+	}
+
+	function toggleCaptureSelection(idx: number, e: MouseEvent) {
+		const id = captures[idx].id;
+		const next = { ...selectedCaptures };
+		if (e.shiftKey && lastClickedCaptureIdx !== null) {
+			const start = Math.min(lastClickedCaptureIdx, idx);
+			const end = Math.max(lastClickedCaptureIdx, idx);
+			for (let i = start; i <= end; i++) {
+				next[captures[i].id] = true;
+			}
+		} else {
+			if (next[id]) delete next[id];
+			else next[id] = true;
+		}
+		selectedCaptures = next;
+		lastClickedCaptureIdx = idx;
+	}
+
+	function toggleTimelapseSelection(idx: number, e: MouseEvent) {
+		const id = timelapses[idx].id;
+		const next = { ...selectedTimelapses };
+		if (e.shiftKey && lastClickedTimelapseIdx !== null) {
+			const start = Math.min(lastClickedTimelapseIdx, idx);
+			const end = Math.max(lastClickedTimelapseIdx, idx);
+			for (let i = start; i <= end; i++) {
+				next[timelapses[i].id] = true;
+			}
+		} else {
+			if (next[id]) delete next[id];
+			else next[id] = true;
+		}
+		selectedTimelapses = next;
+		lastClickedTimelapseIdx = idx;
+	}
+
+	function promptBulkDelete() {
+		if (selectedCaptureIds.length > 0 || selectedTimelapseIds.length > 0) {
+			bulkDeleteTarget = { type: 'captures', ids: selectedCaptureIds };
+		}
+	}
+
+	async function confirmBulkDelete() {
+		if (!bulkDeleteTarget) return;
+		deleting = true;
+		try {
+			if (selectedCaptureIds.length > 0) {
+				await api.bulkDeleteCaptures(selectedCaptureIds);
+				captures = captures.filter((c) => !selectedCaptures[c.id]);
+			}
+			if (selectedTimelapseIds.length > 0) {
+				await api.bulkDeleteTimelapses(selectedTimelapseIds);
+				timelapses = timelapses.filter((t) => !selectedTimelapses[t.id]);
+			}
+			clearSelection();
+		} catch {
+		} finally {
+			deleting = false;
+			bulkDeleteTarget = null;
+		}
+	}
 
 	function formatDate(iso: string | null): string {
 		if (!iso) return 'N/A';
@@ -65,6 +142,7 @@
 		capturePage = 0;
 		captures = [];
 		timelapses = [];
+		clearSelection();
 		try {
 			profiles = await api.getStreamProfiles(id);
 			await loadCaptures();
@@ -79,6 +157,7 @@
 		selectedProfileId = profileId;
 		capturePage = 0;
 		loadingMedia = true;
+		clearSelection();
 		try {
 			await loadCaptures();
 			await loadTimelapses();
@@ -139,7 +218,15 @@
 			deleteTarget = null;
 		}
 	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape' && selectionCount > 0) {
+			clearSelection();
+		}
+	}
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="space-y-6">
 	<h1 class="text-3xl font-bold text-white">Files</h1>
@@ -197,8 +284,8 @@
 				</div>
 			{:else}
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-					{#each captures as capture}
-						<div class="group relative overflow-hidden rounded-lg border border-gray-800 bg-gray-900">
+					{#each captures as capture, idx}
+						<div class="group relative overflow-hidden rounded-lg border bg-gray-900 transition-colors {selectedCaptures[capture.id] ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}">
 							<button
 								onclick={() => { lightboxCapture = capture; }}
 								class="block w-full"
@@ -212,6 +299,18 @@
 								<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
 									<span class="text-xs text-gray-300">{formatDateTime(capture.captured_at)}</span>
 								</div>
+							</button>
+							<!-- Selection checkbox -->
+							<button
+								onclick={(e) => { e.stopPropagation(); toggleCaptureSelection(idx, e); }}
+								class="absolute left-1 top-1 flex h-6 w-6 items-center justify-center rounded transition-opacity {selectionCount > 0 || selectedCaptures[capture.id] ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} {selectedCaptures[capture.id] ? 'bg-blue-500 text-white' : 'bg-black/60 text-gray-400 hover:text-white'}"
+								title="Select"
+							>
+								{#if selectedCaptures[capture.id]}
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+									</svg>
+								{/if}
 							</button>
 							<button
 								onclick={() => { deleteTarget = { type: 'capture', id: capture.id }; }}
@@ -248,8 +347,21 @@
 				</div>
 			{:else}
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{#each timelapses as tl}
-						<div class="rounded-xl border border-gray-800 bg-gray-900 p-4 transition-colors hover:border-gray-700">
+					{#each timelapses as tl, idx}
+						<div class="relative rounded-xl border bg-gray-900 p-4 transition-colors {selectedTimelapses[tl.id] ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800 hover:border-gray-700'}">
+							<!-- Selection checkbox -->
+							<button
+								onclick={(e) => { e.stopPropagation(); toggleTimelapseSelection(idx, e); }}
+								class="absolute left-2 top-2 z-10 flex h-6 w-6 items-center justify-center rounded transition-opacity {selectionCount > 0 || selectedTimelapses[tl.id] ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} {selectedTimelapses[tl.id] ? 'bg-blue-500 text-white' : 'bg-black/60 text-gray-400 hover:text-white'}"
+								title="Select"
+							>
+								{#if selectedTimelapses[tl.id]}
+									<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7" />
+									</svg>
+								{/if}
+							</button>
+
 							<button
 								onclick={() => { selectedTimelapse = tl; }}
 								class="mb-3 flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-gray-800 text-gray-500 hover:text-gray-300"
@@ -314,6 +426,27 @@
 	{/if}
 </div>
 
+<!-- Floating Selection Action Bar -->
+{#if selectionCount > 0}
+	<div class="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-4 rounded-xl border border-gray-700 bg-gray-900 px-5 py-3 shadow-2xl">
+		<span class="text-sm font-medium text-gray-200">
+			{selectionCount} selected
+		</span>
+		<button
+			onclick={clearSelection}
+			class="rounded-lg px-3 py-1.5 text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-200"
+		>
+			Clear
+		</button>
+		<button
+			onclick={promptBulkDelete}
+			class="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-500"
+		>
+			Delete Selected
+		</button>
+	</div>
+{/if}
+
 <!-- Lightbox -->
 {#if lightboxCapture}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -361,7 +494,7 @@
 	</div>
 {/if}
 
-<!-- Delete Confirmation -->
+<!-- Delete Confirmation (single item) -->
 {#if deleteTarget}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { deleteTarget = null; }}>
@@ -384,6 +517,45 @@
 					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
 				>
 					{deleting ? 'Deleting...' : 'Delete'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Bulk Delete Confirmation -->
+{#if bulkDeleteTarget}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { bulkDeleteTarget = null; }}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="mx-4 w-full max-w-sm rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
+			<h3 class="mb-2 text-lg font-semibold text-white">Confirm Bulk Delete</h3>
+			<p class="mb-4 text-sm text-gray-400">
+				Are you sure you want to delete {selectionCount} item{selectionCount !== 1 ? 's' : ''}?
+				{#if selectedCaptureIds.length > 0}
+					{selectedCaptureIds.length} snapshot{selectedCaptureIds.length !== 1 ? 's' : ''}
+				{/if}
+				{#if selectedCaptureIds.length > 0 && selectedTimelapseIds.length > 0}
+					and
+				{/if}
+				{#if selectedTimelapseIds.length > 0}
+					{selectedTimelapseIds.length} video{selectedTimelapseIds.length !== 1 ? 's' : ''}
+				{/if}
+				will be permanently deleted.
+			</p>
+			<div class="flex justify-end gap-3">
+				<button
+					onclick={() => { bulkDeleteTarget = null; }}
+					class="rounded-lg border border-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-800"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={confirmBulkDelete}
+					disabled={deleting}
+					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+				>
+					{deleting ? 'Deleting...' : `Delete ${selectionCount}`}
 				</button>
 			</div>
 		</div>

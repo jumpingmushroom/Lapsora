@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import Capture
-from app.schemas import CaptureRead
+from app.schemas import BulkDeleteRequest, CaptureRead
 
 router = APIRouter(prefix="/api", tags=["captures"])
 
@@ -42,6 +42,17 @@ def get_capture_image(capture_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Capture file not found on disk")
 
     return FileResponse(abs_path, media_type="image/jpeg")
+
+
+@router.delete("/captures/bulk", status_code=204)
+def bulk_delete_captures(body: BulkDeleteRequest, db: Session = Depends(get_db)):
+    captures = db.query(Capture).filter(Capture.id.in_(body.ids)).all()
+    for capture in captures:
+        abs_path = os.path.join(settings.DATA_DIR, capture.file_path)
+        if os.path.isfile(abs_path):
+            os.remove(abs_path)
+        db.delete(capture)
+    db.commit()
 
 
 @router.delete("/captures/{capture_id}", status_code=204)

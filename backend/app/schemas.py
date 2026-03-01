@@ -185,6 +185,7 @@ class TimelapseScheduleCreate(BaseModel):
     cron_expression: str | None = None
     fps: int = 24
     format: str = "mp4"
+    lookback_hours: int | None = None
     enabled: bool = True
 
 
@@ -194,6 +195,7 @@ class TimelapseScheduleUpdate(BaseModel):
     cron_expression: str | None = None
     fps: int | None = None
     format: str | None = None
+    lookback_hours: int | None = None
     enabled: bool | None = None
 
 
@@ -207,6 +209,7 @@ class TimelapseScheduleRead(BaseModel):
     cron_expression: str
     fps: int
     format: str
+    lookback_hours: int | None
     enabled: bool
     created_at: datetime
     updated_at: datetime
@@ -285,6 +288,10 @@ class NotificationRead(BaseModel):
 # --- Settings ---
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
+
 class LocationConfig(BaseModel):
     latitude: float = 0.0
     longitude: float = 0.0
@@ -305,3 +312,32 @@ class NotificationEventsConfig(BaseModel):
     retention_summary: bool = False
     low_disk_space: bool = True
     capture_gap: bool = True
+
+
+# --- Statistics ---
+
+
+class StatsSummary(BaseModel):
+    total_captures: int
+    avg_captures_per_day: float
+    avg_bytes_per_day: float
+    days_until_full: float | None
+
+
+class StorageTrendPoint(BaseModel):
+    date: str
+    bytes_added: int
+    cumulative_bytes: int
+
+
+class CaptureActivityPoint(BaseModel):
+    profile_id: int
+    date: str
+    count: int
+
+
+class ProfileStoragePoint(BaseModel):
+    profile_id: int
+    date: str
+    bytes: int
+    count: int

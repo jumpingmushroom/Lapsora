@@ -53,6 +53,7 @@ export const api = {
 	getProfileCaptures: (profileId: number, limit = 50, offset = 0) => request<Capture[]>(`/profiles/${profileId}/captures?limit=${limit}&offset=${offset}`),
 	getCaptureImageUrl: (id: number) => `${BASE}/captures/${id}/image`,
 	deleteCapture: (id: number) => request<void>(`/captures/${id}`, { method: 'DELETE' }),
+	bulkDeleteCaptures: (ids: number[]) => request<void>('/captures/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
 	// Timelapses
 	getTimelapses: (params?: { profile_id?: number; period_type?: string; limit?: number; offset?: number }) => {
@@ -68,6 +69,7 @@ export const api = {
 	getTimelapseVideoUrl: (id: number) => `${BASE}/timelapses/${id}/video`,
 	generateTimelapse: (profileId: number, data: TimelapseGenerate) => request<{ status: string; message: string }>(`/profiles/${profileId}/timelapses/generate`, { method: 'POST', body: JSON.stringify(data) }),
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
+	bulkDeleteTimelapses: (ids: number[]) => request<void>('/timelapses/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
 	// Timelapse Schedules
 	getTimelapseSchedules: (profileId?: number) => {
