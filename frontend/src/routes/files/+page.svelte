@@ -297,7 +297,12 @@
 									loading="lazy"
 								/>
 								<div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1">
-									<span class="text-xs text-gray-300">{formatDateTime(capture.captured_at)}</span>
+									<div class="flex items-center justify-between">
+										<span class="text-xs text-gray-300">{formatDateTime(capture.captured_at)}</span>
+										{#if capture.weather_temp != null}
+											<span class="text-[10px] text-cyan-300">{capture.weather_temp.toFixed(1)}°C</span>
+										{/if}
+									</div>
 								</div>
 							</button>
 							<!-- Selection checkbox -->

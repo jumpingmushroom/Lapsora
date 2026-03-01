@@ -497,13 +497,18 @@
 				<h2 class="mb-3 text-lg font-semibold text-gray-100">Recent Captures</h2>
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
 					{#each captures as capture}
-						<div class="aspect-video overflow-hidden rounded-lg bg-gray-800">
+						<div class="relative aspect-video overflow-hidden rounded-lg bg-gray-800">
 							<img
 								src={api.getCaptureImageUrl(capture.id)}
 								alt="Capture {capture.id}"
 								class="h-full w-full object-cover"
 								loading="lazy"
 							/>
+							{#if capture.weather_temp != null}
+								<div class="absolute bottom-0 right-0 rounded-tl bg-black/70 px-1.5 py-0.5 text-[10px] text-gray-200">
+									{capture.weather_temp.toFixed(1)}°C
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
