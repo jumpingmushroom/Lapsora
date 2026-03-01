@@ -16,23 +16,70 @@ logger = logging.getLogger(__name__)
 
 MAX_CAPTURE_ATTEMPTS = 3
 GREEN_PIXEL_THRESHOLD = 0.05  # 5% of total pixels
+WASHOUT_THRESHOLD = 0.30
+WASHOUT_DIFF_THRESHOLD = 0.25
+ROW_VARIANCE_THRESHOLD = 15.0
+ROW_JUMP_THRESHOLD = 40.0
 
 
 def _is_frame_corrupt(path: str) -> bool:
-    """Detect RTSP green-block corruption in a captured frame.
+    """Detect RTSP corruption in a captured frame.
 
-    Corrupted RTSP frames contain large blocks of pure green pixels
-    (RGB ~0,128,0) from incomplete YUV decode data.
+    Checks for green blocks, washed-out white regions, horizontal
+    banding, and abrupt row luminance jumps — all common RTSP decode
+    artefacts that concentrate in the bottom-right of the frame.
     """
     try:
         img = Image.open(path).convert("RGB")
         pixels = np.array(img)
         img.close()
-        green_mask = (pixels[:, :, 0] < 10) & (pixels[:, :, 1] >= 120) & (pixels[:, :, 1] <= 140) & (pixels[:, :, 2] < 10)
+
+        # 1. Green blocks (widened range)
+        green_mask = (
+            (pixels[:, :, 0] < 15)
+            & (pixels[:, :, 1] >= 100)
+            & (pixels[:, :, 1] <= 160)
+            & (pixels[:, :, 2] < 15)
+        )
         ratio = np.count_nonzero(green_mask) / green_mask.size
         if ratio > GREEN_PIXEL_THRESHOLD:
             logger.warning("Frame corruption detected in %s: %.1f%% green pixels", path, ratio * 100)
             return True
+
+        # 2. Washed-out white blocks — compare bottom-right vs top-right
+        h, w = pixels.shape[:2]
+        mid_h, mid_w = h // 2, w // 2
+        top_right = pixels[:mid_h, mid_w:]
+        bottom_right = pixels[mid_h:, mid_w:]
+        tr_white = np.mean(np.all(top_right > 240, axis=2))
+        br_white = np.mean(np.all(bottom_right > 240, axis=2))
+        if br_white > WASHOUT_THRESHOLD and (br_white - tr_white) > WASHOUT_DIFF_THRESHOLD:
+            logger.warning(
+                "Frame corruption detected in %s: washed-out bottom-right (%.1f%% white vs %.1f%% top-right)",
+                path, br_white * 100, tr_white * 100,
+            )
+            return True
+
+        # 3 & 4. Row luminance analysis on bottom half
+        gray = np.mean(pixels[mid_h:], axis=2)  # (rows, cols)
+        row_means = np.mean(gray, axis=1)
+        row_diffs = np.abs(np.diff(row_means))
+
+        if np.std(row_diffs) > ROW_VARIANCE_THRESHOLD:
+            logger.warning(
+                "Frame corruption detected in %s: row variance %.1f exceeds threshold",
+                path, np.std(row_diffs),
+            )
+            return True
+
+        big_jumps = int(np.sum(row_diffs > ROW_JUMP_THRESHOLD))
+        if big_jumps >= 3:
+            logger.warning(
+                "Frame corruption detected in %s: %d row jumps exceed threshold (max %.1f)",
+                path, big_jumps, np.max(row_diffs),
+            )
+            return True
+
         return False
     except Exception:
         logger.exception("Error checking frame corruption for %s", path)
@@ -151,8 +198,10 @@ async def capture_frame(profile_id: int) -> None:
                     "ffmpeg",
                     "-y",
                     "-rtsp_transport", "tcp",
+                    "-skip_frame", "nokey",
                     "-i", url,
                     "-frames:v", "1",
+                    "-vsync", "vfr",
                     "-loglevel", "error",
                     "-q:v", "2",
                     abs_path,

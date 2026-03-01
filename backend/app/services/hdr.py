@@ -31,8 +31,10 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg", "-y",
             "-rtsp_transport", "tcp",
+            "-skip_frame", "nokey",
             "-i", url,
             "-frames:v", "3",
+            "-vsync", "vfr",
             "-loglevel", "error",
             "-q:v", "2",
             frame_pattern,
