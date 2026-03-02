@@ -10,8 +10,88 @@
 	let { profileOptions, open, onclose }: Props = $props();
 	let selectedProfileId = $state(profileOptions[0]?.id ?? 0);
 
-	let period_start = $state('');
-	let period_end = $state('');
+	type Preset = 'last24h' | 'today' | 'yesterday' | 'last7d' | 'last30d' | 'thisWeek' | 'lastWeek' | 'custom';
+
+	const PRESETS: { key: Preset; label: string }[] = [
+		{ key: 'last24h', label: 'Last 24h' },
+		{ key: 'today', label: 'Today' },
+		{ key: 'yesterday', label: 'Yesterday' },
+		{ key: 'last7d', label: 'Last 7d' },
+		{ key: 'last30d', label: 'Last 30d' },
+		{ key: 'thisWeek', label: 'This week' },
+		{ key: 'lastWeek', label: 'Last week' },
+		{ key: 'custom', label: 'Custom' },
+	];
+
+	let selectedPreset = $state<Preset>('last24h');
+	let customStartDate = $state('');
+	let customStartTime = $state('00:00');
+	let customEndDate = $state('');
+	let customEndTime = $state('23:59');
+
+	function computePresetRange(preset: Preset): { start: string; end: string } | null {
+		const now = new Date();
+		let start: Date;
+		let end: Date = now;
+
+		switch (preset) {
+			case 'last24h':
+				start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+				break;
+			case 'today':
+				start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+				break;
+			case 'yesterday': {
+				const y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+				start = y;
+				end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+				break;
+			}
+			case 'last7d':
+				start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+				break;
+			case 'last30d':
+				start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+				break;
+			case 'thisWeek': {
+				const day = now.getDay();
+				const diff = day === 0 ? 6 : day - 1;
+				start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+				break;
+			}
+			case 'lastWeek': {
+				const day = now.getDay();
+				const diff = day === 0 ? 6 : day - 1;
+				const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+				start = new Date(thisMonday.getTime() - 7 * 24 * 60 * 60 * 1000);
+				end = new Date(thisMonday.getTime() - 1000);
+				break;
+			}
+			case 'custom':
+				return null;
+		}
+
+		return {
+			start: start.toISOString().slice(0, 19),
+			end: end.toISOString().slice(0, 19),
+		};
+	}
+
+	let period_start = $derived.by(() => {
+		if (selectedPreset === 'custom') {
+			if (!customStartDate) return '';
+			return `${customStartDate}T${customStartTime || '00:00'}:00`;
+		}
+		return computePresetRange(selectedPreset)?.start ?? '';
+	});
+
+	let period_end = $derived.by(() => {
+		if (selectedPreset === 'custom') {
+			if (!customEndDate) return '';
+			return `${customEndDate}T${customEndTime || '23:59'}:00`;
+		}
+		return computePresetRange(selectedPreset)?.end ?? '';
+	});
 	let fps = $state(24);
 	let format = $state('mp4');
 	let deflicker = $state('medium');
@@ -149,24 +229,62 @@
 				</div>
 
 				<div>
-					<label for="gen-start" class="mb-1 block text-sm font-medium text-gray-300">Start</label>
-					<input
-						id="gen-start"
-						type="datetime-local"
-						bind:value={period_start}
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
+					<label class="mb-1.5 block text-sm font-medium text-gray-300">Time Range</label>
+					<div class="flex flex-wrap gap-1.5">
+						{#each PRESETS as preset}
+							<button
+								type="button"
+								onclick={() => { selectedPreset = preset.key; }}
+								class="rounded-full px-3 py-1 text-xs font-medium transition-colors {
+									selectedPreset === preset.key
+										? 'bg-blue-600 text-white'
+										: 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+								}"
+							>
+								{preset.label}
+							</button>
+						{/each}
+					</div>
 				</div>
 
-				<div>
-					<label for="gen-end" class="mb-1 block text-sm font-medium text-gray-300">End</label>
-					<input
-						id="gen-end"
-						type="datetime-local"
-						bind:value={period_end}
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
+				{#if selectedPreset === 'custom'}
+					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
+						<div>
+							<label for="gen-start-date" class="mb-1 block text-sm font-medium text-gray-300">Start</label>
+							<div class="flex gap-2">
+								<input
+									id="gen-start-date"
+									type="date"
+									bind:value={customStartDate}
+									class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+								<input
+									id="gen-start-time"
+									type="time"
+									bind:value={customStartTime}
+									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+						<div>
+							<label for="gen-end-date" class="mb-1 block text-sm font-medium text-gray-300">End</label>
+							<div class="flex gap-2">
+								<input
+									id="gen-end-date"
+									type="date"
+									bind:value={customEndDate}
+									class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+								<input
+									id="gen-end-time"
+									type="time"
+									bind:value={customEndTime}
+									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+					</div>
+				{/if}
 
 				<div>
 					<label for="gen-fps" class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
