@@ -17,6 +17,7 @@
 	let formFps = $state(24);
 	let formFormat = $state('mp4');
 	let formDeflicker = $state('medium');
+	let formMotionBlur = $state('off');
 	let formLookbackHours = $state<number | null>(null);
 	let formTimestampOverlay = $state(false);
 	let formWeatherOverlay = $state(false);
@@ -28,9 +29,46 @@
 	let formHeatmapOpacity = $state(0.4);
 	let formHeatmapColormap = $state('jet');
 	let formHeatmapThreshold = $state(10);
+	let formCodec = $state('auto');
+	let formResolutionPreset = $state('original');
+	let formOutputWidth = $state<number | null>(null);
+	let formOutputHeight = $state<number | null>(null);
+	let formQualityPreset = $state('medium');
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
+
+	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
+		original: null,
+		'720p': [1280, 720],
+		'1080p': [1920, 1080],
+		'4k': [3840, 2160],
+		'8k': [7680, 4320]
+	};
+
+	function onFormResolutionChange() {
+		if (formResolutionPreset === 'custom') {
+			formOutputWidth = null;
+			formOutputHeight = null;
+		} else {
+			const dims = RESOLUTION_PRESETS[formResolutionPreset];
+			if (dims) {
+				formOutputWidth = dims[0];
+				formOutputHeight = dims[1];
+			} else {
+				formOutputWidth = null;
+				formOutputHeight = null;
+			}
+		}
+	}
+
+	function detectResolutionPreset(w: number | null, h: number | null): string {
+		if (!w || !h) return 'original';
+		for (const [key, dims] of Object.entries(RESOLUTION_PRESETS)) {
+			if (dims && dims[0] === w && dims[1] === h) return key;
+		}
+		return 'custom';
+	}
 
 	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
 
@@ -79,6 +117,7 @@
 		formFps = 24;
 		formFormat = 'mp4';
 		formDeflicker = 'medium';
+		formMotionBlur = 'off';
 		formLookbackHours = null;
 		formTimestampOverlay = false;
 		formWeatherOverlay = false;
@@ -90,6 +129,11 @@
 		formHeatmapOpacity = 0.4;
 		formHeatmapColormap = 'jet';
 		formHeatmapThreshold = 10;
+		formCodec = 'auto';
+		formResolutionPreset = 'original';
+		formOutputWidth = null;
+		formOutputHeight = null;
+		formQualityPreset = 'medium';
 		formCustom = false;
 		showForm = true;
 	}
@@ -101,6 +145,7 @@
 		formFps = schedule.fps;
 		formFormat = schedule.format;
 		formDeflicker = schedule.deflicker || 'medium';
+		formMotionBlur = schedule.motion_blur || 'off';
 		formLookbackHours = schedule.lookback_hours;
 		formTimestampOverlay = schedule.timestamp_overlay;
 		formWeatherOverlay = schedule.weather_overlay;
@@ -112,6 +157,11 @@
 		formHeatmapOpacity = schedule.heatmap_opacity;
 		formHeatmapColormap = schedule.heatmap_colormap;
 		formHeatmapThreshold = schedule.heatmap_threshold;
+		formCodec = schedule.codec || 'auto';
+		formOutputWidth = schedule.output_width;
+		formOutputHeight = schedule.output_height;
+		formResolutionPreset = detectResolutionPreset(schedule.output_width, schedule.output_height);
+		formQualityPreset = schedule.quality_preset || 'medium';
 		if (schedule.preset && PRESETS[schedule.preset]) {
 			formPreset = schedule.preset;
 			formCron = PRESETS[schedule.preset].cron;
@@ -158,7 +208,12 @@
 				heatmap_mode: formHeatmapMode,
 				heatmap_opacity: formHeatmapOpacity,
 				heatmap_colormap: formHeatmapColormap,
-			heatmap_threshold: formHeatmapThreshold
+			heatmap_threshold: formHeatmapThreshold,
+				motion_blur: formMotionBlur,
+				codec: formCodec,
+				output_width: formOutputWidth,
+				output_height: formOutputHeight,
+				quality_preset: formQualityPreset
 			};
 			if (editingId) {
 				await api.updateTimelapseSchedule(editingId, {
@@ -293,6 +348,9 @@
 							{/if}
 							{#if schedule.heatmap_overlay}
 								<span class="rounded bg-orange-900/50 px-1.5 py-0.5 text-orange-300">Heatmap</span>
+							{/if}
+							{#if schedule.motion_blur && schedule.motion_blur !== 'off'}
+								<span class="rounded bg-indigo-900/50 px-1.5 py-0.5 text-indigo-300">Blur: {schedule.motion_blur}</span>
 							{/if}
 							{#if schedule.next_run}
 								<span>Next: {formatNextRun(schedule.next_run)}</span>
@@ -476,6 +534,91 @@
 							</select>
 						</div>
 					</div>
+
+					{#if formFormat !== 'gif'}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Motion Blur</label>
+							<select
+								bind:value={formMotionBlur}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="off">Off</option>
+								<option value="low">Low</option>
+								<option value="medium">Medium</option>
+								<option value="high">High</option>
+							</select>
+						</div>
+					{/if}
+
+					{#if formFormat === 'mp4' || formFormat === 'mkv'}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Codec</label>
+							<select
+								bind:value={formCodec}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="auto">Auto</option>
+								<option value="h264">H.264</option>
+								<option value="h265">H.265 (HEVC)</option>
+							</select>
+						</div>
+					{/if}
+
+					{#if formFormat !== 'gif'}
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Output Resolution</label>
+							<select
+								bind:value={formResolutionPreset}
+								onchange={onFormResolutionChange}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="original">Original</option>
+								<option value="720p">720p</option>
+								<option value="1080p">1080p</option>
+								<option value="4k">4K</option>
+								<option value="8k">8K</option>
+								<option value="custom">Custom</option>
+							</select>
+						</div>
+
+						{#if formResolutionPreset === 'custom'}
+							<div class="grid grid-cols-2 gap-3">
+								<div>
+									<label class="mb-1 block text-sm font-medium text-gray-300">Width</label>
+									<input
+										type="number"
+										bind:value={formOutputWidth}
+										min="1"
+										placeholder="Width"
+										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									/>
+								</div>
+								<div>
+									<label class="mb-1 block text-sm font-medium text-gray-300">Height</label>
+									<input
+										type="number"
+										bind:value={formOutputHeight}
+										min="1"
+										placeholder="Height"
+										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+									/>
+								</div>
+							</div>
+						{/if}
+
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Quality</label>
+							<select
+								bind:value={formQualityPreset}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="low">Low</option>
+								<option value="medium">Medium</option>
+								<option value="high">High</option>
+								<option value="lossless">Lossless</option>
+							</select>
+						</div>
+					{/if}
 
 					<!-- Overlay options -->
 					<div class="flex items-center gap-3">

@@ -19,7 +19,35 @@
 	let capture_mode = $state(profile?.capture_mode ?? 'always');
 	let active_start_time = $state(profile?.active_start_time ?? '06:00');
 	let active_end_time = $state(profile?.active_end_time ?? '20:00');
+	const RES_PRESETS: Record<string, [number, number] | null> = {
+		custom: null,
+		'720p': [1280, 720],
+		'1080p': [1920, 1080],
+		'4k': [3840, 2160],
+		'8k': [7680, 4320]
+	};
+
+	function detectResPreset(w: number | null, h: number | null): string {
+		if (!w || !h) return 'custom';
+		for (const [key, dims] of Object.entries(RES_PRESETS)) {
+			if (dims && dims[0] === w && dims[1] === h) return key;
+		}
+		return 'custom';
+	}
+
+	let resolution_preset = $state(detectResPreset(profile?.resolution_width ?? null, profile?.resolution_height ?? null));
 	let sun_offset_minutes = $state(profile?.sun_offset_minutes ?? 0);
+
+	function onResPresetChange() {
+		const dims = RES_PRESETS[resolution_preset];
+		if (dims) {
+			resolution_width = dims[0];
+			resolution_height = dims[1];
+		} else {
+			resolution_width = null;
+			resolution_height = null;
+		}
+	}
 let sun_events = $state<string[]>(
 	profile?.sun_events ? profile.sun_events.split(',').filter(Boolean) : ['daylight']
 );
@@ -65,6 +93,22 @@ let sun_events = $state<string[]>(
 			min="1"
 			class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 		/>
+	</div>
+
+	<div>
+		<label for="res-preset" class="mb-1 block text-sm font-medium text-gray-300">Resolution</label>
+		<select
+			id="res-preset"
+			bind:value={resolution_preset}
+			onchange={onResPresetChange}
+			class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+		>
+			<option value="custom">Custom</option>
+			<option value="720p">720p (1280x720)</option>
+			<option value="1080p">1080p (1920x1080)</option>
+			<option value="4k">4K (3840x2160)</option>
+			<option value="8k">8K (7680x4320)</option>
+		</select>
 	</div>
 
 	<div class="grid grid-cols-2 gap-4">

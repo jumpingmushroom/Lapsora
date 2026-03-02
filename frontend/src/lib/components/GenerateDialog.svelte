@@ -15,6 +15,7 @@
 	let fps = $state(24);
 	let format = $state('mp4');
 	let deflicker = $state('medium');
+	let motion_blur = $state('off');
 	let timestamp_overlay = $state(false);
 	let weather_overlay = $state(false);
 	let weather_position = $state('bottom-right');
@@ -25,8 +26,37 @@
 	let heatmap_opacity = $state(0.4);
 	let heatmap_colormap = $state('jet');
 	let heatmap_threshold = $state(10);
+	let codec = $state('auto');
+	let resolution_preset = $state('original');
+	let output_width = $state<number | null>(null);
+	let output_height = $state<number | null>(null);
+	let quality_preset = $state('medium');
 	let loading = $state(false);
 	let error = $state('');
+
+	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
+		original: null,
+		'720p': [1280, 720],
+		'1080p': [1920, 1080],
+		'4k': [3840, 2160],
+		'8k': [7680, 4320]
+	};
+
+	function onResolutionChange() {
+		if (resolution_preset === 'custom') {
+			output_width = null;
+			output_height = null;
+		} else {
+			const dims = RESOLUTION_PRESETS[resolution_preset];
+			if (dims) {
+				output_width = dims[0];
+				output_height = dims[1];
+			} else {
+				output_width = null;
+				output_height = null;
+			}
+		}
+	}
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -39,6 +69,7 @@
 				fps,
 				format,
 				deflicker,
+			motion_blur: format !== 'gif' ? motion_blur : undefined,
 				timestamp_overlay,
 			weather_overlay,
 			weather_position: weather_overlay ? weather_position : undefined,
@@ -48,7 +79,11 @@
 			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
 			heatmap_opacity: heatmap_overlay ? heatmap_opacity : undefined,
 			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
-		heatmap_threshold: heatmap_overlay ? heatmap_threshold : undefined
+		heatmap_threshold: heatmap_overlay ? heatmap_threshold : undefined,
+			codec: (format === 'mp4' || format === 'mkv') ? codec : undefined,
+			output_width: output_width || undefined,
+			output_height: output_height || undefined,
+			quality_preset: format !== 'gif' ? quality_preset : undefined
 			});
 			onclose();
 		} catch (err) {
@@ -137,6 +172,81 @@
 					</select>
 				</div>
 
+				{#if format === 'mp4' || format === 'mkv'}
+					<div>
+						<label for="gen-codec" class="mb-1 block text-sm font-medium text-gray-300">Codec</label>
+						<select
+							id="gen-codec"
+							bind:value={codec}
+							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="auto">Auto</option>
+							<option value="h264">H.264</option>
+							<option value="h265">H.265 (HEVC)</option>
+						</select>
+					</div>
+				{/if}
+
+				{#if format !== 'gif'}
+					<div>
+						<label for="gen-resolution" class="mb-1 block text-sm font-medium text-gray-300">Output Resolution</label>
+						<select
+							id="gen-resolution"
+							bind:value={resolution_preset}
+							onchange={onResolutionChange}
+							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="original">Original</option>
+							<option value="720p">720p</option>
+							<option value="1080p">1080p</option>
+							<option value="4k">4K</option>
+							<option value="8k">8K</option>
+							<option value="custom">Custom</option>
+						</select>
+					</div>
+
+					{#if resolution_preset === 'custom'}
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label for="gen-out-w" class="mb-1 block text-sm font-medium text-gray-300">Width</label>
+								<input
+									id="gen-out-w"
+									type="number"
+									bind:value={output_width}
+									min="1"
+									placeholder="Width"
+									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+							<div>
+								<label for="gen-out-h" class="mb-1 block text-sm font-medium text-gray-300">Height</label>
+								<input
+									id="gen-out-h"
+									type="number"
+									bind:value={output_height}
+									min="1"
+									placeholder="Height"
+									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+						</div>
+					{/if}
+
+					<div>
+						<label for="gen-quality" class="mb-1 block text-sm font-medium text-gray-300">Quality</label>
+						<select
+							id="gen-quality"
+							bind:value={quality_preset}
+							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+							<option value="lossless">Lossless</option>
+						</select>
+					</div>
+				{/if}
+
 				<div>
 					<label for="gen-deflicker" class="mb-1 block text-sm font-medium text-gray-300">Deflicker</label>
 					<select
@@ -150,6 +260,22 @@
 						<option value="heavy">Heavy</option>
 					</select>
 				</div>
+
+				{#if format !== 'gif'}
+					<div>
+						<label for="gen-motion-blur" class="mb-1 block text-sm font-medium text-gray-300">Motion Blur</label>
+						<select
+							id="gen-motion-blur"
+							bind:value={motion_blur}
+							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="off">Off</option>
+							<option value="low">Low</option>
+							<option value="medium">Medium</option>
+							<option value="high">High</option>
+						</select>
+					</div>
+				{/if}
 
 				<div class="flex items-center gap-3">
 					<input

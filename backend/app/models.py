@@ -118,6 +118,11 @@ class TimelapseSchedule(Base):
     heatmap_opacity: Mapped[float] = mapped_column(Float, default=0.4)
     heatmap_colormap: Mapped[str] = mapped_column(Text, default="jet")
     heatmap_threshold: Mapped[int] = mapped_column(Integer, default=10)
+    motion_blur: Mapped[str] = mapped_column(Text, default="off", server_default="off")
+    codec: Mapped[str] = mapped_column(Text, default="auto", server_default="auto")
+    output_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quality_preset: Mapped[str] = mapped_column(Text, default="medium", server_default="medium")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

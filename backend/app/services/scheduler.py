@@ -118,6 +118,11 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 heatmap_opacity=sched.heatmap_opacity,
                 heatmap_colormap=sched.heatmap_colormap,
                 heatmap_threshold=sched.heatmap_threshold,
+                motion_blur=sched.motion_blur,
+                codec=sched.codec,
+                output_width=sched.output_width,
+                output_height=sched.output_height,
+                quality_preset=sched.quality_preset,
             )
         except Exception:
             logger.exception(

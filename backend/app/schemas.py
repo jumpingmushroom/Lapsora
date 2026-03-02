@@ -204,6 +204,11 @@ class TimelapseGenerate(BaseModel):
     heatmap_opacity: float = Field(default=0.4, ge=0, le=1)
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
+    motion_blur: Literal["off", "low", "medium", "high"] = "off"
+    codec: str = "auto"
+    output_width: int | None = None
+    output_height: int | None = None
+    quality_preset: str = "medium"
 
 
 # --- Timelapse Schedules ---
@@ -228,6 +233,11 @@ class TimelapseScheduleCreate(BaseModel):
     heatmap_opacity: float = 0.4
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
+    motion_blur: Literal["off", "low", "medium", "high"] = "off"
+    codec: str = "auto"
+    output_width: int | None = None
+    output_height: int | None = None
+    quality_preset: str = "medium"
     enabled: bool = True
 
 
@@ -249,6 +259,11 @@ class TimelapseScheduleUpdate(BaseModel):
     heatmap_opacity: float | None = None
     heatmap_colormap: str | None = None
     heatmap_threshold: int | None = None
+    motion_blur: Literal["off", "low", "medium", "high"] | None = None
+    codec: str | None = None
+    output_width: int | None = None
+    output_height: int | None = None
+    quality_preset: str | None = None
     enabled: bool | None = None
 
 
@@ -274,6 +289,11 @@ class TimelapseScheduleRead(BaseModel):
     heatmap_opacity: float
     heatmap_colormap: str
     heatmap_threshold: int
+    motion_blur: str
+    codec: str
+    output_width: int | None
+    output_height: int | None
+    quality_preset: str
     enabled: bool
     created_at: datetime
     updated_at: datetime

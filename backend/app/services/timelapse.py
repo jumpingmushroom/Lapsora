@@ -123,6 +123,74 @@ def apply_heatmap_to_frames(
             blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
             cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
+MOTION_BLUR_FRAMES = {"off": 1, "low": 3, "medium": 5, "high": 7}
+
+
+def apply_motion_blur(frame_dir: str, blend_count: int) -> None:
+    """Blend adjacent frames using gaussian-weighted averaging for motion blur."""
+    frame_files = sorted(
+        f for f in os.listdir(frame_dir)
+        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+    )
+    if len(frame_files) < 2 or blend_count < 2:
+        return
+
+    half = blend_count // 2
+    sigma = blend_count / 4.0
+
+    # Pre-compute gaussian weights
+    offsets = np.arange(-half, half + 1, dtype=np.float64)
+    weights = np.exp(-0.5 * (offsets / sigma) ** 2)
+
+    # Read all frames into memory as float32
+    paths = [os.path.join(frame_dir, f) for f in frame_files]
+    frames = []
+    for p in paths:
+        img = cv2.imread(p)
+        if img is not None:
+            frames.append(img.astype(np.float32))
+        else:
+            frames.append(None)
+
+    n = len(frames)
+    for i in range(n):
+        if frames[i] is None:
+            continue
+        # Determine window with boundary clamping
+        start = max(0, i - half)
+        end = min(n - 1, i + half)
+        # Gather valid frames and their weights
+        w_list = []
+        f_list = []
+        for j in range(start, end + 1):
+            if frames[j] is not None:
+                w_list.append(weights[j - i + half])
+                f_list.append(frames[j])
+        if not f_list:
+            continue
+        # Normalize weights
+        w_arr = np.array(w_list, dtype=np.float32)
+        w_arr /= w_arr.sum()
+        # Weighted average
+        blended = np.zeros_like(f_list[0])
+        for w, f in zip(w_arr, f_list):
+            blended += w * f
+        cv2.imwrite(paths[i], blended.astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+
+QUALITY_CRF = {
+    "h264": {"low": 28, "medium": 23, "high": 18, "lossless": 0},
+    "h265": {"low": 32, "medium": 28, "high": 22, "lossless": 0},
+    "vp9":  {"low": 38, "medium": 30, "high": 24, "lossless": 0},
+}
+
+RESOLUTION_PRESETS = {
+    "720p":  (1280, 720),
+    "1080p": (1920, 1080),
+    "4k":    (3840, 2160),
+    "8k":    (7680, 4320),
+}
+
 FFMPEG_TIMEOUT = 300  # 5 minutes
 
 
@@ -178,6 +246,11 @@ async def generate_timelapse(
     heatmap_opacity: float = 0.4,
     heatmap_colormap: str = "jet",
     heatmap_threshold: int = 10,
+    motion_blur: str = "off",
+    codec: str = "auto",
+    output_width: int | None = None,
+    output_height: int | None = None,
+    quality_preset: str = "medium",
 ) -> int:
     """Generate a timelapse video and return its database ID."""
     db: Session = SessionLocal()
@@ -252,6 +325,11 @@ async def generate_timelapse(
 
         frame_count = len(frame_paths)
 
+        # Apply motion blur to smooth frame transitions
+        blur_blend = MOTION_BLUR_FRAMES.get(motion_blur, 1)
+        if blur_blend > 1:
+            await asyncio.to_thread(apply_motion_blur, deflicker_dir, blur_blend)
+
         # Apply heatmap overlay to deflickered frames
         if heatmap_overlay:
             await asyncio.to_thread(
@@ -323,6 +401,13 @@ async def generate_timelapse(
 
         vf_filters: list[str] = []
 
+        # Resolution scaling
+        if output_width and output_height and format != "gif":
+            vf_filters.append(
+                f"scale={output_width}:{output_height}:force_original_aspect_ratio=decrease,"
+                f"pad={output_width}:{output_height}:(ow-iw)/2:(oh-ih)/2"
+            )
+
         if timestamp_overlay:
             vf_filters.append(
                 "drawtext=text='%{pts\\:localtime\\:0}'"
@@ -330,15 +415,35 @@ async def generate_timelapse(
                 ":box=1:boxcolor=black@0.5:boxborderw=5"
             )
 
-        if format == "mp4":
-            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "23"]
-        elif format == "webm":
-            cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", "30", "-b:v", "0"]
-        elif format == "mkv":
-            cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "23"]
-        elif format == "gif":
-            # GIF needs palette generation filter
+        if format == "gif":
+            # GIF ignores codec/quality_preset
             vf_filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
+        elif format == "webm":
+            # WebM always uses VP9 regardless of codec setting
+            effective_codec = "vp9"
+            crf = QUALITY_CRF["vp9"].get(quality_preset, 30)
+            cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", str(crf), "-b:v", "0"]
+            if quality_preset == "lossless":
+                cmd += ["-lossless", "1"]
+        else:
+            # MP4 or MKV
+            if codec == "h265":
+                effective_codec = "h265"
+                crf = QUALITY_CRF["h265"].get(quality_preset, 28)
+                cmd += ["-c:v", "libx265", "-pix_fmt", "yuv420p", "-tag:v", "hvc1", "-crf", str(crf)]
+                if quality_preset == "lossless":
+                    cmd += ["-preset", "veryslow"]
+                else:
+                    cmd += ["-preset", "medium"]
+            else:
+                # auto or h264
+                effective_codec = "h264"
+                crf = QUALITY_CRF["h264"].get(quality_preset, 23)
+                cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf)]
+                if quality_preset == "lossless":
+                    cmd += ["-preset", "veryslow"]
+                else:
+                    cmd += ["-preset", "medium"]
 
         if vf_filters:
             cmd += ["-vf", ",".join(vf_filters)]

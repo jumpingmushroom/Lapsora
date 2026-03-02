@@ -66,6 +66,11 @@ async def generate(
         heatmap_opacity=body.heatmap_opacity,
         heatmap_colormap=body.heatmap_colormap,
         heatmap_threshold=body.heatmap_threshold,
+        motion_blur=body.motion_blur,
+        codec=body.codec,
+        output_width=body.output_width,
+        output_height=body.output_height,
+        quality_preset=body.quality_preset,
     )
     return {"status": "generating", "message": "Timelapse generation started"}
 

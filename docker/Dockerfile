@@ -12,7 +12,7 @@ WORKDIR /app
 
 # Install ffmpeg
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg && \
+    apt-get install -y --no-install-recommends ffmpeg libx265-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

@@ -175,6 +175,11 @@ export interface TimelapseSchedule {
 	heatmap_opacity: number;
 	heatmap_colormap: string;
 	heatmap_threshold: number;
+	motion_blur: string;
+	codec: string;
+	output_width: number | null;
+	output_height: number | null;
+	quality_preset: string;
 	enabled: boolean;
 	created_at: string;
 	updated_at: string;
@@ -200,6 +205,11 @@ export interface TimelapseScheduleCreate {
 	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	motion_blur?: string;
+	codec?: string;
+	output_width?: number | null;
+	output_height?: number | null;
+	quality_preset?: string;
 	enabled?: boolean;
 }
 
@@ -221,6 +231,11 @@ export interface TimelapseScheduleUpdate {
 	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	motion_blur?: string;
+	codec?: string;
+	output_width?: number | null;
+	output_height?: number | null;
+	quality_preset?: string;
 	enabled?: boolean;
 }
 
@@ -270,6 +285,11 @@ export interface TimelapseGenerate {
 	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	motion_blur?: string;
+	codec?: string;
+	output_width?: number | null;
+	output_height?: number | null;
+	quality_preset?: string;
 }
 
 export interface TestResult {
