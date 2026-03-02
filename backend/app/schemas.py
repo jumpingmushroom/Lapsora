@@ -363,3 +363,18 @@ class ProfileStoragePoint(BaseModel):
     date: str
     bytes: int
     count: int
+
+
+class TimelapseFormatBreakdown(BaseModel):
+    format: str
+    count: int
+    total_size_bytes: int
+    total_duration_seconds: float
+
+
+class TimelapseSummary(BaseModel):
+    total_count: int
+    total_size_bytes: int
+    total_frames: int
+    total_duration_seconds: float
+    by_format: list[TimelapseFormatBreakdown]

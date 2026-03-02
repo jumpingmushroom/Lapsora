@@ -12,6 +12,8 @@ from app.schemas import (
     ProfileStoragePoint,
     StatsSummary,
     StorageTrendPoint,
+    TimelapseFormatBreakdown,
+    TimelapseSummary,
 )
 from app.services.retention import get_storage_stats
 
@@ -210,3 +212,50 @@ def get_profile_storage(
         ProfileStoragePoint(profile_id=r.profile_id, date=r.d, bytes=r.bytes, count=r.cnt)
         for r in rows
     ]
+
+
+@router.get("/timelapse-summary", response_model=TimelapseSummary)
+def get_timelapse_summary(db: Session = Depends(get_db)):
+    row = db.execute(
+        text(
+            """
+            SELECT
+                COUNT(*) AS total_count,
+                COALESCE(SUM(file_size), 0) AS total_size_bytes,
+                COALESCE(SUM(frame_count), 0) AS total_frames,
+                COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
+            FROM timelapses
+            """
+        )
+    ).one()
+
+    by_format_rows = db.execute(
+        text(
+            """
+            SELECT
+                format,
+                COUNT(*) AS count,
+                COALESCE(SUM(file_size), 0) AS total_size_bytes,
+                COALESCE(SUM(duration_seconds), 0) AS total_duration_seconds
+            FROM timelapses
+            GROUP BY format
+            ORDER BY count DESC
+            """
+        )
+    ).all()
+
+    return TimelapseSummary(
+        total_count=row.total_count,
+        total_size_bytes=row.total_size_bytes,
+        total_frames=row.total_frames,
+        total_duration_seconds=row.total_duration_seconds,
+        by_format=[
+            TimelapseFormatBreakdown(
+                format=r.format,
+                count=r.count,
+                total_size_bytes=r.total_size_bytes,
+                total_duration_seconds=r.total_duration_seconds,
+            )
+            for r in by_format_rows
+        ],
+    )

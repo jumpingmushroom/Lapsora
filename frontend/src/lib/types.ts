@@ -297,3 +297,18 @@ export interface ProfileStoragePoint {
 	bytes: number;
 	count: number;
 }
+
+export interface TimelapseFormatBreakdown {
+	format: string;
+	count: number;
+	total_size_bytes: number;
+	total_duration_seconds: number;
+}
+
+export interface TimelapseSummary {
+	total_count: number;
+	total_size_bytes: number;
+	total_frames: number;
+	total_duration_seconds: number;
+	by_format: TimelapseFormatBreakdown[];
+}

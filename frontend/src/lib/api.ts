@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary } from './types';
 
 const BASE = '/api';
 
@@ -145,6 +145,7 @@ export const api = {
 		if (profileId !== undefined) sp.set('profile_id', String(profileId));
 		return request<ProfileStoragePoint[]>(`/statistics/profile-storage?${sp}`);
 	},
+	getTimelapseSummary: () => request<TimelapseSummary>('/statistics/timelapse-summary'),
 
 	// SSE helper
 	getNotificationStreamUrl: () => `${BASE}/notifications/stream`,
