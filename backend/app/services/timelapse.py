@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import tempfile
+import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from app.config import settings
 from app.database import SessionLocal
 from app.models import Capture, Timelapse
 from app.services.deflicker import deflicker_frames
+from app.services.gpu import is_nvenc_available, get_nvenc_encoders, is_cupy_available
 
 import cv2
 import numpy as np
@@ -33,6 +35,12 @@ def compute_cumulative_heatmap(frame_paths: list[str], threshold: int = 10) -> n
     """Compute a single cumulative heatmap from consecutive frame diffs."""
     if len(frame_paths) < 2:
         return None
+
+    use_gpu = is_cupy_available()
+    if use_gpu:
+        import cupy as cp
+        from cupyx.scipy.ndimage import gaussian_filter as gpu_gaussian_filter
+
     accumulator = None
     prev_gray = None
     for path in frame_paths:
@@ -40,15 +48,34 @@ def compute_cumulative_heatmap(frame_paths: list[str], threshold: int = 10) -> n
         if img is None:
             continue
         if prev_gray is not None:
-            diff = cv2.absdiff(prev_gray, img)
-            diff[diff < threshold] = 0
-            diff = cv2.GaussianBlur(diff.astype(np.float64), (15, 15), 0)
-            if accumulator is None:
-                accumulator = np.zeros_like(diff)
-            accumulator += diff
+            if use_gpu:
+                gpu_curr = cp.asarray(img, dtype=cp.float32)
+                gpu_prev = cp.asarray(prev_gray, dtype=cp.float32)
+                diff = cp.abs(gpu_curr - gpu_prev)
+                diff[diff < threshold] = 0
+                diff = gpu_gaussian_filter(diff, sigma=2.6)
+                if accumulator is None:
+                    accumulator = cp.zeros_like(diff)
+                accumulator += diff
+            else:
+                diff = cv2.absdiff(prev_gray, img)
+                diff[diff < threshold] = 0
+                diff = cv2.GaussianBlur(diff.astype(np.float32), (15, 15), 0)
+                if accumulator is None:
+                    accumulator = np.zeros_like(diff)
+                accumulator += diff
         prev_gray = img
     if accumulator is None:
         return None
+
+    if use_gpu:
+        max_val = float(cp.max(accumulator))
+        if max_val > 0:
+            result = cp.asnumpy((accumulator / max_val * 255).astype(cp.uint8))
+        else:
+            result = cp.asnumpy(accumulator.astype(cp.uint8))
+        return result
+
     max_val = accumulator.max()
     if max_val > 0:
         accumulator = (accumulator / max_val * 255).astype(np.uint8)
@@ -62,6 +89,12 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
     heatmaps: list[np.ndarray | None] = [None]  # first frame has no heatmap
     if len(frame_paths) < 2:
         return [None] * len(frame_paths)
+
+    use_gpu = is_cupy_available()
+    if use_gpu:
+        import cupy as cp
+        from cupyx.scipy.ndimage import gaussian_filter as gpu_gaussian_filter
+
     accumulator = None
     prev_gray = None
     for i, path in enumerate(frame_paths):
@@ -72,21 +105,48 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
             prev_gray = None
             continue
         if prev_gray is not None:
-            diff = cv2.absdiff(prev_gray, img)
-            diff[diff < threshold] = 0
-            diff = cv2.GaussianBlur(diff.astype(np.float64), (15, 15), 0)
-            if accumulator is None:
-                accumulator = np.zeros_like(diff)
-            accumulator = accumulator * decay + diff
-            normalized = accumulator.copy()
-            max_val = normalized.max()
-            if max_val > 0:
-                normalized = (normalized / max_val * 255).astype(np.uint8)
+            if use_gpu:
+                gpu_curr = cp.asarray(img, dtype=cp.float32)
+                gpu_prev = cp.asarray(prev_gray, dtype=cp.float32)
+                diff = cp.abs(gpu_curr - gpu_prev)
+                diff[diff < threshold] = 0
+                diff = gpu_gaussian_filter(diff, sigma=2.6)
+                if accumulator is None:
+                    accumulator = cp.zeros_like(diff)
+                accumulator = accumulator * decay + diff
+                normalized = accumulator.copy()
+                max_val = float(cp.max(normalized))
+                if max_val > 0:
+                    normalized = (normalized / max_val * 255).astype(cp.uint8)
+                else:
+                    normalized = normalized.astype(cp.uint8)
+                heatmaps.append(cp.asnumpy(normalized))
             else:
-                normalized = normalized.astype(np.uint8)
-            heatmaps.append(normalized)
+                diff = cv2.absdiff(prev_gray, img)
+                diff[diff < threshold] = 0
+                diff = cv2.GaussianBlur(diff.astype(np.float32), (15, 15), 0)
+                if accumulator is None:
+                    accumulator = np.zeros_like(diff)
+                accumulator = accumulator * decay + diff
+                normalized = accumulator.copy()
+                max_val = normalized.max()
+                if max_val > 0:
+                    normalized = (normalized / max_val * 255).astype(np.uint8)
+                else:
+                    normalized = normalized.astype(np.uint8)
+                heatmaps.append(normalized)
         prev_gray = img
     return heatmaps
+
+
+def _blend_heatmap_gpu(frame: np.ndarray, colored: np.ndarray, opacity: float) -> np.ndarray:
+    """Alpha-blend a colored heatmap onto a frame using CuPy."""
+    import cupy as cp
+    gpu_frame = cp.asarray(frame, dtype=cp.float32)
+    gpu_colored = cp.asarray(colored, dtype=cp.float32)
+    blended = gpu_frame + gpu_colored * opacity
+    blended = cp.clip(blended, 0, 255)
+    return cp.asnumpy(blended.astype(cp.uint8))
 
 
 def apply_heatmap_to_frames(
@@ -99,6 +159,7 @@ def apply_heatmap_to_frames(
     """Compute heatmaps and alpha-blend them onto frames in-place."""
     colormap = COLORMAP_MAP.get(colormap_name, cv2.COLORMAP_JET)
     opacity = max(0.1, min(0.8, opacity))
+    use_gpu = is_cupy_available()
 
     if heatmap_mode == "sliding":
         heatmaps = compute_sliding_heatmaps(frame_paths, threshold=threshold)
@@ -109,7 +170,10 @@ def apply_heatmap_to_frames(
             if frame is None:
                 continue
             colored = cv2.applyColorMap(heatmaps[i], colormap)
-            blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            if use_gpu:
+                blended = _blend_heatmap_gpu(frame, colored, opacity)
+            else:
+                blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
             cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
     else:
         heatmap = compute_cumulative_heatmap(frame_paths, threshold=threshold)
@@ -120,7 +184,10 @@ def apply_heatmap_to_frames(
             frame = cv2.imread(path)
             if frame is None:
                 continue
-            blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            if use_gpu:
+                blended = _blend_heatmap_gpu(frame, colored, opacity)
+            else:
+                blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
             cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
 MOTION_BLUR_FRAMES = {"off": 1, "low": 3, "medium": 5, "high": 7}
@@ -139,18 +206,19 @@ def apply_motion_blur(frame_dir: str, blend_count: int) -> None:
     sigma = blend_count / 4.0
 
     # Pre-compute gaussian weights
-    offsets = np.arange(-half, half + 1, dtype=np.float64)
+    offsets = np.arange(-half, half + 1, dtype=np.float32)
     weights = np.exp(-0.5 * (offsets / sigma) ** 2)
 
-    # Read all frames into memory as float32
+    # Read all frames into memory as uint8 (convert to float only in blend window)
     paths = [os.path.join(frame_dir, f) for f in frame_files]
     frames = []
     for p in paths:
         img = cv2.imread(p)
-        if img is not None:
-            frames.append(img.astype(np.float32))
-        else:
-            frames.append(None)
+        frames.append(img)  # keep as uint8 or None
+
+    use_gpu = is_cupy_available()
+    if use_gpu:
+        import cupy as cp
 
     n = len(frames)
     for i in range(n):
@@ -168,20 +236,36 @@ def apply_motion_blur(frame_dir: str, blend_count: int) -> None:
                 f_list.append(frames[j])
         if not f_list:
             continue
-        # Normalize weights
-        w_arr = np.array(w_list, dtype=np.float32)
-        w_arr /= w_arr.sum()
-        # Weighted average
-        blended = np.zeros_like(f_list[0])
-        for w, f in zip(w_arr, f_list):
-            blended += w * f
-        cv2.imwrite(paths[i], blended.astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+        if use_gpu:
+            w_arr = cp.array(w_list, dtype=cp.float32)
+            w_arr /= w_arr.sum()
+            gpu_frames = [cp.asarray(f, dtype=cp.float32) for f in f_list]
+            blended = cp.zeros_like(gpu_frames[0])
+            for w, f in zip(w_arr, gpu_frames):
+                blended += w * f
+            result = cp.asnumpy(blended.astype(cp.uint8))
+        else:
+            w_arr = np.array(w_list, dtype=np.float32)
+            w_arr /= w_arr.sum()
+            blended = np.zeros_like(f_list[0], dtype=np.float32)
+            for w, f in zip(w_arr, f_list):
+                blended += w * f.astype(np.float32)
+            result = blended.astype(np.uint8)
+
+        cv2.imwrite(paths[i], result, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
 
 QUALITY_CRF = {
     "h264": {"low": 28, "medium": 23, "high": 18, "lossless": 0},
     "h265": {"low": 32, "medium": 28, "high": 22, "lossless": 0},
     "vp9":  {"low": 38, "medium": 30, "high": 24, "lossless": 0},
+}
+
+# NVENC uses -cq (constant quality) instead of -crf
+NVENC_QUALITY_CQ = {
+    "h264": {"low": 32, "medium": 26, "high": 20},
+    "h265": {"low": 36, "medium": 30, "high": 24},
 }
 
 RESOLUTION_PRESETS = {
@@ -253,9 +337,23 @@ async def generate_timelapse(
     quality_preset: str = "medium",
 ) -> int:
     """Generate a timelapse video and return its database ID."""
+    from app.services.events import emit
+    from app.services.generation_progress import (
+        start_generation, update_step, set_frame_count,
+        complete_generation, fail_generation,
+    )
+
+    generation_id = str(uuid.uuid4())
     db: Session = SessionLocal()
     tmp_filelist = None
     deflicker_dir = None
+
+    async def _progress(step_name: str, status: str) -> None:
+        """Update step and emit SSE progress event."""
+        state = update_step(generation_id, step_name, status)
+        if state:
+            await emit("timelapse_progress", "", "", data=state)
+
     try:
         # Resolve period bounds
         if period_type != "custom" and (period_start is None or period_end is None):
@@ -265,7 +363,24 @@ async def generate_timelapse(
             period_end = datetime.now()
             period_start = period_end - timedelta(hours=24)
 
-        # Query captures
+        # Build dynamic step list based on options
+        steps: list[dict] = [{"name": "querying_captures", "label": "Querying captures"}]
+        steps.append({"name": "deflickering", "label": "Deflickering frames" if deflicker != "off" else "Copying frames"})
+        blur_blend = MOTION_BLUR_FRAMES.get(motion_blur, 1)
+        if blur_blend > 1:
+            steps.append({"name": "motion_blur", "label": "Applying motion blur"})
+        if heatmap_overlay:
+            steps.append({"name": "heatmap_overlay", "label": "Applying heatmap overlay"})
+        if weather_overlay:
+            steps.append({"name": "weather_overlay", "label": "Applying weather overlay"})
+        steps.append({"name": "encoding", "label": "Encoding video"})
+        steps.append({"name": "finalizing", "label": "Finalizing"})
+
+        start_generation(generation_id, profile_id, steps)
+
+        # Step: querying captures
+        await _progress("querying_captures", "in_progress")
+
         stmt = (
             select(Capture)
             .where(
@@ -284,6 +399,7 @@ async def generate_timelapse(
             )
 
         frame_count = len(captures)
+        set_frame_count(generation_id, frame_count)
         logger.info(
             "Generating %s timelapse for profile %d: %d frames",
             format,
@@ -291,8 +407,9 @@ async def generate_timelapse(
             frame_count,
         )
 
+        await _progress("querying_captures", "completed")
+
         try:
-            from app.services.events import emit
             await emit(
                 "timelapse_started",
                 f"Timelapse generating: {period_type}",
@@ -301,7 +418,8 @@ async def generate_timelapse(
         except Exception:
             pass
 
-        # Deflicker frames to smooth brightness transitions
+        # Step: deflickering / copying frames
+        await _progress("deflickering", "in_progress")
         original_paths = [os.path.join(settings.DATA_DIR, cap.file_path) for cap in captures]
         deflicker_dir = tempfile.mkdtemp(prefix="lapsora_deflicker_")
         deflickered_paths = [
@@ -309,7 +427,6 @@ async def generate_timelapse(
             for i in range(frame_count)
         ]
         if deflicker == "off":
-            # Copy frames without deflickering
             import shutil as _shutil
             for src, dst in zip(original_paths, deflickered_paths):
                 if os.path.exists(src):
@@ -324,14 +441,18 @@ async def generate_timelapse(
             )
 
         frame_count = len(frame_paths)
+        set_frame_count(generation_id, frame_count)
+        await _progress("deflickering", "completed")
 
-        # Apply motion blur to smooth frame transitions
-        blur_blend = MOTION_BLUR_FRAMES.get(motion_blur, 1)
+        # Step: motion blur
         if blur_blend > 1:
+            await _progress("motion_blur", "in_progress")
             await asyncio.to_thread(apply_motion_blur, deflicker_dir, blur_blend)
+            await _progress("motion_blur", "completed")
 
-        # Apply heatmap overlay to deflickered frames
+        # Step: heatmap overlay
         if heatmap_overlay:
+            await _progress("heatmap_overlay", "in_progress")
             await asyncio.to_thread(
                 apply_heatmap_to_frames,
                 frame_paths,
@@ -340,9 +461,11 @@ async def generate_timelapse(
                 heatmap_opacity,
                 heatmap_threshold,
             )
+            await _progress("heatmap_overlay", "completed")
 
-        # Apply weather overlay to deflickered frames
+        # Step: weather overlay
         if weather_overlay:
+            await _progress("weather_overlay", "in_progress")
             from PIL import Image, ImageDraw, ImageFont
             from app.services.weather import format_weather_text
 
@@ -378,6 +501,10 @@ async def generate_timelapse(
                     img.close()
                 except Exception:
                     logger.warning("Failed to apply weather overlay to frame %d", i)
+            await _progress("weather_overlay", "completed")
+
+        # Step: encoding
+        await _progress("encoding", "in_progress")
 
         # Write concat file list
         fd, tmp_filelist = tempfile.mkstemp(suffix=".txt", prefix="lapsora_concat_")
@@ -394,6 +521,22 @@ async def generate_timelapse(
         out_dir = os.path.join(settings.DATA_DIR, "timelapses", str(profile_id))
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{period_type}_{timestamp_str}.{ext}")
+
+        # Detect source frame dimensions and clamp output resolution
+        source_w, source_h = None, None
+        for p in frame_paths:
+            probe = cv2.imread(p)
+            if probe is not None:
+                source_h, source_w = probe.shape[:2]
+                break
+
+        if output_width and output_height and source_w and source_h:
+            if output_width > source_w or output_height > source_h:
+                output_width = min(output_width, source_w)
+                output_height = min(output_height, source_h)
+            if output_width == source_w and output_height == source_h:
+                output_width = None
+                output_height = None
 
         # Build ffmpeg command
         cmd = ["ffmpeg", "-y", "-loglevel", "error"]
@@ -419,31 +562,52 @@ async def generate_timelapse(
             # GIF ignores codec/quality_preset
             vf_filters.append("split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse")
         elif format == "webm":
-            # WebM always uses VP9 regardless of codec setting
+            # WebM always uses VP9 regardless of codec setting (no NVENC equivalent)
             effective_codec = "vp9"
             crf = QUALITY_CRF["vp9"].get(quality_preset, 30)
             cmd += ["-c:v", "libvpx-vp9", "-pix_fmt", "yuv420p", "-crf", str(crf), "-b:v", "0"]
             if quality_preset == "lossless":
                 cmd += ["-lossless", "1"]
         else:
-            # MP4 or MKV
+            # MP4 or MKV — use NVENC if available, otherwise software encoding
+            use_nvenc = is_nvenc_available()
+            nvenc_encoders = get_nvenc_encoders() if use_nvenc else {}
+
             if codec == "h265":
                 effective_codec = "h265"
-                crf = QUALITY_CRF["h265"].get(quality_preset, 28)
-                cmd += ["-c:v", "libx265", "-pix_fmt", "yuv420p", "-tag:v", "hvc1", "-crf", str(crf)]
-                if quality_preset == "lossless":
-                    cmd += ["-preset", "veryslow"]
+                if use_nvenc and "h265" in nvenc_encoders:
+                    logger.info("Using NVENC encoder: hevc_nvenc")
+                    cmd += ["-c:v", "hevc_nvenc", "-pix_fmt", "yuv420p", "-tag:v", "hvc1"]
+                    if quality_preset == "lossless":
+                        cmd += ["-tune", "lossless", "-preset", "p4"]
+                    else:
+                        cq = NVENC_QUALITY_CQ["h265"].get(quality_preset, 30)
+                        cmd += ["-cq", str(cq), "-preset", "p4"]
                 else:
-                    cmd += ["-preset", "medium"]
+                    crf = QUALITY_CRF["h265"].get(quality_preset, 28)
+                    cmd += ["-c:v", "libx265", "-pix_fmt", "yuv420p", "-tag:v", "hvc1", "-crf", str(crf)]
+                    if quality_preset == "lossless":
+                        cmd += ["-preset", "veryslow"]
+                    else:
+                        cmd += ["-preset", "medium"]
             else:
                 # auto or h264
                 effective_codec = "h264"
-                crf = QUALITY_CRF["h264"].get(quality_preset, 23)
-                cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf)]
-                if quality_preset == "lossless":
-                    cmd += ["-preset", "veryslow"]
+                if use_nvenc and "h264" in nvenc_encoders:
+                    logger.info("Using NVENC encoder: h264_nvenc")
+                    cmd += ["-c:v", "h264_nvenc", "-pix_fmt", "yuv420p"]
+                    if quality_preset == "lossless":
+                        cmd += ["-tune", "lossless", "-preset", "p4"]
+                    else:
+                        cq = NVENC_QUALITY_CQ["h264"].get(quality_preset, 26)
+                        cmd += ["-cq", str(cq), "-preset", "p4"]
                 else:
-                    cmd += ["-preset", "medium"]
+                    crf = QUALITY_CRF["h264"].get(quality_preset, 23)
+                    cmd += ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", str(crf)]
+                    if quality_preset == "lossless":
+                        cmd += ["-preset", "veryslow"]
+                    else:
+                        cmd += ["-preset", "medium"]
 
         if vf_filters:
             cmd += ["-vf", ",".join(vf_filters)]
@@ -461,6 +625,11 @@ async def generate_timelapse(
         if proc.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "unknown error"
             raise RuntimeError(f"ffmpeg failed (rc={proc.returncode}): {error_msg}")
+
+        await _progress("encoding", "completed")
+
+        # Step: finalizing
+        await _progress("finalizing", "in_progress")
 
         # Get file size
         file_size = os.path.getsize(out_path)
@@ -514,8 +683,10 @@ async def generate_timelapse(
             duration_seconds or 0,
         )
 
+        await _progress("finalizing", "completed")
+        complete_generation(generation_id)
+
         try:
-            from app.services.events import emit
             await emit(
                 "timelapse_complete",
                 f"Timelapse generated: {period_type}",
@@ -528,8 +699,8 @@ async def generate_timelapse(
 
     except Exception as exc:
         logger.exception("Timelapse generation failed for profile %d", profile_id)
+        fail_generation(generation_id, str(exc))
         try:
-            from app.services.events import emit
             await emit(
                 "timelapse_failure",
                 f"Timelapse failed: profile {profile_id}",

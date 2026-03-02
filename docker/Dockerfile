@@ -6,14 +6,34 @@ RUN npm ci
 COPY frontend/ .
 RUN npm run build
 
-# Stage 2: Production image
-FROM python:3.11-slim
+# Stage 2: Production image (NVIDIA CUDA runtime for NVENC support)
+FROM nvidia/cuda:12.8.1-runtime-ubuntu22.04
 WORKDIR /app
 
-# Install ffmpeg
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Python 3.11 via deadsnakes PPA and system dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg libx265-dev && \
+    apt-get install -y --no-install-recommends software-properties-common gpg-agent && \
+    add-apt-repository -y ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3.11 python3.11-venv python3.11-dev \
+        ffmpeg \
+        libglib2.0-0 libgl1 \
+        libx265-dev \
+        libffi-dev libssl-dev \
+        fonts-dejavu-core \
+        cuda-cudart-dev-12-8 cuda-nvcc-12-8 && \
     rm -rf /var/lib/apt/lists/*
+
+# Set python3.11 as default python
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install pip
+RUN python3.11 -m ensurepip --upgrade && \
+    python3.11 -m pip install --no-cache-dir --upgrade pip
 
 # Install Python dependencies
 COPY backend/ ./

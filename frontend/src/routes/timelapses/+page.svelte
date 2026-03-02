@@ -19,10 +19,11 @@
 
 	// Generate dialog
 	let showGenerate = $state(false);
-	let allProfileOptions = $state<{ id: number; label: string }[]>([]);
+	let allProfileOptions = $state<{ id: number; label: string; resolution_width: number | null; resolution_height: number | null }[]>([]);
 
-	// Generation progress
+	// Generation progress — keyed by generation_id
 	let generating = $state(0);
+	let activeGenerations = $state<Record<string, any>>({});
 
 	// Delete
 	let deleteTarget = $state<Timelapse | null>(null);
@@ -48,17 +49,40 @@
 		loadTimelapses();
 	});
 
+	// Fetch active generations on mount (survives page navigation)
+	$effect(() => {
+		api.getActiveGenerations().then((gens) => {
+			for (const gen of gens) {
+				activeGenerations[gen.generation_id] = gen;
+				generating = Math.max(generating, 1);
+			}
+		}).catch(() => {});
+	});
+
 	// Listen for timelapse events from layout SSE via CustomEvent
 	$effect(() => {
 		function handleNotification(e: Event) {
 			const data = (e as CustomEvent).detail;
-			if (data.event_type === 'timelapse_started') {
+			if (data.event_type === 'timelapse_progress') {
+				activeGenerations[data.generation_id] = data;
+			} else if (data.event_type === 'timelapse_started') {
 				generating = Math.max(0, generating) + 1;
 			} else if (data.event_type === 'timelapse_complete') {
 				generating = Math.max(0, generating - 1);
+				// Clear one generation from the map (the completed one)
+				const ids = Object.keys(activeGenerations);
+				if (ids.length > 0) {
+					delete activeGenerations[ids[0]];
+					activeGenerations = { ...activeGenerations };
+				}
 				loadTimelapses();
 			} else if (data.event_type === 'timelapse_failure') {
 				generating = Math.max(0, generating - 1);
+				const ids = Object.keys(activeGenerations);
+				if (ids.length > 0) {
+					delete activeGenerations[ids[0]];
+					activeGenerations = { ...activeGenerations };
+				}
 			}
 		}
 		window.addEventListener('lapsora:notification', handleNotification);
@@ -74,12 +98,12 @@
 	async function openGenerate() {
 		try {
 			const streams = await api.getStreams();
-			const options: { id: number; label: string }[] = [];
+			const options: { id: number; label: string; resolution_width: number | null; resolution_height: number | null }[] = [];
 			await Promise.all(
 				streams.map(async (s) => {
 					const profiles = await api.getStreamProfiles(s.id);
 					for (const p of profiles) {
-						options.push({ id: p.id, label: `${s.name} — ${p.name}` });
+						options.push({ id: p.id, label: `${s.name} — ${p.name}`, resolution_width: p.resolution_width ?? null, resolution_height: p.resolution_height ?? null });
 					}
 				})
 			);
@@ -121,17 +145,49 @@
 
 	<ScheduleManager />
 
-	{#if generating > 0}
-		<div class="rounded-lg border border-blue-800 bg-blue-950/50 p-3">
-			<div class="mb-2 flex items-center gap-2 text-sm text-blue-400">
+	{#each Object.values(activeGenerations) as gen (gen.generation_id)}
+		<div class="rounded-lg border border-blue-800 bg-blue-950/50 p-4">
+			<div class="mb-3 flex items-center gap-2 text-sm font-medium text-blue-300">
 				<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
 					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 				</svg>
-				Generating timelapse{generating > 1 ? `s (${generating})` : ''}...
+				Generating timelapse{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
 			</div>
-			<div class="h-1 overflow-hidden rounded-full bg-blue-900">
-				<div class="h-full w-1/3 animate-pulse rounded-full bg-blue-500" style="animation: slide 1.5s ease-in-out infinite;"></div>
+			<div class="space-y-1.5">
+				{#each gen.steps || [] as step}
+					<div class="flex items-center gap-2.5 text-sm {step.status === 'in_progress' ? 'text-blue-200' : step.status === 'completed' ? 'text-gray-400' : 'text-gray-600'}">
+						{#if step.status === 'completed'}
+							<svg class="h-4 w-4 shrink-0 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+							</svg>
+						{:else if step.status === 'in_progress'}
+							<svg class="h-4 w-4 shrink-0 animate-spin text-blue-400" fill="none" viewBox="0 0 24 24">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+							</svg>
+						{:else if step.status === 'skipped'}
+							<svg class="h-4 w-4 shrink-0 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
+							</svg>
+						{:else}
+							<div class="h-4 w-4 shrink-0 rounded-full border-2 border-gray-700"></div>
+						{/if}
+						{step.label}
+					</div>
+				{/each}
+			</div>
+		</div>
+	{/each}
+
+	{#if generating > 0 && Object.keys(activeGenerations).length === 0}
+		<div class="rounded-lg border border-blue-800 bg-blue-950/50 p-3">
+			<div class="flex items-center gap-2 text-sm text-blue-400">
+				<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+				</svg>
+				Generating timelapse...
 			</div>
 		</div>
 	{/if}
@@ -296,10 +352,3 @@
 	</div>
 {/if}
 
-<style>
-	@keyframes slide {
-		0% { transform: translateX(-100%); }
-		50% { transform: translateX(200%); }
-		100% { transform: translateX(-100%); }
-	}
-</style>

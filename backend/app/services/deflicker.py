@@ -6,6 +6,8 @@ import cv2
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 
+from app.services.gpu import is_cupy_available
+
 logger = logging.getLogger(__name__)
 
 STRENGTH_SIGMA = {
@@ -17,10 +19,22 @@ STRENGTH_SIGMA = {
 
 def calc_brightness(image: np.ndarray, sigma: float | None = 2.5) -> float:
     """Calculate mean brightness of an image, with optional sigma clipping."""
+    if sigma is not None and is_cupy_available():
+        import cupy as cp
+        gpu_img = cp.asarray(image)
+        mask = cp.ones(image.shape[:2], dtype=cp.bool_)
+        for c in range(image.shape[2]):
+            channel = gpu_img[:, :, c].astype(cp.float32)
+            mean = channel.mean()
+            std = channel.std()
+            if float(std) > 0:
+                mask &= cp.abs(channel - mean) / std <= sigma
+        return float(cp.mean(gpu_img[mask]))
+
     if sigma is not None:
         mask = np.ones(image.shape[:2], dtype=bool)
         for c in range(image.shape[2]):
-            channel = image[:, :, c].astype(np.float64)
+            channel = image[:, :, c].astype(np.float32)
             mean = channel.mean()
             std = channel.std()
             if std > 0:
@@ -73,6 +87,8 @@ def deflicker_frames(
     # Compute target brightness via Gaussian smoothing (nearest mode avoids zero-padding)
     target = gaussian_filter1d(brightness, sigma=gauss_sigma, mode="nearest")
 
+    use_gpu = is_cupy_available()
+
     # Pass 2: scale each frame in LAB colorspace and write
     for i, (src, dst) in enumerate(zip(frame_paths, output_paths)):
         if not readable[i]:
@@ -82,10 +98,16 @@ def deflicker_frames(
             continue
         if brightness[i] > 0:
             scale = target[i] / brightness[i]
-            # Scale in LAB colorspace to avoid color shifts
-            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float64)
-            lab[:, :, 0] = np.clip(lab[:, :, 0] * scale, 0, 255)
-            img = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+            if use_gpu:
+                import cupy as cp
+                gpu_lab = cp.asarray(lab[:, :, 0], dtype=cp.float32)
+                gpu_lab = cp.clip(gpu_lab * scale, 0, 255)
+                lab[:, :, 0] = cp.asnumpy(gpu_lab).astype(np.uint8)
+            else:
+                lab_f = lab[:, :, 0].astype(np.float32)
+                lab[:, :, 0] = np.clip(lab_f * scale, 0, 255).astype(np.uint8)
+            img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         cv2.imwrite(dst, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
 
-    logger.info("Deflickered %d frames (strength=%s, sigma=%d)", n, strength, gauss_sigma)
+    logger.info("Deflickered %d frames (strength=%s, sigma=%d, gpu=%s)", n, strength, gauss_sigma, use_gpu)

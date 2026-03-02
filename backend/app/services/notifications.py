@@ -43,8 +43,21 @@ def _get_event_toggles(db: Any) -> dict:
     return DEFAULT_EVENT_TOGGLES.copy()
 
 
-async def handle_event(event_type: str, title: str, body: str, level: str = "info") -> None:
+async def handle_event(event_type: str, title: str, body: str, level: str = "info", data: dict | None = None) -> None:
     """Event listener registered on the event bus. Persists, broadcasts SSE, sends Apprise."""
+
+    # Transient progress events: push to SSE only, no DB persistence or Apprise
+    if event_type == "timelapse_progress":
+        sse_data = json.dumps({"event_type": event_type, **(data or {})})
+        with _sse_lock:
+            queues = list(sse_queues)
+        for queue in queues:
+            try:
+                queue.put_nowait(sse_data)
+            except asyncio.QueueFull:
+                pass
+        return
+
     db = SessionLocal()
     try:
         # 1. Always persist to notifications table

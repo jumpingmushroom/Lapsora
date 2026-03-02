@@ -2,7 +2,7 @@
 	import { api } from '$lib/api';
 
 	interface Props {
-		profileOptions: { id: number; label: string }[];
+		profileOptions: { id: number; label: string; resolution_width: number | null; resolution_height: number | null }[];
 		open: boolean;
 		onclose: () => void;
 	}
@@ -33,6 +33,28 @@
 	let quality_preset = $state('medium');
 	let loading = $state(false);
 	let error = $state('');
+	let nvencAvailable = $state(false);
+
+	$effect(() => {
+		api.getSystemInfo().then((info) => {
+			nvencAvailable = info.nvenc_available;
+		}).catch(() => {});
+	});
+
+	let selectedProfile = $derived(profileOptions.find(p => p.id === selectedProfileId));
+	let maxWidth = $derived(selectedProfile?.resolution_width ?? Infinity);
+	let maxHeight = $derived(selectedProfile?.resolution_height ?? Infinity);
+
+	// Reset resolution when profile changes and current preset exceeds source
+	$effect(() => {
+		selectedProfileId;
+		const dims = RESOLUTION_PRESETS[resolution_preset];
+		if (dims && (dims[0] > maxWidth || dims[1] > maxHeight)) {
+			resolution_preset = 'original';
+			output_width = null;
+			output_height = null;
+		}
+	});
 
 	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
 		original: null,
@@ -174,7 +196,12 @@
 
 				{#if format === 'mp4' || format === 'mkv'}
 					<div>
-						<label for="gen-codec" class="mb-1 block text-sm font-medium text-gray-300">Codec</label>
+						<label for="gen-codec" class="mb-1 flex items-center gap-2 text-sm font-medium text-gray-300">
+						Codec
+						{#if nvencAvailable}
+							<span class="rounded bg-green-900/50 px-1.5 py-0.5 text-xs font-semibold text-green-300">GPU</span>
+						{/if}
+					</label>
 						<select
 							id="gen-codec"
 							bind:value={codec}
@@ -197,10 +224,11 @@
 							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						>
 							<option value="original">Original</option>
-							<option value="720p">720p</option>
-							<option value="1080p">1080p</option>
-							<option value="4k">4K</option>
-							<option value="8k">8K</option>
+							{#each Object.entries(RESOLUTION_PRESETS) as [key, dims]}
+								{#if dims && dims[0] <= maxWidth && dims[1] <= maxHeight}
+									<option value={key}>{key}</option>
+								{/if}
+							{/each}
 							<option value="custom">Custom</option>
 						</select>
 					</div>
@@ -214,6 +242,7 @@
 									type="number"
 									bind:value={output_width}
 									min="1"
+									max={maxWidth === Infinity ? undefined : maxWidth}
 									placeholder="Width"
 									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
@@ -225,6 +254,7 @@
 									type="number"
 									bind:value={output_height}
 									min="1"
+									max={maxHeight === Infinity ? undefined : maxHeight}
 									placeholder="Height"
 									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>

@@ -44,6 +44,13 @@
 		es.addEventListener('notification', (e) => {
 			try {
 				const data = JSON.parse(e.data);
+
+				// Progress events are transient — dispatch but don't persist or toast
+				if (data.event_type === 'timelapse_progress') {
+					window.dispatchEvent(new CustomEvent('lapsora:notification', { detail: data }));
+					return;
+				}
+
 				const notif: Notification = {
 					id: data.id,
 					event_type: data.event_type,

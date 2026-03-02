@@ -37,6 +37,28 @@
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
+	let nvencAvailable = $state(false);
+
+	$effect(() => {
+		api.getSystemInfo().then((info) => {
+			nvencAvailable = info.nvenc_available;
+		}).catch(() => {});
+	});
+
+	let selectedFormProfile = $derived(profiles.find(p => p.id == formProfileId));
+	let formMaxWidth = $derived(selectedFormProfile?.resolution_width ?? Infinity);
+	let formMaxHeight = $derived(selectedFormProfile?.resolution_height ?? Infinity);
+
+	// Reset resolution when profile changes and current preset exceeds source
+	$effect(() => {
+		formProfileId;
+		const dims = RESOLUTION_PRESETS[formResolutionPreset];
+		if (dims && (dims[0] > formMaxWidth || dims[1] > formMaxHeight)) {
+			formResolutionPreset = 'original';
+			formOutputWidth = null;
+			formOutputHeight = null;
+		}
+	});
 
 	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
 		original: null,
@@ -552,7 +574,12 @@
 
 					{#if formFormat === 'mp4' || formFormat === 'mkv'}
 						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Codec</label>
+							<label class="mb-1 flex items-center gap-2 text-sm font-medium text-gray-300">
+								Codec
+								{#if nvencAvailable}
+									<span class="rounded bg-green-900/50 px-1.5 py-0.5 text-xs font-semibold text-green-300">GPU</span>
+								{/if}
+							</label>
 							<select
 								bind:value={formCodec}
 								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -573,10 +600,11 @@
 								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 							>
 								<option value="original">Original</option>
-								<option value="720p">720p</option>
-								<option value="1080p">1080p</option>
-								<option value="4k">4K</option>
-								<option value="8k">8K</option>
+								{#each Object.entries(RESOLUTION_PRESETS) as [key, dims]}
+									{#if dims && dims[0] <= formMaxWidth && dims[1] <= formMaxHeight}
+										<option value={key}>{key}</option>
+									{/if}
+								{/each}
 								<option value="custom">Custom</option>
 							</select>
 						</div>
@@ -589,6 +617,7 @@
 										type="number"
 										bind:value={formOutputWidth}
 										min="1"
+										max={formMaxWidth === Infinity ? undefined : formMaxWidth}
 										placeholder="Width"
 										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 									/>
@@ -599,6 +628,7 @@
 										type="number"
 										bind:value={formOutputHeight}
 										min="1"
+										max={formMaxHeight === Infinity ? undefined : formMaxHeight}
 										placeholder="Height"
 										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 									/>

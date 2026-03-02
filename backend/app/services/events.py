@@ -13,10 +13,10 @@ def on_event(callback: Callable[..., Coroutine[Any, Any, None]]) -> None:
     _listeners.append(callback)
 
 
-async def emit(event_type: str, title: str, body: str, level: str = "info") -> None:
+async def emit(event_type: str, title: str, body: str, level: str = "info", data: dict | None = None) -> None:
     """Emit an event to all registered listeners."""
     for listener in _listeners:
         try:
-            await listener(event_type, title, body, level)
+            await listener(event_type, title, body, level, data)
         except Exception:
             logger.exception("Event listener failed for %s", event_type)

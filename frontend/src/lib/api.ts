@@ -19,6 +19,8 @@ export const api = {
 	// Health
 	getHealth: () => request<{ status: string; version: string }>('/health'),
 	getStorage: () => request<StorageStats>('/storage'),
+	getSystemInfo: () => request<{ status: string; version: string; gpu_available: boolean; nvenc_available: boolean; nvenc_encoders: string[]; cupy_available: boolean }>('/system/info'),
+	getActiveGenerations: () => request<any[]>('/generations/active'),
 
 	// Streams
 	getStreams: () => request<Stream[]>('/streams/'),
