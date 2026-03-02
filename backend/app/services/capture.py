@@ -131,7 +131,9 @@ async def capture_frame(profile_id: int) -> None:
     try:
         profile = db.query(Profile).filter(Profile.id == profile_id).first()
         if not profile:
-            logger.error("Profile %d not found, skipping capture", profile_id)
+            logger.warning("Profile %d not found, removing orphaned job", profile_id)
+            from app.services.scheduler import remove_capture_job
+            remove_capture_job(profile_id)
             return
 
         stream = profile.stream

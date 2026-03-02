@@ -83,6 +83,12 @@ def delete_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
+
+    # Remove scheduler jobs for all profiles before cascade delete
+    from app.services.scheduler import remove_capture_job
+    for profile in stream.profiles:
+        remove_capture_job(profile.id)
+
     db.delete(stream)
     db.commit()
 
