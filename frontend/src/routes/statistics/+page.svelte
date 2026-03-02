@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Profile } from '$lib/types';
+	import type { StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Profile, Stream } from '$lib/types';
 	import LineChart from '$lib/components/LineChart.svelte';
 	import type uPlot from 'uplot';
 
@@ -9,6 +9,7 @@
 	let activityData = $state<CaptureActivityPoint[]>([]);
 	let storageData = $state<ProfileStoragePoint[]>([]);
 	let profiles = $state<Profile[]>([]);
+	let streams = $state<Stream[]>([]);
 
 	let trendDays = $state(90);
 	let activityDays = $state(30);
@@ -33,14 +34,17 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		return p ? p.name : `Profile ${id}`;
+		if (!p) return `Profile ${id}`;
+		const s = streams.find((s) => s.id === p.stream_id);
+		return s ? `${s.name} / ${p.name}` : p.name;
 	}
 
 	async function loadProfiles() {
 		try {
-			const streams = await api.getStreams();
+			const fetchedStreams = await api.getStreams();
+			streams = fetchedStreams;
 			const all: Profile[] = [];
-			for (const s of streams) {
+			for (const s of fetchedStreams) {
 				const ps = await api.getStreamProfiles(s.id);
 				all.push(...ps);
 			}
@@ -233,7 +237,7 @@
 			>
 				<option value={undefined}>All Profiles</option>
 				{#each profiles as p}
-					<option value={p.id}>{p.name}</option>
+					<option value={p.id}>{profileName(p.id)}</option>
 				{/each}
 			</select>
 		</div>
