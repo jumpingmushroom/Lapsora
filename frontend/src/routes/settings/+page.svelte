@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig } from '$lib/types';
+	import { setUse24h } from '$lib/utils';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let urls = $state<NotificationURL[]>([]);
@@ -32,6 +33,9 @@
 	let testingGo2rtc = $state(false);
 	let go2rtcTestResult = $state<string | null>(null);
 
+	let timeFormatConfig = $state<TimeFormatConfig>({ use_24h: false });
+	let savingTimeFormat = $state(false);
+
 	let loading = $state(true);
 	let newLabel = $state('');
 	let newUrl = $state('');
@@ -41,14 +45,15 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig()])
-			.then(([notifSettings, hc, loc, gapCfg, g2rCfg]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig()])
+			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
 				locationConfig = loc;
 				captureGapConfig = gapCfg;
 				go2rtcConfig = g2rCfg;
+				timeFormatConfig = tfCfg;
 			})
 			.finally(() => {
 				loading = false;
@@ -152,6 +157,18 @@
 		testingGo2rtc = false;
 	}
 
+	async function saveTimeFormat() {
+		savingTimeFormat = true;
+		try {
+			await api.updateTimeFormatConfig(timeFormatConfig);
+			setUse24h(timeFormatConfig.use_24h);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save time format');
+		} finally {
+			savingTimeFormat = false;
+		}
+	}
+
 	const eventLabels: Record<string, string> = {
 		capture_failure: 'Capture failure',
 		stream_unhealthy: 'Stream unhealthy',
@@ -172,6 +189,26 @@
 	{#if loading}
 		<p class="text-gray-400">Loading settings...</p>
 	{:else}
+		<!-- Display -->
+		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+			<h2 class="mb-4 text-xl font-semibold text-white">Display</h2>
+			<label class="mb-4 flex items-center gap-3">
+				<input
+					type="checkbox"
+					bind:checked={timeFormatConfig.use_24h}
+					class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
+				/>
+				<span class="text-sm text-gray-200">Use 24-hour time format</span>
+			</label>
+			<button
+				onclick={saveTimeFormat}
+				disabled={savingTimeFormat}
+				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+			>
+				{savingTimeFormat ? 'Saving...' : 'Save'}
+			</button>
+		</section>
+
 		<!-- Notification URLs -->
 		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 			<h2 class="mb-4 text-xl font-semibold text-white">Notification URLs</h2>

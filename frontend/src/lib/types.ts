@@ -346,6 +346,10 @@ export interface CaptureGapConfig {
 	enabled: boolean;
 }
 
+export interface TimeFormatConfig {
+	use_24h: boolean;
+}
+
 export interface StatsSummary {
 	total_captures: number;
 	avg_captures_per_day: number;

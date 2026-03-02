@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Profile, Stream, StorageStats, TimelapseSummary } from '$lib/types';
-	import { formatBytes, formatDuration } from '$lib/utils';
+	import { formatBytes, formatDuration, formatDateTime } from '$lib/utils';
 	import LineChart from '$lib/components/LineChart.svelte';
 	import type uPlot from 'uplot';
 
@@ -437,7 +437,7 @@
 										</span>
 									</td>
 									<td class="py-2 pr-4 text-white">{stream.consecutive_failures}</td>
-									<td class="py-2 pr-4 text-gray-400">{stream.last_checked_at ? new Date(stream.last_checked_at).toLocaleString() : '—'}</td>
+									<td class="py-2 pr-4 text-gray-400">{stream.last_checked_at ? formatDateTime(stream.last_checked_at) : '—'}</td>
 									<td class="py-2">{#if stream.enabled}<span class="text-green-400">Yes</span>{:else}<span class="text-gray-500">No</span>{/if}</td>
 								</tr>
 							{/each}

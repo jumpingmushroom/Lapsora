@@ -381,6 +381,10 @@ class LocationConfig(BaseModel):
     longitude: float = 0.0
 
 
+class TimeFormatConfig(BaseModel):
+    use_24h: bool = False
+
+
 class HealthConfig(BaseModel):
     check_interval_seconds: int = Field(default=300, ge=30)
     failure_threshold: int = 3

@@ -18,6 +18,7 @@ from app.schemas import (
     NotificationURLCreate,
     NotificationURLRead,
     NotificationURLUpdate,
+    TimeFormatConfig,
 )
 
 logger = logging.getLogger(__name__)
@@ -222,3 +223,25 @@ def update_capture_gap_config(data: CaptureGapUpdate, db: Session = Depends(get_
         remove_capture_gap_job()
 
     return {"enabled": enabled}
+
+
+# --- Time Format Config ---
+
+
+@router.get("/time-format", response_model=TimeFormatConfig)
+def get_time_format_config(db: Session = Depends(get_db)):
+    row = db.query(Setting).filter(Setting.key == "time_format_use_24h").first()
+    use_24h = row is not None and row.value == "true"
+    return TimeFormatConfig(use_24h=use_24h)
+
+
+@router.put("/time-format", response_model=TimeFormatConfig)
+def update_time_format_config(data: TimeFormatConfig, db: Session = Depends(get_db)):
+    row = db.query(Setting).filter(Setting.key == "time_format_use_24h").first()
+    value = "true" if data.use_24h else "false"
+    if row:
+        row.value = value
+    else:
+        db.add(Setting(key="time_format_use_24h", value=value))
+    db.commit()
+    return data

@@ -260,8 +260,10 @@
 								/>
 								<input
 									id="gen-start-time"
-									type="time"
+									type="text"
 									bind:value={customStartTime}
+									placeholder="HH:MM"
+									pattern="\d{2}:\d{2}"
 									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 							</div>
@@ -277,8 +279,10 @@
 								/>
 								<input
 									id="gen-end-time"
-									type="time"
+									type="text"
 									bind:value={customEndTime}
+									placeholder="HH:MM"
+									pattern="\d{2}:\d{2}"
 									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 							</div>

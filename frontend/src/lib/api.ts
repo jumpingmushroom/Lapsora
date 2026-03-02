@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary } from './types';
 
 const BASE = '/api';
 
@@ -133,6 +133,10 @@ export const api = {
 	// Settings — Capture Gap
 	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),
 	updateCaptureGapConfig: (data: CaptureGapConfig) => request<CaptureGapConfig>('/settings/capture-gap', { method: 'PUT', body: JSON.stringify(data) }),
+
+	// Settings — Time Format
+	getTimeFormatConfig: () => request<TimeFormatConfig>('/settings/time-format'),
+	updateTimeFormatConfig: (data: TimeFormatConfig) => request<TimeFormatConfig>('/settings/time-format', { method: 'PUT', body: JSON.stringify(data) }),
 
 	// Statistics
 	getStatsSummary: () => request<StatsSummary>('/statistics/summary'),

@@ -4,6 +4,7 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import type { Notification } from '$lib/types';
+	import { setUse24h } from '$lib/utils';
 	import NotificationBell from '$lib/components/NotificationBell.svelte';
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
 
@@ -33,9 +34,12 @@
 		toasts = toasts.filter((t) => t.id !== id);
 	}
 
-	// Load notifications once on mount
+	// Load notifications and time format once on mount
 	$effect(() => {
 		loadNotifications();
+		api.getTimeFormatConfig().then((cfg) => {
+			setUse24h(cfg.use_24h);
+		}).catch(() => {});
 	});
 
 	// SSE connection - separate effect so notification changes don't trigger reconnection

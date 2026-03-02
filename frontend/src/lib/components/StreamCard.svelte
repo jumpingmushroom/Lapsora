@@ -28,10 +28,6 @@
 				: 'bg-gray-500'
 	);
 
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString();
-	}
-
 	function timeAgo(iso: string | null): string {
 		if (!iso) return 'never';
 		const diff = Date.now() - new Date(iso).getTime();

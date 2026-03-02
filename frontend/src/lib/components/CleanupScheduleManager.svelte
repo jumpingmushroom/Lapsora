@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { formatDateTime, formatCronTime } from '$lib/utils';
 	import type { CleanupSchedule, Profile, Stream } from '$lib/types';
 
 	let schedules = $state<CleanupSchedule[]>([]);
@@ -20,9 +21,9 @@
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
 
-	const PRESETS: Record<string, { label: string; cron: string; description: string }> = {
-		daily: { label: 'Daily 03:00', cron: '0 3 * * *', description: 'Every day at 03:00' },
-		weekly: { label: 'Weekly Sun 03:00', cron: '0 3 * * 0', description: 'Sunday at 03:00' }
+	const PRESETS: Record<string, { label: string; cron: string; descriptionFn: () => string }> = {
+		daily: { label: 'Daily 03:00', cron: '0 3 * * *', descriptionFn: () => `Every day at ${formatCronTime(3, 0)}` },
+		weekly: { label: 'Weekly Sun 03:00', cron: '0 3 * * 0', descriptionFn: () => `Sunday at ${formatCronTime(3, 0)}` }
 	};
 
 	async function load() {
@@ -160,14 +161,14 @@
 
 	function describeCron(schedule: CleanupSchedule): string {
 		for (const [, info] of Object.entries(PRESETS)) {
-			if (schedule.cron_expression === info.cron) return info.description;
+			if (schedule.cron_expression === info.cron) return info.descriptionFn();
 		}
 		return schedule.cron_expression;
 	}
 
 	function formatNextRun(iso: string | null): string {
 		if (!iso) return 'N/A';
-		return new Date(iso).toLocaleString();
+		return formatDateTime(iso);
 	}
 
 	function profileName(id: number): string {

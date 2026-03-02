@@ -1,3 +1,7 @@
+let _use24h = false;
+export function setUse24h(val: boolean) { _use24h = val; }
+export function getUse24h(): boolean { return _use24h; }
+
 export function formatBytes(bytes: number | null): string {
 	if (!bytes || bytes === 0) return bytes === 0 ? '0 B' : '--';
 	const k = 1024;
@@ -12,7 +16,20 @@ export function formatDate(iso: string | null): string {
 }
 
 export function formatDateTime(iso: string): string {
-	return new Date(iso).toLocaleString();
+	return new Date(iso).toLocaleString(undefined, { hour12: !_use24h });
+}
+
+export function formatTime(iso: string): string {
+	return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: !_use24h });
+}
+
+export function formatCronTime(hour: number, minute: number): string {
+	if (_use24h) {
+		return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+	}
+	const period = hour >= 12 ? 'PM' : 'AM';
+	const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+	return `${h12}:${String(minute).padStart(2, '0')} ${period}`;
 }
 
 export function formatDuration(seconds: number | null): string {

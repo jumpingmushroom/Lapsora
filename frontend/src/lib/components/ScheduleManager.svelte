@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { formatDateTime, formatCronTime } from '$lib/utils';
 	import type { TimelapseSchedule, Profile, Stream } from '$lib/types';
 
 	let schedules = $state<TimelapseSchedule[]>([]);
@@ -94,11 +95,11 @@
 
 	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
 
-	const PRESETS: Record<string, { label: string; cron: string; description: string }> = {
-		daily: { label: 'Daily', cron: '5 0 * * *', description: 'Every day at 00:05' },
-		weekly: { label: 'Weekly', cron: '30 0 * * 0', description: 'Sunday at 00:30' },
-		monthly: { label: 'Monthly', cron: '0 1 1 * *', description: '1st of month at 01:00' },
-		yearly: { label: 'Yearly', cron: '0 2 1 1 *', description: 'Jan 1 at 02:00' }
+	const PRESETS: Record<string, { label: string; cron: string; descriptionFn: () => string }> = {
+		daily: { label: 'Daily', cron: '5 0 * * *', descriptionFn: () => `Every day at ${formatCronTime(0, 5)}` },
+		weekly: { label: 'Weekly', cron: '30 0 * * 0', descriptionFn: () => `Sunday at ${formatCronTime(0, 30)}` },
+		monthly: { label: 'Monthly', cron: '0 1 1 * *', descriptionFn: () => `1st of month at ${formatCronTime(1, 0)}` },
+		yearly: { label: 'Yearly', cron: '0 2 1 1 *', descriptionFn: () => `Jan 1 at ${formatCronTime(2, 0)}` }
 	};
 
 	async function load() {
@@ -308,14 +309,14 @@
 
 	function describeCron(schedule: TimelapseSchedule): string {
 		if (schedule.preset && PRESETS[schedule.preset]) {
-			return PRESETS[schedule.preset].description;
+			return PRESETS[schedule.preset].descriptionFn();
 		}
 		return schedule.cron_expression;
 	}
 
 	function formatNextRun(iso: string | null): string {
 		if (!iso) return 'N/A';
-		return new Date(iso).toLocaleString();
+		return formatDateTime(iso);
 	}
 
 	function profileName(id: number): string {
