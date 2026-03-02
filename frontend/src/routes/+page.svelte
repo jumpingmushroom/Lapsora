@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { Stream, Timelapse, StorageStats } from '$lib/types';
+	import { formatBytes, formatDateTime } from '$lib/utils';
 	import StorageStatsComponent from '$lib/components/StorageStats.svelte';
 	import StreamCard from '$lib/components/StreamCard.svelte';
 
@@ -43,18 +44,9 @@
 			.catch(() => {});
 	});
 
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleString();
-	}
-
-	function formatBytes(bytes: number | null): string {
-		if (!bytes) return 'N/A';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-	}
 </script>
+
+<svelte:head><title>Dashboard - Lapsora</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
@@ -123,7 +115,7 @@
 						</div>
 						<div class="flex items-center gap-4 text-sm text-gray-400">
 							<span>{formatBytes(tl.file_size)}</span>
-							<span>{formatDate(tl.created_at)}</span>
+							<span>{formatDateTime(tl.created_at)}</span>
 						</div>
 					</a>
 				{/each}

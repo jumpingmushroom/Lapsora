@@ -12,7 +12,8 @@
 		errorMsg = '';
 
 		const mediaSource = new MediaSource();
-		videoEl.src = URL.createObjectURL(mediaSource);
+		const objectUrl = URL.createObjectURL(mediaSource);
+		videoEl.src = objectUrl;
 
 		let ws: WebSocket | null = null;
 		let sourceBuffer: SourceBuffer | null = null;
@@ -87,6 +88,7 @@
 			if (videoEl) {
 				videoEl.src = '';
 			}
+			URL.revokeObjectURL(objectUrl);
 		};
 	});
 </script>

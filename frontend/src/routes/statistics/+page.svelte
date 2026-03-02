@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Profile, Stream, StorageStats, TimelapseSummary } from '$lib/types';
+	import { formatBytes, formatDuration } from '$lib/utils';
 	import LineChart from '$lib/components/LineChart.svelte';
 	import type uPlot from 'uplot';
 
@@ -20,24 +21,9 @@
 
 	let loading = $state(true);
 
-	function formatBytes(b: number): string {
-		if (b < 1024) return `${b} B`;
-		if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-		if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
-		return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-	}
-
-	function formatDate(v: number): string {
+	function formatChartDate(v: number): string {
 		const d = new Date(v * 1000);
 		return `${d.getMonth() + 1}/${d.getDate()}`;
-	}
-
-	function formatDuration(seconds: number): string {
-		if (seconds < 60) return `${Math.round(seconds)}s`;
-		if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
-		const h = Math.floor(seconds / 3600);
-		const m = Math.floor((seconds % 3600) / 60);
-		return `${h}h ${m}m`;
 	}
 
 	const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
@@ -187,6 +173,8 @@
 	});
 </script>
 
+<svelte:head><title>Statistics - Lapsora</title></svelte:head>
+
 <div class="space-y-6">
 	<h1 class="text-3xl font-bold text-white">Statistics</h1>
 
@@ -301,7 +289,7 @@
 				</div>
 			{/if}
 			{#if trendData.length}
-				<LineChart data={trendChartData} series={trendSeries} height={280} xFormatter={formatDate} />
+				<LineChart data={trendChartData} series={trendSeries} height={280} xFormatter={formatChartDate} />
 			{:else}
 				<p class="py-12 text-center text-gray-500">No data yet</p>
 			{/if}
@@ -310,12 +298,15 @@
 		<!-- Filters for per-profile charts -->
 		<div class="flex flex-wrap items-center gap-3">
 			<select
-				bind:value={selectedProfileId}
+				onchange={(e) => {
+					const val = (e.target as HTMLSelectElement).value;
+					selectedProfileId = val ? Number(val) : undefined;
+				}}
 				class="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-300"
 			>
-				<option value={undefined}>All Profiles</option>
+				<option value="">All Profiles</option>
 				{#each profiles as p}
-					<option value={p.id}>{profileName(p.id)}</option>
+					<option value={p.id} selected={selectedProfileId === p.id}>{profileName(p.id)}</option>
 				{/each}
 			</select>
 		</div>
@@ -335,7 +326,7 @@
 					</select>
 				</div>
 				{#if activityData.length}
-					<LineChart data={activityChartData} series={activitySeries} height={250} xFormatter={formatDate} />
+					<LineChart data={activityChartData} series={activitySeries} height={250} xFormatter={formatChartDate} />
 				{:else}
 					<p class="py-12 text-center text-gray-500">No data yet</p>
 				{/if}
@@ -354,7 +345,7 @@
 					</select>
 				</div>
 				{#if storageData.length}
-					<LineChart data={storageChartData} series={storageSeries} height={250} xFormatter={formatDate} />
+					<LineChart data={storageChartData} series={storageSeries} height={250} xFormatter={formatChartDate} />
 				{:else}
 					<p class="py-12 text-center text-gray-500">No data yet</p>
 				{/if}

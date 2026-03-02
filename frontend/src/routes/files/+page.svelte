@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { Stream, Profile, Capture, Timelapse } from '$lib/types';
+	import { formatDate, formatDateTime, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 
 	let streams = $state<Stream[]>([]);
@@ -104,30 +105,6 @@
 		}
 	}
 
-	function formatDate(iso: string | null): string {
-		if (!iso) return 'N/A';
-		return new Date(iso).toLocaleDateString();
-	}
-
-	function formatDateTime(iso: string): string {
-		return new Date(iso).toLocaleString();
-	}
-
-	function formatDuration(seconds: number | null): string {
-		if (!seconds) return '--';
-		const m = Math.floor(seconds / 60);
-		const s = Math.round(seconds % 60);
-		return m > 0 ? `${m}m ${s}s` : `${s}s`;
-	}
-
-	function formatBytes(bytes: number | null): string {
-		if (!bytes) return '--';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-	}
-
 	$effect(() => {
 		api.getStreams().then((s) => {
 			streams = s;
@@ -225,6 +202,8 @@
 		}
 	}
 </script>
+
+<svelte:head><title>Files - Lapsora</title></svelte:head>
 
 <svelte:window onkeydown={handleKeydown} />
 
