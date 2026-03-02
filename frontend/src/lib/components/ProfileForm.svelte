@@ -20,6 +20,9 @@
 	let active_start_time = $state(profile?.active_start_time ?? '06:00');
 	let active_end_time = $state(profile?.active_end_time ?? '20:00');
 	let sun_offset_minutes = $state(profile?.sun_offset_minutes ?? 0);
+let sun_events = $state<string[]>(
+	profile?.sun_events ? profile.sun_events.split(',').filter(Boolean) : ['daylight']
+);
 
 	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -34,7 +37,8 @@
 			capture_mode,
 			active_start_time: capture_mode === 'manual' ? active_start_time : null,
 			active_end_time: capture_mode === 'manual' ? active_end_time : null,
-			sun_offset_minutes: capture_mode === 'sun' ? sun_offset_minutes : 0
+			sun_offset_minutes: capture_mode === 'sun' ? sun_offset_minutes : 0,
+		sun_events: capture_mode === 'sun' ? sun_events.join(',') : ''
 		};
 		onsubmit(data);
 	}
@@ -171,6 +175,28 @@
 				class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 			/>
 			<p class="mt-1 text-xs text-gray-500">Positive values extend the window (capture before sunrise / after sunset). Negative values shrink it. Requires location in Settings.</p>
+		</div>
+		<div class="mt-3">
+			<label class="mb-2 block text-sm font-medium text-gray-300">Sun events</label>
+			<div class="space-y-2 rounded-md border border-gray-700 bg-gray-900 p-3">
+				<label class="flex items-center gap-2 text-sm text-gray-300">
+					<input type="checkbox" value="daylight" bind:group={sun_events} class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500" />
+					Daylight <span class="text-gray-500">(sunrise to sunset)</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm text-gray-300">
+					<input type="checkbox" value="golden_hour" bind:group={sun_events} class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500" />
+					Golden hour <span class="text-gray-500">(warm light after sunrise / before sunset)</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm text-gray-300">
+					<input type="checkbox" value="blue_hour" bind:group={sun_events} class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500" />
+					Blue hour <span class="text-gray-500">(twilight before sunrise / after sunset)</span>
+				</label>
+				<label class="flex items-center gap-2 text-sm text-gray-300">
+					<input type="checkbox" value="night" bind:group={sun_events} class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500" />
+					Night <span class="text-gray-500">(dusk to dawn)</span>
+				</label>
+			</div>
+			<p class="mt-1 text-xs text-gray-500">Select which parts of the day to capture. Multiple selections are combined.</p>
 		</div>
 	{/if}
 
