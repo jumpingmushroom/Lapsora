@@ -94,7 +94,7 @@ def _is_within_active_window(profile, db, now: datetime) -> bool:
     if profile.capture_mode == "sun":
         try:
             from astral import LocationInfo
-            from astral.sun import sun
+            from astral.sun import sun, dawn, dusk
 
             lat_row = db.query(Setting).filter(Setting.key == "location_latitude").first()
             lon_row = db.query(Setting).filter(Setting.key == "location_longitude").first()
@@ -104,22 +104,69 @@ def _is_within_active_window(profile, db, now: datetime) -> bool:
             loc = LocationInfo(latitude=lat, longitude=lon)
             s = sun(loc.observer, date=now.date())
             offset = timedelta(minutes=profile.sun_offset_minutes)
-            start = (s["sunrise"] - offset).time()
-            end = (s["sunset"] + offset).time()
+
+            # Parse selected sun events, default to daylight
+            events = set(e.strip() for e in profile.sun_events.split(",") if e.strip()) if profile.sun_events else set()
+            if not events:
+                events = {"daylight"}
+
+            # Build list of (start, end) time windows
+            windows: list[tuple] = []
+
+            sunrise = s["sunrise"]
+            sunset = s["sunset"]
+
+            # Get civil twilight times for blue hour / night
+            try:
+                civil_dawn = dawn(loc.observer, date=now.date(), depression=6)
+                civil_dusk = dusk(loc.observer, date=now.date(), depression=6)
+            except ValueError:
+                # Polar regions — sun never sets or never rises
+                civil_dawn = sunrise
+                civil_dusk = sunset
+
+            if "daylight" in events:
+                windows.append(((sunrise - offset).time(), (sunset + offset).time()))
+
+            if "golden_hour" in events:
+                windows.append(((sunrise - offset).time(), (sunrise + timedelta(hours=1) + offset).time()))
+                windows.append(((sunset - timedelta(hours=1) - offset).time(), (sunset + offset).time()))
+
+            if "blue_hour" in events:
+                windows.append(((civil_dawn - offset).time(), (sunrise + offset).time()))
+                windows.append(((sunset - offset).time(), (civil_dusk + offset).time()))
+
+            if "night" in events:
+                windows.append(((civil_dusk - offset).time(), (civil_dawn + offset).time()))
+
+            if not windows:
+                return True  # No windows computed, allow capture
+
+            # Check if current time falls within any window
+            current = now.time()
+            for win_start, win_end in windows:
+                if win_start <= win_end:
+                    if win_start <= current <= win_end:
+                        return True
+                else:  # overnight span
+                    if current >= win_start or current <= win_end:
+                        return True
+            return False
+
         except Exception:
             logger.warning("Failed to compute sun times for profile %d, allowing capture", profile.id)
             return True
+
     else:  # manual
         if not profile.active_start_time or not profile.active_end_time:
             return True
         start = datetime.strptime(profile.active_start_time, "%H:%M").time()
         end = datetime.strptime(profile.active_end_time, "%H:%M").time()
-
-    current = now.time()
-    if start <= end:
-        return start <= current <= end
-    else:  # overnight span
-        return current >= start or current <= end
+        current = now.time()
+        if start <= end:
+            return start <= current <= end
+        else:
+            return current >= start or current <= end
 
 
 async def capture_frame(profile_id: int) -> None:
