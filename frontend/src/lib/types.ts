@@ -49,6 +49,7 @@ export interface Profile {
 	active_start_time: string | null;
 	active_end_time: string | null;
 	sun_offset_minutes: number;
+	sun_events: string;
 	source_template_id: number | null;
 	created_at: string;
 	updated_at: string;
@@ -92,6 +93,7 @@ export interface ProfileCreate {
 	active_start_time?: string | null;
 	active_end_time?: string | null;
 	sun_offset_minutes?: number;
+	sun_events?: string;
 }
 
 export interface ProfileUpdate {
@@ -107,6 +109,7 @@ export interface ProfileUpdate {
 	active_start_time?: string | null;
 	active_end_time?: string | null;
 	sun_offset_minutes?: number;
+	sun_events?: string;
 }
 
 export interface LocationConfig {
