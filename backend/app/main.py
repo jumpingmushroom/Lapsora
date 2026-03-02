@@ -69,7 +69,7 @@ app = FastAPI(title="Lapsora", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -90,7 +90,13 @@ app.include_router(statistics.router)
 # Static file mounts
 data_dir = Path(app_settings.DATA_DIR)
 data_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(data_dir)), name="static")
+captures_dir = data_dir / "captures"
+captures_dir.mkdir(exist_ok=True)
+app.mount("/static/captures", StaticFiles(directory=str(captures_dir)), name="static_captures")
+
+timelapses_dir = data_dir / "timelapses"
+timelapses_dir.mkdir(exist_ok=True)
+app.mount("/static/timelapses", StaticFiles(directory=str(timelapses_dir)), name="static_timelapses")
 
 # Serve frontend build if it exists (SPA with fallback)
 _candidates = [
@@ -110,9 +116,9 @@ if _frontend_dir:
     # SPA fallback: serve index.html for all non-API routes
     @app.get("/{path:path}", include_in_schema=False)
     async def spa_fallback(path: str):
-        # Try serving the exact file first
         file_path = _frontend_dir / path
+        if not file_path.resolve().is_relative_to(_frontend_dir.resolve()):
+            return FileResponse(str(_frontend_dir / "index.html"))
         if file_path.is_file():
             return FileResponse(str(file_path))
-        # Fall back to index.html for SPA routing
         return FileResponse(str(_frontend_dir / "index.html"))

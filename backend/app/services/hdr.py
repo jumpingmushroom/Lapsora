@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import shutil
 import tempfile
 
 import cv2
@@ -99,13 +100,4 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
         return {"width": width, "height": height, "file_size": file_size}
 
     finally:
-        # Cleanup temp files
-        for fp in frame_paths:
-            try:
-                os.remove(fp)
-            except OSError:
-                pass
-        try:
-            os.rmdir(tmp_dir)
-        except OSError:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)

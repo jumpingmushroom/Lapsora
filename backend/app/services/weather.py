@@ -44,7 +44,7 @@ WMO_CODES: dict[int, str] = {
 }
 
 
-def get_current_weather(lat: float, lon: float) -> tuple[float, int] | None:
+async def get_current_weather(lat: float, lon: float) -> tuple[float, int] | None:
     """Fetch current temperature and weather code from Open-Meteo.
 
     Returns (temperature_celsius, weather_code) or None on failure.
@@ -58,8 +58,8 @@ def get_current_weather(lat: float, lon: float) -> tuple[float, int] | None:
         return cached[1], cached[2]
 
     try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            resp = client.get(
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.get(
                 "https://api.open-meteo.com/v1/forecast",
                 params={
                     "latitude": lat,

@@ -84,7 +84,7 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
     from app.services.timelapse import generate_timelapse, get_period_range
 
     async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None):
-        from datetime import datetime, timedelta
+        from datetime import UTC, datetime, timedelta
 
         from app.database import SessionLocal
         db = SessionLocal()
@@ -94,7 +94,7 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
             if not sched or not sched.enabled:
                 return
             if sched.lookback_hours is not None:
-                end = datetime.now()
+                end = datetime.now(UTC)
                 start = end - timedelta(hours=sched.lookback_hours)
                 period = sched.preset or "custom"
             else:
@@ -128,6 +128,9 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
             db.close()
 
     parts = schedule.cron_expression.strip().split()
+    if len(parts) != 5:
+        logger.error("Invalid cron expression for schedule %d: %s", schedule.id, schedule.cron_expression)
+        return
     job_id = f"timelapse_schedule_{schedule.id}"
     scheduler.add_job(
         _run_schedule,
@@ -158,7 +161,7 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
     """Register an APScheduler cron job for a cleanup schedule."""
     from app.services.retention import run_profile_cleanup
 
-    async def _run_cleanup(schedule_id: int, profile_id: int, capture_days: int, timelapse_days: int):
+    async def _run_cleanup(schedule_id: int, profile_id: int):
         from app.database import SessionLocal
         db = SessionLocal()
         try:
@@ -167,8 +170,8 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
                 return
             await run_profile_cleanup(
                 profile_id=profile_id,
-                capture_retention_days=capture_days,
-                timelapse_retention_days=timelapse_days,
+                capture_retention_days=sched.capture_retention_days,
+                timelapse_retention_days=sched.timelapse_retention_days,
             )
         except Exception:
             logger.exception(
@@ -179,6 +182,9 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
             db.close()
 
     parts = schedule.cron_expression.strip().split()
+    if len(parts) != 5:
+        logger.error("Invalid cron expression for cleanup schedule %d: %s", schedule.id, schedule.cron_expression)
+        return
     job_id = f"cleanup_schedule_{schedule.id}"
     scheduler.add_job(
         _run_cleanup,
@@ -190,7 +196,7 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
         day_of_week=parts[4],
         id=job_id,
         replace_existing=True,
-        args=[schedule.id, schedule.profile_id, schedule.capture_retention_days, schedule.timelapse_retention_days],
+        args=[schedule.id, schedule.profile_id],
     )
     logger.info("Added cleanup schedule job %s (cron: %s)", job_id, schedule.cron_expression)
 

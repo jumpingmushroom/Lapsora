@@ -10,6 +10,7 @@ from app.config import encrypt
 from app.database import get_db
 from app.models import NotificationURL, Setting
 from app.schemas import (
+    CaptureGapUpdate,
     Go2rtcConfig,
     HealthConfig,
     LocationConfig,
@@ -204,8 +205,8 @@ def get_capture_gap_config(db: Session = Depends(get_db)):
 
 
 @router.put("/capture-gap")
-def update_capture_gap_config(data: dict, db: Session = Depends(get_db)):
-    enabled = data.get("enabled", True)
+def update_capture_gap_config(data: CaptureGapUpdate, db: Session = Depends(get_db)):
+    enabled = data.enabled
     row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
     value = "true" if enabled else "false"
     if row:

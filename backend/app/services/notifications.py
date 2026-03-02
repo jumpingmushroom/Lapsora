@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import threading
 from typing import Any
 
 import apprise
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # SSE client queues — one asyncio.Queue per connected browser client
 sse_queues: list[asyncio.Queue] = []
+_sse_lock = threading.Lock()
 
 # Default event toggles
 DEFAULT_EVENT_TOGGLES = {
@@ -65,7 +67,9 @@ async def handle_event(event_type: str, title: str, body: str, level: str = "inf
             "level": level,
             "created_at": notification.created_at.isoformat(),
         })
-        for queue in list(sse_queues):
+        with _sse_lock:
+            queues = list(sse_queues)
+        for queue in queues:
             try:
                 queue.put_nowait(sse_data)
             except asyncio.QueueFull:

@@ -2,7 +2,7 @@
 
 import os
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api", tags=["captures"])
 @router.get("/profiles/{profile_id}/captures", response_model=list[CaptureRead])
 def list_captures(
     profile_id: int,
-    limit: int = 50,
+    limit: int = Query(default=50, le=1000),
     offset: int = 0,
     db: Session = Depends(get_db),
 ):

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # --- Streams ---
@@ -52,15 +52,15 @@ class Go2rtcStreamInfo(BaseModel):
 
 class ProfileCreate(BaseModel):
     name: str
-    interval_seconds: int = 60
+    interval_seconds: int = Field(default=60, ge=1)
     resolution_width: int | None = None
     resolution_height: int | None = None
-    quality: int = 85
+    quality: int = Field(default=85, ge=1, le=100)
     hdr_enabled: bool = False
     capture_mode: Literal["always", "manual", "sun"] = "always"
     active_start_time: str | None = None
     active_end_time: str | None = None
-    sun_offset_minutes: int = 0
+    sun_offset_minutes: int = Field(default=0, ge=0, le=180)
     sun_events: str = ""
     weather_enabled: bool = False
 
@@ -191,7 +191,7 @@ class TimelapseRead(BaseModel):
 class TimelapseGenerate(BaseModel):
     period_start: datetime | None = None
     period_end: datetime | None = None
-    fps: int = 24
+    fps: int = Field(default=24, ge=1, le=120)
     format: str = "mp4"
     deflicker: str = "medium"
     timestamp_overlay: bool = False
@@ -201,7 +201,7 @@ class TimelapseGenerate(BaseModel):
     weather_unit: str = "C"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
-    heatmap_opacity: float = 0.4
+    heatmap_opacity: float = Field(default=0.4, ge=0, le=1)
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
 
@@ -286,8 +286,8 @@ class TimelapseScheduleRead(BaseModel):
 class CleanupScheduleCreate(BaseModel):
     profile_id: int
     name: str = ""
-    capture_retention_days: int = 32
-    timelapse_retention_days: int = 90
+    capture_retention_days: int = Field(default=32, ge=1)
+    timelapse_retention_days: int = Field(default=90, ge=1)
     cron_expression: str
     enabled: bool = True
 
@@ -362,7 +362,7 @@ class LocationConfig(BaseModel):
 
 
 class HealthConfig(BaseModel):
-    check_interval_seconds: int = 300
+    check_interval_seconds: int = Field(default=300, ge=30)
     failure_threshold: int = 3
     low_disk_threshold_percent: int = 10
 
@@ -405,6 +405,10 @@ class ProfileStoragePoint(BaseModel):
     date: str
     bytes: int
     count: int
+
+
+class CaptureGapUpdate(BaseModel):
+    enabled: bool = True
 
 
 class TimelapseFormatBreakdown(BaseModel):

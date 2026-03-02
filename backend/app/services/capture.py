@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 from PIL import Image
@@ -188,7 +188,7 @@ async def capture_frame(profile_id: int) -> None:
             logger.error("Stream not found for profile %d", profile_id)
             return
 
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         if not _is_within_active_window(profile, db, now):
             logger.debug("Profile %d outside active window, skipping", profile_id)
@@ -333,23 +333,14 @@ async def capture_frame(profile_id: int) -> None:
 
             is_hdr = False
 
-            # Resize if configured
+            # Resize and/or apply quality
+            img = Image.open(abs_path)
             if profile.resolution_width and profile.resolution_height:
-                img = Image.open(abs_path)
                 img = img.resize(
                     (profile.resolution_width, profile.resolution_height),
                     Image.LANCZOS,
                 )
-                img.save(abs_path, "JPEG", quality=profile.quality)
-                img.close()
-            else:
-                # Re-save with configured quality
-                img = Image.open(abs_path)
-                img.save(abs_path, "JPEG", quality=profile.quality)
-                img.close()
-
-            # Get dimensions and size
-            img = Image.open(abs_path)
+            img.save(abs_path, "JPEG", quality=profile.quality)
             width, height = img.size
             img.close()
             file_size = os.path.getsize(abs_path)
@@ -362,7 +353,7 @@ async def capture_frame(profile_id: int) -> None:
             lat_row = db.query(Setting).filter(Setting.key == "location_latitude").first()
             lon_row = db.query(Setting).filter(Setting.key == "location_longitude").first()
             if lat_row and lon_row:
-                result = get_current_weather(float(lat_row.value), float(lon_row.value))
+                result = await get_current_weather(float(lat_row.value), float(lon_row.value))
                 if result:
                     weather_temp, weather_code = result
 

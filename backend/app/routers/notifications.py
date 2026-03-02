@@ -12,7 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.database import get_db
 from app.models import Notification
 from app.schemas import NotificationRead
-from app.services.notifications import sse_queues
+from app.services.notifications import _sse_lock, sse_queues
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -68,7 +68,8 @@ def delete_notification(notification_id: int, db: Session = Depends(get_db)):
 async def sse_stream():
     """Server-Sent Events endpoint for real-time notifications."""
     queue: asyncio.Queue = asyncio.Queue(maxsize=100)
-    sse_queues.append(queue)
+    with _sse_lock:
+        sse_queues.append(queue)
 
     async def event_generator():
         try:
@@ -78,7 +79,8 @@ async def sse_stream():
         except asyncio.CancelledError:
             pass
         finally:
-            if queue in sse_queues:
-                sse_queues.remove(queue)
+            with _sse_lock:
+                if queue in sse_queues:
+                    sse_queues.remove(queue)
 
     return EventSourceResponse(event_generator())

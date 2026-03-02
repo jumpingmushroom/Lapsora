@@ -17,6 +17,11 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         if not self.SECRET_KEY:
+            import logging
+            logging.getLogger(__name__).warning(
+                "LAPSORA_SECRET_KEY not set — using random key. "
+                "Encrypted data will be unreadable after restart."
+            )
             self.SECRET_KEY = secrets.token_hex(32)
 
 

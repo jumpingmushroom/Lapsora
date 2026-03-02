@@ -191,12 +191,12 @@ async def trigger_schedule(
     if not schedule:
         raise HTTPException(404, "Schedule not found")
 
-    from datetime import datetime, timedelta
+    from datetime import UTC, datetime, timedelta
 
     from app.services.timelapse import generate_timelapse, get_period_range
 
     if schedule.lookback_hours is not None:
-        end = datetime.now()
+        end = datetime.now(UTC)
         start = end - timedelta(hours=schedule.lookback_hours)
         period = schedule.preset or "custom"
     else:

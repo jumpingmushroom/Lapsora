@@ -1,7 +1,7 @@
 """Capture gap alerting — detects profiles that stopped receiving frames."""
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import func
 
@@ -33,7 +33,7 @@ async def check_capture_gaps() -> None:
             .filter(Profile.enabled.is_(True), Profile.auto_disabled.is_(False))
             .all()
         )
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         for profile in profiles:
             try:

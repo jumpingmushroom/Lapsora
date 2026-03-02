@@ -58,8 +58,10 @@ def update_profile(profile_id: int, body: ProfileUpdate, db: Session = Depends(g
         raise HTTPException(404, "Profile not found")
 
     update_data = body.model_dump(exclude_unset=True)
-    needs_reschedule = (
-        "interval_seconds" in update_data or "enabled" in update_data
+    needs_reschedule = any(
+        k in update_data
+        for k in ("interval_seconds", "enabled", "capture_mode", "active_start_time",
+                   "active_end_time", "sun_events", "sun_offset_minutes")
     )
 
     for key, value in update_data.items():

@@ -3,7 +3,7 @@
 import logging
 import os
 import shutil
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -30,7 +30,7 @@ async def run_profile_cleanup(
     }
 
     try:
-        now = datetime.now()
+        now = datetime.now(UTC)
 
         # 1. Delete old captures for this profile
         cutoff = now - timedelta(days=capture_retention_days)
@@ -42,8 +42,9 @@ async def run_profile_cleanup(
         ).scalars().all()
 
         for cap in old_captures:
-            if os.path.exists(cap.file_path):
-                os.unlink(cap.file_path)
+            cap_abs = os.path.join(settings.DATA_DIR, cap.file_path)
+            if os.path.exists(cap_abs):
+                os.unlink(cap_abs)
             db.delete(cap)
             summary["captures_deleted"] += 1
 
@@ -57,8 +58,9 @@ async def run_profile_cleanup(
         ).scalars().all()
 
         for tl in old_tl:
-            if os.path.exists(tl.file_path):
-                os.unlink(tl.file_path)
+            tl_abs = tl.file_path if os.path.isabs(tl.file_path) else os.path.join(settings.DATA_DIR, tl.file_path)
+            if os.path.exists(tl_abs):
+                os.unlink(tl_abs)
             db.delete(tl)
             summary["timelapses_deleted"] += 1
 
@@ -69,7 +71,8 @@ async def run_profile_cleanup(
             select(Capture).where(Capture.profile_id == profile_id)
         ).scalars().all()
         for cap in profile_captures:
-            if not os.path.exists(cap.file_path):
+            cap_abs = os.path.join(settings.DATA_DIR, cap.file_path)
+            if not os.path.exists(cap_abs):
                 db.delete(cap)
                 summary["orphan_records_cleaned"] += 1
 
@@ -77,7 +80,8 @@ async def run_profile_cleanup(
             select(Timelapse).where(Timelapse.profile_id == profile_id)
         ).scalars().all()
         for tl in profile_timelapses:
-            if not os.path.exists(tl.file_path):
+            tl_abs = tl.file_path if os.path.isabs(tl.file_path) else os.path.join(settings.DATA_DIR, tl.file_path)
+            if not os.path.exists(tl_abs):
                 db.delete(tl)
                 summary["orphan_records_cleaned"] += 1
 
@@ -143,15 +147,21 @@ def get_storage_stats() -> dict:
     """Calculate storage usage statistics."""
     db = SessionLocal()
     try:
-        # Capture stats
-        captures = db.execute(select(Capture)).scalars().all()
-        captures_count = len(captures)
-        captures_size = sum(c.file_size or 0 for c in captures)
+        from sqlalchemy import func
 
-        # Timelapse stats
-        timelapses = db.execute(select(Timelapse)).scalars().all()
-        timelapses_count = len(timelapses)
-        timelapses_size = sum(t.file_size or 0 for t in timelapses)
+        cap_stats = db.query(
+            func.count(Capture.id),
+            func.coalesce(func.sum(Capture.file_size), 0),
+        ).first()
+        captures_count = cap_stats[0]
+        captures_size = cap_stats[1]
+
+        tl_stats = db.query(
+            func.count(Timelapse.id),
+            func.coalesce(func.sum(Timelapse.file_size), 0),
+        ).first()
+        timelapses_count = tl_stats[0]
+        timelapses_size = tl_stats[1]
 
         total_size = captures_size + timelapses_size
 
