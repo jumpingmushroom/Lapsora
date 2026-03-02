@@ -61,6 +61,7 @@ class ProfileCreate(BaseModel):
     active_start_time: str | None = None
     active_end_time: str | None = None
     sun_offset_minutes: int = 0
+    sun_events: str = ""
     weather_enabled: bool = False
 
 
@@ -76,6 +77,7 @@ class ProfileUpdate(BaseModel):
     active_start_time: str | None = None
     active_end_time: str | None = None
     sun_offset_minutes: int | None = None
+    sun_events: str | None = None
     weather_enabled: bool | None = None
 
 
@@ -96,6 +98,7 @@ class ProfileRead(BaseModel):
     active_start_time: str | None
     active_end_time: str | None
     sun_offset_minutes: int
+    sun_events: str
     weather_enabled: bool
     source_template_id: int | None = None
     created_at: datetime

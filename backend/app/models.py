@@ -68,6 +68,7 @@ class Profile(Base):
     active_start_time: Mapped[str | None] = mapped_column(Text, nullable=True)
     active_end_time: Mapped[str | None] = mapped_column(Text, nullable=True)
     sun_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    sun_events: Mapped[str] = mapped_column(Text, default="", server_default="")
     weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     source_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
