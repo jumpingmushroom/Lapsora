@@ -83,13 +83,13 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
     """Register an APScheduler cron job for a timelapse schedule."""
     from app.services.timelapse import generate_timelapse, get_period_range
 
-    async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None, fps: int, fmt: str):
+    async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None):
         from datetime import datetime, timedelta
 
         from app.database import SessionLocal
         db = SessionLocal()
         try:
-            # Re-check the schedule is still enabled
+            # Re-fetch the schedule to get latest settings including overlays
             sched = db.get(TimelapseSchedule, schedule_id)
             if not sched or not sched.enabled:
                 return
@@ -105,8 +105,19 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 period_type=period,
                 period_start=start,
                 period_end=end,
-                fps=fps,
-                format=fmt,
+                fps=sched.fps,
+                format=sched.format,
+                deflicker=sched.deflicker,
+                timestamp_overlay=sched.timestamp_overlay,
+                weather_overlay=sched.weather_overlay,
+                weather_position=sched.weather_position,
+                weather_font_size=sched.weather_font_size,
+                weather_unit=sched.weather_unit,
+                heatmap_overlay=sched.heatmap_overlay,
+                heatmap_mode=sched.heatmap_mode,
+                heatmap_opacity=sched.heatmap_opacity,
+                heatmap_colormap=sched.heatmap_colormap,
+                heatmap_threshold=sched.heatmap_threshold,
             )
         except Exception:
             logger.exception(
@@ -128,7 +139,7 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
         day_of_week=parts[4],
         id=job_id,
         replace_existing=True,
-        args=[schedule.id, schedule.profile_id, schedule.preset, schedule.fps, schedule.format],
+        args=[schedule.id, schedule.profile_id, schedule.preset],
     )
     logger.info("Added timelapse schedule job %s (cron: %s)", job_id, schedule.cron_expression)
 

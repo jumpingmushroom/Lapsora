@@ -1,0 +1,9 @@
+ALTER TABLE timelapse_schedules ADD COLUMN timestamp_overlay INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE timelapse_schedules ADD COLUMN weather_overlay INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE timelapse_schedules ADD COLUMN weather_position TEXT NOT NULL DEFAULT 'bottom-right';
+ALTER TABLE timelapse_schedules ADD COLUMN weather_font_size INTEGER NOT NULL DEFAULT 24;
+ALTER TABLE timelapse_schedules ADD COLUMN weather_unit TEXT NOT NULL DEFAULT 'C';
+ALTER TABLE timelapse_schedules ADD COLUMN heatmap_overlay INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE timelapse_schedules ADD COLUMN heatmap_mode TEXT NOT NULL DEFAULT 'cumulative';
+ALTER TABLE timelapse_schedules ADD COLUMN heatmap_opacity REAL NOT NULL DEFAULT 0.4;
+ALTER TABLE timelapse_schedules ADD COLUMN heatmap_colormap TEXT NOT NULL DEFAULT 'jet';

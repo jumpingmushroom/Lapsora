@@ -4,8 +4,15 @@ import logging
 
 import cv2
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
 
 logger = logging.getLogger(__name__)
+
+STRENGTH_SIGMA = {
+    "light": 3,
+    "medium": 8,
+    "heavy": 25,
+}
 
 
 def calc_brightness(image: np.ndarray, sigma: float | None = 2.5) -> float:
@@ -22,25 +29,17 @@ def calc_brightness(image: np.ndarray, sigma: float | None = 2.5) -> float:
     return float(np.mean(image))
 
 
-def rolling_mean(data: np.ndarray, window: int) -> np.ndarray:
-    """Compute rolling mean, leaving edges as original values."""
-    if window <= 1 or len(data) <= window:
-        return data.copy()
-    kernel = np.ones(window) / window
-    return np.convolve(data, kernel, mode="same")
-
-
 def deflicker_frames(
     frame_paths: list[str],
     output_paths: list[str],
-    window: int = 10,
+    strength: str = "medium",
     sigma: float | None = 2.5,
     quality: int = 85,
 ) -> None:
-    """Deflicker a sequence of frames by matching brightness to a rolling mean.
+    """Deflicker a sequence of frames by matching brightness to a smoothed curve.
 
-    Reads frames from frame_paths, adjusts brightness, writes to output_paths.
-    If frame count <= 2, copies frames unchanged (rolling mean needs >=3).
+    Uses Gaussian smoothing in LAB colorspace to prevent color shifts.
+    strength: "light", "medium", or "heavy" (maps to Gaussian sigma).
     """
     n = len(frame_paths)
     if n <= 2:
@@ -53,7 +52,9 @@ def deflicker_frames(
                 cv2.imwrite(dst, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
         return
 
-    # Pass 1: compute brightness of each frame, skipping unreadable ones
+    gauss_sigma = STRENGTH_SIGMA.get(strength, STRENGTH_SIGMA["medium"])
+
+    # Pass 1: compute brightness of each frame
     brightness = np.empty(n, dtype=np.float64)
     readable = [False] * n
     for i, path in enumerate(frame_paths):
@@ -69,10 +70,10 @@ def deflicker_frames(
         logger.warning("No readable frames to deflicker")
         return
 
-    # Compute target brightness via rolling mean
-    target = rolling_mean(brightness, window)
+    # Compute target brightness via Gaussian smoothing (nearest mode avoids zero-padding)
+    target = gaussian_filter1d(brightness, sigma=gauss_sigma, mode="nearest")
 
-    # Pass 2: scale each frame and write
+    # Pass 2: scale each frame in LAB colorspace and write
     for i, (src, dst) in enumerate(zip(frame_paths, output_paths)):
         if not readable[i]:
             continue
@@ -81,7 +82,10 @@ def deflicker_frames(
             continue
         if brightness[i] > 0:
             scale = target[i] / brightness[i]
-            img = np.clip(img.astype(np.float64) * scale, 0, 255).astype(np.uint8)
+            # Scale in LAB colorspace to avoid color shifts
+            lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB).astype(np.float64)
+            lab[:, :, 0] = np.clip(lab[:, :, 0] * scale, 0, 255)
+            img = cv2.cvtColor(lab.astype(np.uint8), cv2.COLOR_LAB2BGR)
         cv2.imwrite(dst, img, [cv2.IMWRITE_JPEG_QUALITY, quality])
 
-    logger.info("Deflickered %d frames (window=%d)", n, window)
+    logger.info("Deflickered %d frames (strength=%s, sigma=%d)", n, strength, gauss_sigma)

@@ -16,7 +16,112 @@ from app.database import SessionLocal
 from app.models import Capture, Timelapse
 from app.services.deflicker import deflicker_frames
 
+import cv2
+import numpy as np
+
 logger = logging.getLogger(__name__)
+
+COLORMAP_MAP = {
+    "jet": cv2.COLORMAP_JET,
+    "inferno": cv2.COLORMAP_INFERNO,
+    "viridis": cv2.COLORMAP_VIRIDIS,
+    "turbo": cv2.COLORMAP_TURBO,
+}
+
+
+def compute_cumulative_heatmap(frame_paths: list[str], threshold: int = 10) -> np.ndarray | None:
+    """Compute a single cumulative heatmap from consecutive frame diffs."""
+    if len(frame_paths) < 2:
+        return None
+    accumulator = None
+    prev_gray = None
+    for path in frame_paths:
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            continue
+        if prev_gray is not None:
+            diff = cv2.absdiff(prev_gray, img)
+            diff[diff < threshold] = 0
+            diff = cv2.GaussianBlur(diff.astype(np.float64), (15, 15), 0)
+            if accumulator is None:
+                accumulator = np.zeros_like(diff)
+            accumulator += diff
+        prev_gray = img
+    if accumulator is None:
+        return None
+    max_val = accumulator.max()
+    if max_val > 0:
+        accumulator = (accumulator / max_val * 255).astype(np.uint8)
+    else:
+        accumulator = accumulator.astype(np.uint8)
+    return accumulator
+
+
+def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, threshold: int = 10) -> list[np.ndarray | None]:
+    """Compute per-frame heatmaps using exponential decay sliding window."""
+    heatmaps: list[np.ndarray | None] = [None]  # first frame has no heatmap
+    if len(frame_paths) < 2:
+        return [None] * len(frame_paths)
+    accumulator = None
+    prev_gray = None
+    for i, path in enumerate(frame_paths):
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            if i > 0:
+                heatmaps.append(None)
+            prev_gray = None
+            continue
+        if prev_gray is not None:
+            diff = cv2.absdiff(prev_gray, img)
+            diff[diff < threshold] = 0
+            diff = cv2.GaussianBlur(diff.astype(np.float64), (15, 15), 0)
+            if accumulator is None:
+                accumulator = np.zeros_like(diff)
+            accumulator = accumulator * decay + diff
+            normalized = accumulator.copy()
+            max_val = normalized.max()
+            if max_val > 0:
+                normalized = (normalized / max_val * 255).astype(np.uint8)
+            else:
+                normalized = normalized.astype(np.uint8)
+            heatmaps.append(normalized)
+        prev_gray = img
+    return heatmaps
+
+
+def apply_heatmap_to_frames(
+    frame_paths: list[str],
+    heatmap_mode: str,
+    colormap_name: str,
+    opacity: float,
+    threshold: int = 10,
+) -> None:
+    """Compute heatmaps and alpha-blend them onto frames in-place."""
+    colormap = COLORMAP_MAP.get(colormap_name, cv2.COLORMAP_JET)
+    opacity = max(0.1, min(0.8, opacity))
+
+    if heatmap_mode == "sliding":
+        heatmaps = compute_sliding_heatmaps(frame_paths, threshold=threshold)
+        for i, path in enumerate(frame_paths):
+            if i >= len(heatmaps) or heatmaps[i] is None:
+                continue
+            frame = cv2.imread(path)
+            if frame is None:
+                continue
+            colored = cv2.applyColorMap(heatmaps[i], colormap)
+            blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
+    else:
+        heatmap = compute_cumulative_heatmap(frame_paths, threshold=threshold)
+        if heatmap is None:
+            return
+        colored = cv2.applyColorMap(heatmap, colormap)
+        for path in frame_paths:
+            frame = cv2.imread(path)
+            if frame is None:
+                continue
+            blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
 FFMPEG_TIMEOUT = 300  # 5 minutes
 
@@ -67,6 +172,12 @@ async def generate_timelapse(
     weather_position: str = "bottom-right",
     weather_font_size: int = 24,
     weather_unit: str = "C",
+    deflicker: str = "medium",
+    heatmap_overlay: bool = False,
+    heatmap_mode: str = "cumulative",
+    heatmap_opacity: float = 0.4,
+    heatmap_colormap: str = "jet",
+    heatmap_threshold: int = 10,
 ) -> int:
     """Generate a timelapse video and return its database ID."""
     db: Session = SessionLocal()
@@ -124,7 +235,14 @@ async def generate_timelapse(
             os.path.join(deflicker_dir, f"frame_{i:06d}.jpg")
             for i in range(frame_count)
         ]
-        await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, 10)
+        if deflicker == "off":
+            # Copy frames without deflickering
+            import shutil as _shutil
+            for src, dst in zip(original_paths, deflickered_paths):
+                if os.path.exists(src):
+                    _shutil.copy2(src, dst)
+        else:
+            await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker)
         frame_paths = [p for p in deflickered_paths if os.path.exists(p)]
         if not frame_paths:
             raise ValueError(
@@ -133,6 +251,17 @@ async def generate_timelapse(
             )
 
         frame_count = len(frame_paths)
+
+        # Apply heatmap overlay to deflickered frames
+        if heatmap_overlay:
+            await asyncio.to_thread(
+                apply_heatmap_to_frames,
+                frame_paths,
+                heatmap_mode,
+                heatmap_colormap,
+                heatmap_opacity,
+                heatmap_threshold,
+            )
 
         # Apply weather overlay to deflickered frames
         if weather_overlay:

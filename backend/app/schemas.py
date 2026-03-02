@@ -190,11 +190,17 @@ class TimelapseGenerate(BaseModel):
     period_end: datetime | None = None
     fps: int = 24
     format: str = "mp4"
+    deflicker: str = "medium"
     timestamp_overlay: bool = False
     weather_overlay: bool = False
     weather_position: str = "bottom-right"
     weather_font_size: int = 24
     weather_unit: str = "C"
+    heatmap_overlay: bool = False
+    heatmap_mode: str = "cumulative"
+    heatmap_opacity: float = 0.4
+    heatmap_colormap: str = "jet"
+    heatmap_threshold: int = 10
 
 
 # --- Timelapse Schedules ---
@@ -207,7 +213,18 @@ class TimelapseScheduleCreate(BaseModel):
     cron_expression: str | None = None
     fps: int = 24
     format: str = "mp4"
+    deflicker: str = "medium"
     lookback_hours: int | None = None
+    timestamp_overlay: bool = False
+    weather_overlay: bool = False
+    weather_position: str = "bottom-right"
+    weather_font_size: int = 24
+    weather_unit: str = "C"
+    heatmap_overlay: bool = False
+    heatmap_mode: str = "cumulative"
+    heatmap_opacity: float = 0.4
+    heatmap_colormap: str = "jet"
+    heatmap_threshold: int = 10
     enabled: bool = True
 
 
@@ -217,7 +234,18 @@ class TimelapseScheduleUpdate(BaseModel):
     cron_expression: str | None = None
     fps: int | None = None
     format: str | None = None
+    deflicker: str | None = None
     lookback_hours: int | None = None
+    timestamp_overlay: bool | None = None
+    weather_overlay: bool | None = None
+    weather_position: str | None = None
+    weather_font_size: int | None = None
+    weather_unit: str | None = None
+    heatmap_overlay: bool | None = None
+    heatmap_mode: str | None = None
+    heatmap_opacity: float | None = None
+    heatmap_colormap: str | None = None
+    heatmap_threshold: int | None = None
     enabled: bool | None = None
 
 
@@ -231,7 +259,18 @@ class TimelapseScheduleRead(BaseModel):
     cron_expression: str
     fps: int
     format: str
+    deflicker: str
     lookback_hours: int | None
+    timestamp_overlay: bool
+    weather_overlay: bool
+    weather_position: str
+    weather_font_size: int
+    weather_unit: str
+    heatmap_overlay: bool
+    heatmap_mode: str
+    heatmap_opacity: float
+    heatmap_colormap: str
+    heatmap_threshold: int
     enabled: bool
     created_at: datetime
     updated_at: datetime

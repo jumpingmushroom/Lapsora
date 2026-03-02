@@ -148,7 +148,18 @@ export interface TimelapseSchedule {
 	cron_expression: string;
 	fps: number;
 	format: string;
+	deflicker: string;
 	lookback_hours: number | null;
+	timestamp_overlay: boolean;
+	weather_overlay: boolean;
+	weather_position: string;
+	weather_font_size: number;
+	weather_unit: string;
+	heatmap_overlay: boolean;
+	heatmap_mode: string;
+	heatmap_opacity: number;
+	heatmap_colormap: string;
+	heatmap_threshold: number;
 	enabled: boolean;
 	created_at: string;
 	updated_at: string;
@@ -162,7 +173,18 @@ export interface TimelapseScheduleCreate {
 	cron_expression?: string | null;
 	fps?: number;
 	format?: string;
+	deflicker?: string;
 	lookback_hours?: number;
+	timestamp_overlay?: boolean;
+	weather_overlay?: boolean;
+	weather_position?: string;
+	weather_font_size?: number;
+	weather_unit?: string;
+	heatmap_overlay?: boolean;
+	heatmap_mode?: string;
+	heatmap_opacity?: number;
+	heatmap_colormap?: string;
+	heatmap_threshold?: number;
 	enabled?: boolean;
 }
 
@@ -172,7 +194,18 @@ export interface TimelapseScheduleUpdate {
 	cron_expression?: string | null;
 	fps?: number;
 	format?: string;
+	deflicker?: string;
 	lookback_hours?: number;
+	timestamp_overlay?: boolean;
+	weather_overlay?: boolean;
+	weather_position?: string;
+	weather_font_size?: number;
+	weather_unit?: string;
+	heatmap_overlay?: boolean;
+	heatmap_mode?: string;
+	heatmap_opacity?: number;
+	heatmap_colormap?: string;
+	heatmap_threshold?: number;
 	enabled?: boolean;
 }
 
@@ -211,11 +244,17 @@ export interface TimelapseGenerate {
 	period_end?: string;
 	fps?: number;
 	format?: string;
+	deflicker?: string;
 	timestamp_overlay?: boolean;
 	weather_overlay?: boolean;
 	weather_position?: string;
 	weather_font_size?: number;
 	weather_unit?: string;
+	heatmap_overlay?: boolean;
+	heatmap_mode?: string;
+	heatmap_opacity?: number;
+	heatmap_colormap?: string;
+	heatmap_threshold?: number;
 }
 
 export interface TestResult {

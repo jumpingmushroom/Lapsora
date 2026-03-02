@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Timelapse, Profile, Stream } from '$lib/types';
+	import type { Timelapse } from '$lib/types';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
 	import ScheduleManager from '$lib/components/ScheduleManager.svelte';
@@ -18,7 +18,7 @@
 
 	// Generate dialog
 	let showGenerate = $state(false);
-	let allProfiles = $state<Profile[]>([]);
+	let allProfileOptions = $state<{ id: number; label: string }[]>([]);
 
 	// Generation progress
 	let generating = $state(0);
@@ -80,14 +80,16 @@
 	async function openGenerate() {
 		try {
 			const streams = await api.getStreams();
-			const profiles: Profile[] = [];
+			const options: { id: number; label: string }[] = [];
 			await Promise.all(
 				streams.map(async (s) => {
-					const p = await api.getStreamProfiles(s.id);
-					profiles.push(...p);
+					const profiles = await api.getStreamProfiles(s.id);
+					for (const p of profiles) {
+						options.push({ id: p.id, label: `${s.name} — ${p.name}` });
+					}
 				})
 			);
-			allProfiles = profiles;
+			allProfileOptions = options;
 			showGenerate = true;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to load profiles');
@@ -284,7 +286,7 @@
 <!-- Generate Dialog -->
 {#if showGenerate}
 	<GenerateDialog
-		profileId={allProfiles.length > 0 ? allProfiles[0].id : 0}
+		profileOptions={allProfileOptions}
 		open={true}
 		onclose={() => { showGenerate = false; }}
 	/>

@@ -16,7 +16,18 @@
 	let formName = $state('');
 	let formFps = $state(24);
 	let formFormat = $state('mp4');
+	let formDeflicker = $state('medium');
 	let formLookbackHours = $state<number | null>(null);
+	let formTimestampOverlay = $state(false);
+	let formWeatherOverlay = $state(false);
+	let formWeatherPosition = $state('bottom-right');
+	let formWeatherFontSize = $state(24);
+	let formWeatherUnit = $state('C');
+	let formHeatmapOverlay = $state(false);
+	let formHeatmapMode = $state('cumulative');
+	let formHeatmapOpacity = $state(0.4);
+	let formHeatmapColormap = $state('jet');
+	let formHeatmapThreshold = $state(10);
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
@@ -67,7 +78,18 @@
 		formName = '';
 		formFps = 24;
 		formFormat = 'mp4';
+		formDeflicker = 'medium';
 		formLookbackHours = null;
+		formTimestampOverlay = false;
+		formWeatherOverlay = false;
+		formWeatherPosition = 'bottom-right';
+		formWeatherFontSize = 24;
+		formWeatherUnit = 'C';
+		formHeatmapOverlay = false;
+		formHeatmapMode = 'cumulative';
+		formHeatmapOpacity = 0.4;
+		formHeatmapColormap = 'jet';
+		formHeatmapThreshold = 10;
 		formCustom = false;
 		showForm = true;
 	}
@@ -78,7 +100,18 @@
 		formName = schedule.name || '';
 		formFps = schedule.fps;
 		formFormat = schedule.format;
+		formDeflicker = schedule.deflicker || 'medium';
 		formLookbackHours = schedule.lookback_hours;
+		formTimestampOverlay = schedule.timestamp_overlay;
+		formWeatherOverlay = schedule.weather_overlay;
+		formWeatherPosition = schedule.weather_position;
+		formWeatherFontSize = schedule.weather_font_size;
+		formWeatherUnit = schedule.weather_unit;
+		formHeatmapOverlay = schedule.heatmap_overlay;
+		formHeatmapMode = schedule.heatmap_mode;
+		formHeatmapOpacity = schedule.heatmap_opacity;
+		formHeatmapColormap = schedule.heatmap_colormap;
+		formHeatmapThreshold = schedule.heatmap_threshold;
 		if (schedule.preset && PRESETS[schedule.preset]) {
 			formPreset = schedule.preset;
 			formCron = PRESETS[schedule.preset].cron;
@@ -115,6 +148,18 @@
 		}
 		saving = true;
 		try {
+			const overlayFields = {
+				timestamp_overlay: formTimestampOverlay,
+				weather_overlay: formWeatherOverlay,
+				weather_position: formWeatherPosition,
+				weather_font_size: formWeatherFontSize,
+				weather_unit: formWeatherUnit,
+				heatmap_overlay: formHeatmapOverlay,
+				heatmap_mode: formHeatmapMode,
+				heatmap_opacity: formHeatmapOpacity,
+				heatmap_colormap: formHeatmapColormap,
+			heatmap_threshold: formHeatmapThreshold
+			};
 			if (editingId) {
 				await api.updateTimelapseSchedule(editingId, {
 					name: formName,
@@ -122,7 +167,9 @@
 					cron_expression: formCustom ? formCron : undefined,
 					fps: formFps,
 					format: formFormat,
-					lookback_hours: formLookbackHours ?? undefined
+					deflicker: formDeflicker,
+					lookback_hours: formLookbackHours ?? undefined,
+					...overlayFields
 				});
 			} else {
 				await api.createTimelapseSchedule({
@@ -132,7 +179,9 @@
 					cron_expression: formCustom ? formCron : undefined,
 					fps: formFps,
 					format: formFormat,
-					lookback_hours: formLookbackHours ?? undefined
+					deflicker: formDeflicker,
+					lookback_hours: formLookbackHours ?? undefined,
+					...overlayFields
 				});
 			}
 			showForm = false;
@@ -236,6 +285,15 @@
 							{/if}
 							<span>{schedule.fps}fps</span>
 							<span>{schedule.format.toUpperCase()}</span>
+							{#if schedule.timestamp_overlay}
+								<span class="rounded bg-gray-700 px-1.5 py-0.5 text-gray-300">Timestamp</span>
+							{/if}
+							{#if schedule.weather_overlay}
+								<span class="rounded bg-sky-900/50 px-1.5 py-0.5 text-sky-300">Weather</span>
+							{/if}
+							{#if schedule.heatmap_overlay}
+								<span class="rounded bg-orange-900/50 px-1.5 py-0.5 text-orange-300">Heatmap</span>
+							{/if}
 							{#if schedule.next_run}
 								<span>Next: {formatNextRun(schedule.next_run)}</span>
 							{/if}
@@ -292,8 +350,8 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { showForm = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="mx-4 w-full max-w-lg rounded-xl bg-gray-900 shadow-xl" onclick={(e) => e.stopPropagation()}>
-			<div class="flex items-center justify-between border-b border-gray-800 p-4">
+		<div class="mx-4 w-full max-w-lg rounded-xl bg-gray-900 shadow-xl max-h-[90vh] flex flex-col" onclick={(e) => e.stopPropagation()}>
+			<div class="flex items-center justify-between border-b border-gray-800 p-4 shrink-0">
 				<h2 class="text-lg font-semibold text-gray-100">{editingId ? 'Edit Schedule' : 'Add Schedule'}</h2>
 				<button onclick={() => { showForm = false; }} class="text-gray-400 hover:text-gray-200">
 					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -301,7 +359,7 @@
 					</svg>
 				</button>
 			</div>
-			<div class="space-y-4 p-4">
+			<div class="space-y-4 p-4 overflow-y-auto">
 				<!-- Profile selector -->
 				<div>
 					<label class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
@@ -382,7 +440,7 @@
 						/>
 					</div>
 
-					<div class="grid grid-cols-2 gap-3">
+					<div class="grid grid-cols-3 gap-3">
 						<div>
 							<label class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
 							<input
@@ -405,11 +463,150 @@
 								<option value="mkv">MKV</option>
 							</select>
 						</div>
+						<div>
+							<label class="mb-1 block text-sm font-medium text-gray-300">Deflicker</label>
+							<select
+								bind:value={formDeflicker}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="off">Off</option>
+								<option value="light">Light</option>
+								<option value="medium">Medium</option>
+								<option value="heavy">Heavy</option>
+							</select>
+						</div>
 					</div>
+
+					<!-- Overlay options -->
+					<div class="flex items-center gap-3">
+						<input
+							id="sched-timestamp"
+							type="checkbox"
+							bind:checked={formTimestampOverlay}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+						/>
+						<label for="sched-timestamp" class="text-sm font-medium text-gray-300">Timestamp overlay</label>
+					</div>
+
+					<div class="flex items-center gap-3">
+						<input
+							id="sched-weather"
+							type="checkbox"
+							bind:checked={formWeatherOverlay}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+						/>
+						<label for="sched-weather" class="text-sm font-medium text-gray-300">Weather overlay</label>
+					</div>
+
+					{#if formWeatherOverlay}
+						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
+							<div>
+								<label for="sched-weather-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+								<select
+									id="sched-weather-pos"
+									bind:value={formWeatherPosition}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="top-left">Top Left</option>
+									<option value="top-right">Top Right</option>
+									<option value="bottom-left">Bottom Left</option>
+									<option value="bottom-right">Bottom Right</option>
+								</select>
+							</div>
+							<div>
+								<label for="sched-weather-size" class="mb-1 block text-sm font-medium text-gray-300">Font size</label>
+								<input
+									id="sched-weather-size"
+									type="number"
+									bind:value={formWeatherFontSize}
+									min="10"
+									max="72"
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								/>
+							</div>
+							<div>
+								<label class="mb-1 block text-sm font-medium text-gray-300">Unit</label>
+								<div class="flex gap-4">
+									<label class="flex items-center gap-2 text-sm text-gray-300">
+										<input type="radio" bind:group={formWeatherUnit} value="C" class="text-blue-500" />
+										°C
+									</label>
+									<label class="flex items-center gap-2 text-sm text-gray-300">
+										<input type="radio" bind:group={formWeatherUnit} value="F" class="text-blue-500" />
+										°F
+									</label>
+								</div>
+							</div>
+						</div>
+					{/if}
+
+					<div class="flex items-center gap-3">
+						<input
+							id="sched-heatmap"
+							type="checkbox"
+							bind:checked={formHeatmapOverlay}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+						/>
+						<label for="sched-heatmap" class="text-sm font-medium text-gray-300">Activity heatmap overlay</label>
+					</div>
+
+					{#if formHeatmapOverlay}
+						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
+							<div>
+								<label for="sched-heatmap-mode" class="mb-1 block text-sm font-medium text-gray-300">Mode</label>
+								<select
+									id="sched-heatmap-mode"
+									bind:value={formHeatmapMode}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="cumulative">Cumulative</option>
+									<option value="sliding">Sliding window</option>
+								</select>
+							</div>
+							<div>
+								<label for="sched-heatmap-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {formHeatmapOpacity}</label>
+								<input
+									id="sched-heatmap-opacity"
+									type="range"
+									bind:value={formHeatmapOpacity}
+									min="0.1"
+									max="0.8"
+									step="0.05"
+									class="w-full accent-blue-500"
+								/>
+							</div>
+							<div>
+								<label for="sched-heatmap-threshold" class="mb-1 block text-sm font-medium text-gray-300">Threshold: {formHeatmapThreshold}</label>
+								<input
+									id="sched-heatmap-threshold"
+									type="range"
+									bind:value={formHeatmapThreshold}
+									min="0"
+									max="50"
+									step="1"
+									class="w-full accent-blue-500"
+								/>
+								<p class="mt-0.5 text-xs text-gray-500">Filters noise — 0 = most sensitive, 50 = least sensitive</p>
+							</div>
+							<div>
+								<label for="sched-heatmap-colormap" class="mb-1 block text-sm font-medium text-gray-300">Colormap</label>
+								<select
+									id="sched-heatmap-colormap"
+									bind:value={formHeatmapColormap}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="jet">Jet</option>
+									<option value="inferno">Inferno</option>
+									<option value="viridis">Viridis</option>
+									<option value="turbo">Turbo</option>
+								</select>
+							</div>
+						</div>
+					{/if}
 				{/if}
 			</div>
 			{#if formPreset || formCustom}
-				<div class="flex justify-end gap-2 border-t border-gray-800 p-4">
+				<div class="flex justify-end gap-2 border-t border-gray-800 p-4 shrink-0">
 					<button
 						onclick={() => { showForm = false; }}
 						class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"

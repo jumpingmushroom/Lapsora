@@ -60,6 +60,12 @@ async def generate(
         weather_position=body.weather_position,
         weather_font_size=body.weather_font_size,
         weather_unit=body.weather_unit,
+        deflicker=body.deflicker,
+        heatmap_overlay=body.heatmap_overlay,
+        heatmap_mode=body.heatmap_mode,
+        heatmap_opacity=body.heatmap_opacity,
+        heatmap_colormap=body.heatmap_colormap,
+        heatmap_threshold=body.heatmap_threshold,
     )
     return {"status": "generating", "message": "Timelapse generation started"}
 
