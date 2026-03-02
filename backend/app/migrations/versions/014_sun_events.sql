@@ -1,0 +1,1 @@
+ALTER TABLE profiles ADD COLUMN sun_events TEXT NOT NULL DEFAULT '';
