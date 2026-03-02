@@ -11,7 +11,8 @@
 		timelapse_complete: true,
 		timelapse_failure: true,
 		retention_summary: false,
-		low_disk_space: true
+		low_disk_space: true,
+		capture_gap: true
 	});
 	let healthConfig = $state<HealthConfig>({
 		check_interval_seconds: 300,
@@ -85,33 +86,58 @@
 
 	async function saveEvents() {
 		savingEvents = true;
-		await api.updateNotificationEvents(events);
-		savingEvents = false;
+		try {
+			await api.updateNotificationEvents(events);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save event settings');
+		} finally {
+			savingEvents = false;
+		}
 	}
 
 	async function saveHealth() {
 		savingHealth = true;
-		await api.updateHealthConfig(healthConfig);
-		savingHealth = false;
+		try {
+			await api.updateHealthConfig(healthConfig);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save health settings');
+		} finally {
+			savingHealth = false;
+		}
 	}
 
 	async function saveLocation() {
 		savingLocation = true;
-		await api.updateLocationConfig(locationConfig);
-		savingLocation = false;
+		try {
+			await api.updateLocationConfig(locationConfig);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save location');
+		} finally {
+			savingLocation = false;
+		}
 	}
 
 	async function saveCaptureGap() {
 		savingCaptureGap = true;
-		await api.updateCaptureGapConfig(captureGapConfig);
-		savingCaptureGap = false;
+		try {
+			await api.updateCaptureGapConfig(captureGapConfig);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save capture gap settings');
+		} finally {
+			savingCaptureGap = false;
+		}
 	}
 
 	async function saveGo2rtc() {
 		savingGo2rtc = true;
 		go2rtcTestResult = null;
-		await api.updateGo2rtcConfig(go2rtcConfig);
-		savingGo2rtc = false;
+		try {
+			await api.updateGo2rtcConfig(go2rtcConfig);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save go2rtc config');
+		} finally {
+			savingGo2rtc = false;
+		}
 	}
 
 	async function testGo2rtc() {
@@ -137,6 +163,8 @@
 		capture_gap: 'Capture gap'
 	};
 </script>
+
+<svelte:head><title>Settings - Lapsora</title></svelte:head>
 
 <div class="space-y-8">
 	<h1 class="text-3xl font-bold text-white">Settings</h1>

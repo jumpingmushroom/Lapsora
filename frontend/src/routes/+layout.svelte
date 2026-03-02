@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
 	import type { Snippet } from 'svelte';
+	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import type { Notification } from '$lib/types';
 	import NotificationBell from '$lib/components/NotificationBell.svelte';
@@ -32,14 +33,17 @@
 		toasts = toasts.filter((t) => t.id !== id);
 	}
 
+	// Load notifications once on mount
 	$effect(() => {
 		loadNotifications();
+	});
 
+	// SSE connection - separate effect so notification changes don't trigger reconnection
+	$effect(() => {
 		const es = new EventSource(api.getNotificationStreamUrl());
 		es.addEventListener('notification', (e) => {
 			try {
 				const data = JSON.parse(e.data);
-				// Add to notifications list
 				const notif: Notification = {
 					id: data.id,
 					event_type: data.event_type,
@@ -49,14 +53,15 @@
 					read: false,
 					created_at: data.created_at
 				};
-				notifications = [notif, ...notifications].slice(0, 30);
+				notifications = [notif, ...notifications.slice(0, 29)];
 
-				// Show toast
 				const tid = ++toastCounter;
 				toasts = [...toasts, { id: tid, title: data.title, body: data.body, level: data.level }];
 				setTimeout(() => {
 					toasts = toasts.filter((t) => t.id !== tid);
 				}, 5000);
+
+				window.dispatchEvent(new CustomEvent('lapsora:notification', { detail: data }));
 			} catch {}
 		});
 
@@ -74,7 +79,11 @@
 			{#each navItems as item}
 				<a
 					href={item.href}
-					class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+					class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors {
+						$page.url.pathname === item.href || (item.href !== '/' && $page.url.pathname.startsWith(item.href))
+							? 'bg-gray-800 text-white font-medium'
+							: 'text-gray-400 hover:bg-gray-800 hover:text-white'
+					}"
 				>
 					<svg class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d={item.icon} />

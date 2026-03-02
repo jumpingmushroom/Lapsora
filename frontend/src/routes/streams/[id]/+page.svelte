@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { api } from '$lib/api';
 	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture } from '$lib/types';
+	import { formatInterval } from '$lib/utils';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
 
@@ -137,12 +138,6 @@
 		}
 	}
 
-	function formatInterval(seconds: number): string {
-		if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)}h`;
-		if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
-		return `${seconds}s`;
-	}
-
 	async function handleUpdateProfile(data: ProfileCreate | ProfileUpdate) {
 		if (!editingProfile) return;
 		profileLoading = true;
@@ -191,7 +186,8 @@
 				capture_mode: profile.capture_mode,
 				active_start_time: profile.active_start_time,
 				active_end_time: profile.active_end_time,
-				sun_offset_minutes: profile.sun_offset_minutes
+				sun_offset_minutes: profile.sun_offset_minutes,
+				sun_events: profile.sun_events
 			});
 			profiles = await api.getStreamProfiles(id);
 		} catch (err) {
@@ -214,6 +210,8 @@
 		}
 	}
 </script>
+
+<svelte:head><title>{stream?.name ?? 'Stream'} - Lapsora</title></svelte:head>
 
 {#if loading}
 	<p class="text-gray-400">Loading stream...</p>

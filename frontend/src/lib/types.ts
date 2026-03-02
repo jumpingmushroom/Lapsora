@@ -65,6 +65,12 @@ export interface ProfileTemplate {
 	resolution_height: number | null;
 	quality: number;
 	hdr_enabled: boolean;
+	weather_enabled: boolean;
+	capture_mode: string;
+	active_start_time: string | null;
+	active_end_time: string | null;
+	sun_offset_minutes: number;
+	sun_events: string;
 	is_system: boolean;
 	created_at: string;
 	updated_at: string;
@@ -79,6 +85,12 @@ export interface ProfileTemplateCreate {
 	resolution_height?: number | null;
 	quality?: number;
 	hdr_enabled?: boolean;
+	weather_enabled?: boolean;
+	capture_mode?: string;
+	active_start_time?: string | null;
+	active_end_time?: string | null;
+	sun_offset_minutes?: number;
+	sun_events?: string;
 }
 
 export interface ProfileCreate {

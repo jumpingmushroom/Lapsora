@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { Timelapse } from '$lib/types';
+	import { formatDate, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
 	import ScheduleManager from '$lib/components/ScheduleManager.svelte';
@@ -41,34 +42,27 @@
 		}
 	}
 
+	// Load on mount and reload when filters change
 	$effect(() => {
-		loadTimelapses();
-	});
-
-	// Reload when filters change
-	$effect(() => {
-		// Access reactive deps
 		filterPeriod;
 		loadTimelapses();
 	});
 
-	// SSE listener for timelapse events
+	// Listen for timelapse events from layout SSE via CustomEvent
 	$effect(() => {
-		const es = new EventSource(api.getNotificationStreamUrl());
-		es.addEventListener('notification', (e) => {
-			try {
-				const data = JSON.parse(e.data);
-				if (data.event_type === 'timelapse_started') {
-					generating = Math.max(0, generating) + 1;
-				} else if (data.event_type === 'timelapse_complete') {
-					generating = Math.max(0, generating - 1);
-					loadTimelapses();
-				} else if (data.event_type === 'timelapse_failure') {
-					generating = Math.max(0, generating - 1);
-				}
-			} catch {}
-		});
-		return () => es.close();
+		function handleNotification(e: Event) {
+			const data = (e as CustomEvent).detail;
+			if (data.event_type === 'timelapse_started') {
+				generating = Math.max(0, generating) + 1;
+			} else if (data.event_type === 'timelapse_complete') {
+				generating = Math.max(0, generating - 1);
+				loadTimelapses();
+			} else if (data.event_type === 'timelapse_failure') {
+				generating = Math.max(0, generating - 1);
+			}
+		}
+		window.addEventListener('lapsora:notification', handleNotification);
+		return () => window.removeEventListener('lapsora:notification', handleNotification);
 	});
 
 	let filteredTimelapses = $derived(
@@ -110,26 +104,9 @@
 		}
 	}
 
-	function formatDate(iso: string | null): string {
-		if (!iso) return 'N/A';
-		return new Date(iso).toLocaleDateString();
-	}
-
-	function formatDuration(seconds: number | null): string {
-		if (!seconds) return '--';
-		const m = Math.floor(seconds / 60);
-		const s = Math.round(seconds % 60);
-		return m > 0 ? `${m}m ${s}s` : `${s}s`;
-	}
-
-	function formatBytes(bytes: number | null): string {
-		if (!bytes) return '--';
-		const k = 1024;
-		const sizes = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(k));
-		return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-	}
 </script>
+
+<svelte:head><title>Timelapses - Lapsora</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">

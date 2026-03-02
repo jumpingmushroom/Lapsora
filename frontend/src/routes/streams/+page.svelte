@@ -116,6 +116,8 @@
 	}
 </script>
 
+<svelte:head><title>Streams - Lapsora</title></svelte:head>
+
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-3xl font-bold text-white">Streams</h1>

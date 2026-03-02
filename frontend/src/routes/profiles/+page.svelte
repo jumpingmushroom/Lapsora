@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { ProfileTemplate, ProfileTemplateCreate } from '$lib/types';
+	import { formatInterval } from '$lib/utils';
 
 	let templates = $state<ProfileTemplate[]>([]);
 	let loading = $state(true);
@@ -35,7 +36,7 @@
 	let filtered = $derived(
 		activeCategory ? templates.filter((t) => t.category === activeCategory) : templates
 	);
-	let grouped = $derived(() => {
+	let grouped = $derived.by(() => {
 		const map = new Map<string, ProfileTemplate[]>();
 		for (const t of filtered) {
 			const list = map.get(t.category) || [];
@@ -58,12 +59,6 @@
 	}
 
 	$effect(() => { load(); });
-
-	function formatInterval(seconds: number): string {
-		if (seconds >= 3600) return `${(seconds / 3600).toFixed(seconds % 3600 === 0 ? 0 : 1)}h`;
-		if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
-		return `${seconds}s`;
-	}
 
 	async function handleCreate(e: SubmitEvent) {
 		e.preventDefault();
@@ -144,6 +139,8 @@
 		}
 	}
 </script>
+
+<svelte:head><title>Templates - Lapsora</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
@@ -277,7 +274,7 @@
 		</div>
 
 		<!-- Grouped template cards -->
-		{#each grouped() as [category, items]}
+		{#each grouped as [category, items]}
 			<div>
 				<h2 class="mb-3 text-lg font-semibold text-gray-300">{category}</h2>
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
