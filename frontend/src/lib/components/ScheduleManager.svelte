@@ -16,7 +16,7 @@
 	let formCron = $state('');
 	let formName = $state('');
 	let formFps = $state(24);
-	let formFormat = $state('mp4');
+	let formFormat = $state('mkv');
 	let formDeflicker = $state('medium');
 	let formMotionBlur = $state('off');
 	let formLookbackHours = $state<number | null>(null);
@@ -27,7 +27,6 @@
 	let formWeatherUnit = $state('C');
 	let formHeatmapOverlay = $state(false);
 	let formHeatmapMode = $state('cumulative');
-	let formHeatmapOpacity = $state(0.4);
 	let formHeatmapColormap = $state('jet');
 	let formHeatmapThreshold = $state(10);
 	let formCodec = $state('auto');
@@ -138,7 +137,7 @@
 		formCron = '';
 		formName = '';
 		formFps = 24;
-		formFormat = 'mp4';
+		formFormat = 'mkv';
 		formDeflicker = 'medium';
 		formMotionBlur = 'off';
 		formLookbackHours = null;
@@ -149,7 +148,6 @@
 		formWeatherUnit = 'C';
 		formHeatmapOverlay = false;
 		formHeatmapMode = 'cumulative';
-		formHeatmapOpacity = 0.4;
 		formHeatmapColormap = 'jet';
 		formHeatmapThreshold = 10;
 		formCodec = 'auto';
@@ -177,7 +175,6 @@
 		formWeatherUnit = schedule.weather_unit;
 		formHeatmapOverlay = schedule.heatmap_overlay;
 		formHeatmapMode = schedule.heatmap_mode;
-		formHeatmapOpacity = schedule.heatmap_opacity;
 		formHeatmapColormap = schedule.heatmap_colormap;
 		formHeatmapThreshold = schedule.heatmap_threshold;
 		formCodec = schedule.codec || 'auto';
@@ -229,7 +226,6 @@
 				weather_unit: formWeatherUnit,
 				heatmap_overlay: formHeatmapOverlay,
 				heatmap_mode: formHeatmapMode,
-				heatmap_opacity: formHeatmapOpacity,
 				heatmap_colormap: formHeatmapColormap,
 			heatmap_threshold: formHeatmapThreshold,
 				motion_blur: formMotionBlur,
@@ -736,18 +732,6 @@
 									<option value="cumulative">Cumulative</option>
 									<option value="sliding">Sliding window</option>
 								</select>
-							</div>
-							<div>
-								<label for="sched-heatmap-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {formHeatmapOpacity}</label>
-								<input
-									id="sched-heatmap-opacity"
-									type="range"
-									bind:value={formHeatmapOpacity}
-									min="0.1"
-									max="0.8"
-									step="0.05"
-									class="w-full accent-blue-500"
-								/>
 							</div>
 							<div>
 								<label for="sched-heatmap-threshold" class="mb-1 block text-sm font-medium text-gray-300">Threshold: {formHeatmapThreshold}</label>

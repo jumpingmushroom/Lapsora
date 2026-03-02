@@ -115,7 +115,6 @@ def create_schedule(
         weather_unit=body.weather_unit,
         heatmap_overlay=body.heatmap_overlay,
         heatmap_mode=body.heatmap_mode,
-        heatmap_opacity=body.heatmap_opacity,
         heatmap_colormap=body.heatmap_colormap,
         heatmap_threshold=body.heatmap_threshold,
         enabled=body.enabled,
@@ -219,7 +218,6 @@ async def trigger_schedule(
         weather_unit=schedule.weather_unit,
         heatmap_overlay=schedule.heatmap_overlay,
         heatmap_mode=schedule.heatmap_mode,
-        heatmap_opacity=schedule.heatmap_opacity,
         heatmap_colormap=schedule.heatmap_colormap,
         heatmap_threshold=schedule.heatmap_threshold,
     )

@@ -63,7 +63,6 @@ async def generate(
         deflicker=body.deflicker,
         heatmap_overlay=body.heatmap_overlay,
         heatmap_mode=body.heatmap_mode,
-        heatmap_opacity=body.heatmap_opacity,
         heatmap_colormap=body.heatmap_colormap,
         heatmap_threshold=body.heatmap_threshold,
         motion_blur=body.motion_blur,
@@ -98,12 +97,24 @@ def get_timelapse_video(timelapse_id: int, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/timelapses/{timelapse_id}/thumbnail")
+def get_timelapse_thumbnail(timelapse_id: int, db: Session = Depends(get_db)):
+    tl = db.get(Timelapse, timelapse_id)
+    if not tl:
+        raise HTTPException(404, "Timelapse not found")
+    if not tl.thumbnail_path or not os.path.exists(tl.thumbnail_path):
+        raise HTTPException(404, "Thumbnail not available")
+    return FileResponse(tl.thumbnail_path, media_type="image/jpeg")
+
+
 @router.delete("/timelapses/bulk", status_code=204)
 def bulk_delete_timelapses(body: BulkDeleteRequest, db: Session = Depends(get_db)):
     tls = db.query(Timelapse).filter(Timelapse.id.in_(body.ids)).all()
     for tl in tls:
         if os.path.exists(tl.file_path):
             os.unlink(tl.file_path)
+        if tl.thumbnail_path and os.path.exists(tl.thumbnail_path):
+            os.unlink(tl.thumbnail_path)
         db.delete(tl)
     db.commit()
 
@@ -115,5 +126,7 @@ def delete_timelapse(timelapse_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Timelapse not found")
     if os.path.exists(tl.file_path):
         os.unlink(tl.file_path)
+    if tl.thumbnail_path and os.path.exists(tl.thumbnail_path):
+        os.unlink(tl.thumbnail_path)
     db.delete(tl)
     db.commit()

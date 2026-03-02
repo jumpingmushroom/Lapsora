@@ -172,7 +172,6 @@ export interface TimelapseSchedule {
 	weather_unit: string;
 	heatmap_overlay: boolean;
 	heatmap_mode: string;
-	heatmap_opacity: number;
 	heatmap_colormap: string;
 	heatmap_threshold: number;
 	motion_blur: string;
@@ -202,7 +201,6 @@ export interface TimelapseScheduleCreate {
 	weather_unit?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
-	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
 	motion_blur?: string;
@@ -228,7 +226,6 @@ export interface TimelapseScheduleUpdate {
 	weather_unit?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
-	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
 	motion_blur?: string;
@@ -282,7 +279,6 @@ export interface TimelapseGenerate {
 	weather_unit?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
-	heatmap_opacity?: number;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
 	motion_blur?: string;

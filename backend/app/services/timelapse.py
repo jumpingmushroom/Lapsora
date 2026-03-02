@@ -139,27 +139,40 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
     return heatmaps
 
 
-def _blend_heatmap_gpu(frame: np.ndarray, colored: np.ndarray, opacity: float) -> np.ndarray:
-    """Alpha-blend a colored heatmap onto a frame using CuPy."""
+def _blend_heatmap_gpu(frame: np.ndarray, colored: np.ndarray, heatmap: np.ndarray, threshold: int) -> np.ndarray:
+    """Per-pixel alpha blend a colored heatmap onto a frame using CuPy."""
     import cupy as cp
     gpu_frame = cp.asarray(frame, dtype=cp.float32)
     gpu_colored = cp.asarray(colored, dtype=cp.float32)
-    blended = gpu_frame + gpu_colored * opacity
-    blended = cp.clip(blended, 0, 255)
-    return cp.asnumpy(blended.astype(cp.uint8))
+    alpha = cp.asarray(heatmap, dtype=cp.float32) / 255.0
+    alpha[cp.asarray(heatmap) < threshold] = 0
+    alpha = cp.asnumpy(alpha)
+    alpha = cv2.GaussianBlur(alpha, (31, 31), 0)
+    alpha_3ch = cp.asarray(np.stack([alpha] * 3, axis=-1))
+    blended = gpu_frame * (1 - alpha_3ch) + gpu_colored * alpha_3ch
+    return cp.asnumpy(cp.clip(blended, 0, 255).astype(cp.uint8))
+
+
+def _blend_heatmap_cpu(frame: np.ndarray, colored: np.ndarray, heatmap: np.ndarray, threshold: int) -> np.ndarray:
+    """Per-pixel alpha blend a colored heatmap onto a frame using NumPy."""
+    alpha = heatmap.astype(np.float32) / 255.0
+    alpha[heatmap < threshold] = 0
+    alpha = cv2.GaussianBlur(alpha, (31, 31), 0)
+    alpha_3ch = np.stack([alpha] * 3, axis=-1)
+    blended = frame.astype(np.float32) * (1 - alpha_3ch) + colored.astype(np.float32) * alpha_3ch
+    return np.clip(blended, 0, 255).astype(np.uint8)
 
 
 def apply_heatmap_to_frames(
     frame_paths: list[str],
     heatmap_mode: str,
     colormap_name: str,
-    opacity: float,
     threshold: int = 10,
 ) -> None:
-    """Compute heatmaps and alpha-blend them onto frames in-place."""
+    """Compute heatmaps and per-pixel alpha-blend them onto frames in-place."""
     colormap = COLORMAP_MAP.get(colormap_name, cv2.COLORMAP_JET)
-    opacity = max(0.1, min(0.8, opacity))
     use_gpu = is_cupy_available()
+    blend = _blend_heatmap_gpu if use_gpu else _blend_heatmap_cpu
 
     if heatmap_mode == "sliding":
         heatmaps = compute_sliding_heatmaps(frame_paths, threshold=threshold)
@@ -170,10 +183,7 @@ def apply_heatmap_to_frames(
             if frame is None:
                 continue
             colored = cv2.applyColorMap(heatmaps[i], colormap)
-            if use_gpu:
-                blended = _blend_heatmap_gpu(frame, colored, opacity)
-            else:
-                blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            blended = blend(frame, colored, heatmaps[i], threshold)
             cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
     else:
         heatmap = compute_cumulative_heatmap(frame_paths, threshold=threshold)
@@ -184,10 +194,7 @@ def apply_heatmap_to_frames(
             frame = cv2.imread(path)
             if frame is None:
                 continue
-            if use_gpu:
-                blended = _blend_heatmap_gpu(frame, colored, opacity)
-            else:
-                blended = cv2.addWeighted(frame, 1.0, colored, opacity, 0)
+            blended = blend(frame, colored, heatmap, threshold)
             cv2.imwrite(path, blended, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
 MOTION_BLUR_FRAMES = {"off": 1, "low": 3, "medium": 5, "high": 7}
@@ -327,7 +334,6 @@ async def generate_timelapse(
     deflicker: str = "medium",
     heatmap_overlay: bool = False,
     heatmap_mode: str = "cumulative",
-    heatmap_opacity: float = 0.4,
     heatmap_colormap: str = "jet",
     heatmap_threshold: int = 10,
     motion_blur: str = "off",
@@ -458,7 +464,6 @@ async def generate_timelapse(
                 frame_paths,
                 heatmap_mode,
                 heatmap_colormap,
-                heatmap_opacity,
                 heatmap_threshold,
             )
             await _progress("heatmap_overlay", "completed")
@@ -658,10 +663,27 @@ async def generate_timelapse(
             logger.warning("ffprobe failed, duration will be estimated")
             duration_seconds = frame_count / fps if fps > 0 else None
 
+        # Extract middle frame as thumbnail
+        thumb_path = out_path.rsplit(".", 1)[0] + "_thumb.jpg"
+        mid = (duration_seconds or 1) / 2
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-ss", str(mid), "-i", out_path,
+                "-frames:v", "1", "-q:v", "2", thumb_path,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(proc.communicate(), timeout=30)
+            if proc.returncode != 0:
+                thumb_path = None
+        except Exception:
+            logger.warning("Thumbnail extraction failed")
+            thumb_path = None
+
         # Create DB record
         timelapse = Timelapse(
             profile_id=profile_id,
             file_path=out_path,
+            thumbnail_path=thumb_path,
             file_size=file_size,
             format=format,
             fps=fps,

@@ -182,6 +182,7 @@ class TimelapseRead(BaseModel):
     fps: int
     frame_count: int | None
     duration_seconds: float | None
+    thumbnail_path: str | None = None
     period_type: str | None
     period_start: datetime | None
     period_end: datetime | None
@@ -201,7 +202,6 @@ class TimelapseGenerate(BaseModel):
     weather_unit: str = "C"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
-    heatmap_opacity: float = Field(default=0.4, ge=0, le=1)
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
     motion_blur: Literal["off", "low", "medium", "high"] = "off"
@@ -230,7 +230,6 @@ class TimelapseScheduleCreate(BaseModel):
     weather_unit: str = "C"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
-    heatmap_opacity: float = 0.4
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
     motion_blur: Literal["off", "low", "medium", "high"] = "off"
@@ -256,7 +255,6 @@ class TimelapseScheduleUpdate(BaseModel):
     weather_unit: str | None = None
     heatmap_overlay: bool | None = None
     heatmap_mode: str | None = None
-    heatmap_opacity: float | None = None
     heatmap_colormap: str | None = None
     heatmap_threshold: int | None = None
     motion_blur: Literal["off", "low", "medium", "high"] | None = None
@@ -286,7 +284,6 @@ class TimelapseScheduleRead(BaseModel):
     weather_unit: str
     heatmap_overlay: bool
     heatmap_mode: str
-    heatmap_opacity: float
     heatmap_colormap: str
     heatmap_threshold: int
     motion_blur: str

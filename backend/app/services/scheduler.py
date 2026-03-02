@@ -115,7 +115,6 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 weather_unit=sched.weather_unit,
                 heatmap_overlay=sched.heatmap_overlay,
                 heatmap_mode=sched.heatmap_mode,
-                heatmap_opacity=sched.heatmap_opacity,
                 heatmap_colormap=sched.heatmap_colormap,
                 heatmap_threshold=sched.heatmap_threshold,
                 motion_blur=sched.motion_blur,

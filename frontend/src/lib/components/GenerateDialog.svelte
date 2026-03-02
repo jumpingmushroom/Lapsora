@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 
+
 	interface Props {
 		profileOptions: { id: number; label: string; resolution_width: number | null; resolution_height: number | null }[];
 		open: boolean;
@@ -10,9 +11,10 @@
 	let { profileOptions, open, onclose }: Props = $props();
 	let selectedProfileId = $state(profileOptions[0]?.id ?? 0);
 
-	type Preset = 'last24h' | 'today' | 'yesterday' | 'last7d' | 'last30d' | 'thisWeek' | 'lastWeek' | 'custom';
+	type Preset = 'last1h' | 'last24h' | 'today' | 'yesterday' | 'last7d' | 'last30d' | 'thisWeek' | 'lastWeek' | 'custom';
 
 	const PRESETS: { key: Preset; label: string }[] = [
+		{ key: 'last1h', label: 'Last 1h' },
 		{ key: 'last24h', label: 'Last 24h' },
 		{ key: 'today', label: 'Today' },
 		{ key: 'yesterday', label: 'Yesterday' },
@@ -35,6 +37,9 @@
 		let end: Date = now;
 
 		switch (preset) {
+			case 'last1h':
+				start = new Date(now.getTime() - 60 * 60 * 1000);
+				break;
 			case 'last24h':
 				start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 				break;
@@ -93,7 +98,7 @@
 		return computePresetRange(selectedPreset)?.end ?? '';
 	});
 	let fps = $state(24);
-	let format = $state('mp4');
+	let format = $state('mkv');
 	let deflicker = $state('medium');
 	let motion_blur = $state('off');
 	let timestamp_overlay = $state(false);
@@ -103,7 +108,6 @@
 	let weather_unit = $state('C');
 	let heatmap_overlay = $state(false);
 	let heatmap_mode = $state('cumulative');
-	let heatmap_opacity = $state(0.4);
 	let heatmap_colormap = $state('jet');
 	let heatmap_threshold = $state(10);
 	let codec = $state('auto');
@@ -179,7 +183,6 @@
 			weather_unit: weather_overlay ? weather_unit : undefined,
 			heatmap_overlay,
 			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
-			heatmap_opacity: heatmap_overlay ? heatmap_opacity : undefined,
 			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
 		heatmap_threshold: heatmap_overlay ? heatmap_threshold : undefined,
 			codec: (format === 'mp4' || format === 'mkv') ? codec : undefined,
@@ -262,8 +265,6 @@
 									id="gen-start-time"
 									type="text"
 									bind:value={customStartTime}
-									placeholder="HH:MM"
-									pattern="\d{2}:\d{2}"
 									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 							</div>
@@ -281,8 +282,6 @@
 									id="gen-end-time"
 									type="text"
 									bind:value={customEndTime}
-									placeholder="HH:MM"
-									pattern="\d{2}:\d{2}"
 									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 								/>
 							</div>
@@ -513,18 +512,6 @@
 								<option value="cumulative">Cumulative</option>
 								<option value="sliding">Sliding window</option>
 							</select>
-						</div>
-						<div>
-							<label for="gen-heatmap-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {heatmap_opacity}</label>
-							<input
-								id="gen-heatmap-opacity"
-								type="range"
-								bind:value={heatmap_opacity}
-								min="0.1"
-								max="0.8"
-								step="0.05"
-								class="w-full accent-blue-500"
-							/>
 						</div>
 						<div>
 							<label for="gen-heatmap-threshold" class="mb-1 block text-sm font-medium text-gray-300">Threshold: {heatmap_threshold}</label>

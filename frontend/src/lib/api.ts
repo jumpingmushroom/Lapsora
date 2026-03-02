@@ -71,6 +71,7 @@ export const api = {
 	},
 	getTimelapse: (id: number) => request<Timelapse>(`/timelapses/${id}`),
 	getTimelapseVideoUrl: (id: number) => `${BASE}/timelapses/${id}/video`,
+	getTimelapseThumbnailUrl: (id: number) => `${BASE}/timelapses/${id}/thumbnail`,
 	generateTimelapse: (profileId: number, data: TimelapseGenerate) => request<{ status: string; message: string }>(`/profiles/${profileId}/timelapses/generate`, { method: 'POST', body: JSON.stringify(data) }),
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
 	bulkDeleteTimelapses: (ids: number[]) => request<void>('/timelapses/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),

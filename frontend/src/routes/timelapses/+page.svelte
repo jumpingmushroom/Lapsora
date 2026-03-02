@@ -235,11 +235,16 @@
 					<!-- Thumbnail / click to play -->
 					<button
 						onclick={() => { selectedTimelapse = tl; }}
-						class="mb-3 flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg bg-gray-800 text-gray-500 hover:text-gray-300"
+						class="mb-3 relative aspect-video w-full overflow-hidden rounded-lg bg-gray-800"
 					>
-						<svg class="h-12 w-12" fill="currentColor" viewBox="0 0 24 24">
-							<path d="M8 5v14l11-7z" />
-						</svg>
+						{#if tl.thumbnail_path}
+							<img src={api.getTimelapseThumbnailUrl(tl.id)} alt="" class="h-full w-full object-cover" />
+						{/if}
+						<div class="absolute inset-0 flex items-center justify-center text-gray-400 hover:text-gray-200 transition-colors">
+							<svg class="h-12 w-12 drop-shadow-lg" fill="currentColor" viewBox="0 0 24 24">
+								<path d="M8 5v14l11-7z" />
+							</svg>
+						</div>
 					</button>
 
 					<div class="mb-2 flex items-center gap-2">

@@ -1,5 +1,6 @@
 """go2rtc integration service."""
 
+import asyncio
 import logging
 
 import httpx
@@ -44,14 +45,24 @@ async def list_streams(base_url: str) -> list[dict]:
         return result
 
 
-async def grab_frame(base_url: str, name: str) -> bytes:
-    """Grab a JPEG snapshot from go2rtc."""
+async def grab_frame(base_url: str, name: str, retries: int = 3) -> bytes:
+    """Grab a JPEG snapshot from go2rtc with retry on 5xx errors."""
+    last_exc: Exception | None = None
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-        resp = await client.get(f"{base_url}/api/frame.jpeg", params={"src": name})
-        resp.raise_for_status()
-        if not resp.content:
-            raise RuntimeError("Empty frame from go2rtc")
-        return resp.content
+        for attempt in range(1, retries + 1):
+            resp = await client.get(f"{base_url}/api/frame.jpeg", params={"src": name})
+            if resp.status_code >= 500 and attempt < retries:
+                logger.warning(
+                    "go2rtc returned %s for stream %r (attempt %d/%d), retrying...",
+                    resp.status_code, name, attempt, retries,
+                )
+                await asyncio.sleep(1)
+                continue
+            resp.raise_for_status()
+            if not resp.content:
+                raise RuntimeError("Empty frame from go2rtc")
+            return resp.content
+    raise last_exc or RuntimeError("grab_frame exhausted retries")
 
 
 async def test_stream(base_url: str, name: str) -> dict:
