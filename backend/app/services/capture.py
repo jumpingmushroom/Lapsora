@@ -175,6 +175,8 @@ async def capture_frame(profile_id: int) -> None:
     Runs from the scheduler so creates its own DB session.
     """
     db = SessionLocal()
+    profile = None
+    stream = None
     try:
         profile = db.query(Profile).filter(Profile.id == profile_id).first()
         if not profile:
@@ -384,10 +386,11 @@ async def capture_frame(profile_id: int) -> None:
         logger.exception("Capture failed for profile %d", profile_id)
         try:
             from app.services.events import emit
+            label = f"'{profile.name}' on stream '{stream.name}'" if profile and stream else f"profile {profile_id}"
             await emit(
                 "capture_failure",
-                f"Capture failed: profile {profile_id}",
-                f"Unexpected error during capture for profile {profile_id}: {exc}",
+                f"Capture failed: {profile.name if profile else f'profile {profile_id}'}",
+                f"Unexpected error during capture for {label}: {exc}",
                 level="error",
             )
         except Exception:
