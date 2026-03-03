@@ -24,7 +24,8 @@ RUN apt-get update && \
         libx265-dev \
         libffi-dev libssl-dev \
         fonts-dejavu-core \
-        cuda-cudart-dev-12-8 cuda-nvcc-12-8 && \
+        cuda-cudart-dev-12-8 cuda-nvcc-12-8 \
+        gosu && \
     rm -rf /var/lib/apt/lists/*
 
 # Set python3.11 as default python
@@ -46,8 +47,10 @@ COPY --from=frontend-build /build/build ./frontend/build/
 RUN groupadd -r lapsora && useradd -r -g lapsora -d /app lapsora && \
     mkdir -p /app/data && chown -R lapsora:lapsora /app
 
-USER lapsora
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
