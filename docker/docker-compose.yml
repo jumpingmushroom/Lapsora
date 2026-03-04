@@ -10,7 +10,7 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
     environment:
-      - TZ=Europe/Oslo
+      - TZ=${TZ:-UTC}
     env_file:
       - ../.env
     healthcheck:
