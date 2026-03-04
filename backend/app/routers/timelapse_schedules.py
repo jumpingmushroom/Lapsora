@@ -3,7 +3,7 @@
 import logging
 
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -183,7 +183,6 @@ def delete_schedule(
 @router.post("/{schedule_id}/trigger", status_code=202)
 async def trigger_schedule(
     schedule_id: int,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     schedule = db.get(TimelapseSchedule, schedule_id)
@@ -192,7 +191,8 @@ async def trigger_schedule(
 
     from datetime import UTC, datetime, timedelta
 
-    from app.services.timelapse import generate_timelapse, get_period_range
+    from app.services.generation_queue import enqueue_generation
+    from app.services.timelapse import get_period_range
 
     if schedule.lookback_hours is not None:
         end = datetime.now(UTC)
@@ -202,8 +202,7 @@ async def trigger_schedule(
         period = schedule.preset or "daily"
         start, end = get_period_range(period)
 
-    background_tasks.add_task(
-        generate_timelapse,
+    result = await enqueue_generation(
         profile_id=schedule.profile_id,
         period_type=period,
         period_start=start,
@@ -221,4 +220,4 @@ async def trigger_schedule(
         heatmap_colormap=schedule.heatmap_colormap,
         heatmap_threshold=schedule.heatmap_threshold,
     )
-    return {"status": "generating", "message": "Timelapse generation triggered"}
+    return {"status": "queued", "message": "Timelapse generation queued", **result}

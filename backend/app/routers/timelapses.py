@@ -2,7 +2,7 @@
 
 import os
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Timelapse
 from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
-from app.services.timelapse import generate_timelapse
+from app.services.generation_queue import enqueue_generation
 
 router = APIRouter(prefix="/api", tags=["timelapses"])
 
@@ -45,10 +45,8 @@ def list_timelapses(
 async def generate(
     profile_id: int,
     body: TimelapseGenerate,
-    background_tasks: BackgroundTasks,
 ):
-    background_tasks.add_task(
-        generate_timelapse,
+    result = await enqueue_generation(
         profile_id=profile_id,
         period_type="custom",
         period_start=body.period_start,
@@ -71,7 +69,7 @@ async def generate(
         output_height=body.output_height,
         quality_preset=body.quality_preset,
     )
-    return {"status": "generating", "message": "Timelapse generation started"}
+    return {"status": "queued", "message": "Timelapse generation queued", **result}
 
 
 @router.get("/timelapses/{timelapse_id}", response_model=TimelapseRead)

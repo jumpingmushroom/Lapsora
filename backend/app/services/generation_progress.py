@@ -53,6 +53,14 @@ def fail_generation(generation_id: str, error: str) -> None:
     _active_generations.pop(generation_id, None)
 
 
+def cancel_generation(generation_id: str) -> None:
+    """Mark generation as cancelled and remove from tracking."""
+    gen = _active_generations.get(generation_id)
+    if gen:
+        gen["status"] = "cancelled"
+    _active_generations.pop(generation_id, None)
+
+
 def get_active_generations() -> list[dict]:
     """Return all active generation states."""
     return list(_active_generations.values())

@@ -25,6 +25,9 @@
 	let generating = $state(0);
 	let activeGenerations = $state<Record<string, any>>({});
 
+	// Queued generations waiting to start
+	let queuedGenerations = $state<{ generation_id: string; profile_id: number; position: number }[]>([]);
+
 	// Delete
 	let deleteTarget = $state<Timelapse | null>(null);
 	let deleting = $state(false);
@@ -49,7 +52,7 @@
 		loadTimelapses();
 	});
 
-	// Fetch active generations on mount (survives page navigation)
+	// Fetch active generations and queue on mount (survives page navigation)
 	$effect(() => {
 		api.getActiveGenerations().then((gens) => {
 			for (const gen of gens) {
@@ -57,13 +60,20 @@
 				generating = Math.max(generating, 1);
 			}
 		}).catch(() => {});
+		api.getQueuedGenerations().then((jobs) => {
+			queuedGenerations = jobs;
+		}).catch(() => {});
 	});
 
 	// Listen for timelapse events from layout SSE via CustomEvent
 	$effect(() => {
 		function handleNotification(e: Event) {
 			const data = (e as CustomEvent).detail;
-			if (data.event_type === 'timelapse_progress') {
+			if (data.event_type === 'timelapse_queued') {
+				queuedGenerations = [...queuedGenerations, { generation_id: data.generation_id, profile_id: data.profile_id, position: data.position }];
+			} else if (data.event_type === 'timelapse_queue_updated') {
+				queuedGenerations = data.queue || [];
+			} else if (data.event_type === 'timelapse_progress') {
 				activeGenerations[data.generation_id] = data;
 			} else if (data.event_type === 'timelapse_started') {
 				generating = Math.max(0, generating) + 1;
@@ -81,6 +91,13 @@
 				const ids = Object.keys(activeGenerations);
 				if (ids.length > 0) {
 					delete activeGenerations[ids[0]];
+					activeGenerations = { ...activeGenerations };
+				}
+			} else if (data.event_type === 'timelapse_cancelled') {
+				generating = Math.max(0, generating - 1);
+				queuedGenerations = queuedGenerations.filter(j => j.generation_id !== data.generation_id);
+				if (activeGenerations[data.generation_id]) {
+					delete activeGenerations[data.generation_id];
 					activeGenerations = { ...activeGenerations };
 				}
 			}
@@ -145,14 +162,50 @@
 
 	<ScheduleManager />
 
+	{#each queuedGenerations as job (job.generation_id)}
+		<div class="rounded-lg border border-yellow-800 bg-yellow-950/50 p-3">
+			<div class="flex items-center justify-between">
+				<div class="flex items-center gap-2 text-sm text-yellow-400">
+					<svg class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+					</svg>
+					Position {job.position} in queue
+					{#if job.profile_id}
+						<span class="text-yellow-600">· Profile {job.profile_id}</span>
+					{/if}
+				</div>
+				<button
+					onclick={() => api.cancelGeneration(job.generation_id).catch(() => {})}
+					class="rounded p-1 text-yellow-600 transition-colors hover:bg-yellow-900 hover:text-yellow-400"
+					title="Cancel"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
+			</div>
+		</div>
+	{/each}
+
 	{#each Object.values(activeGenerations) as gen (gen.generation_id)}
 		<div class="rounded-lg border border-blue-800 bg-blue-950/50 p-4">
-			<div class="mb-3 flex items-center gap-2 text-sm font-medium text-blue-300">
-				<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
-					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-				</svg>
-				Generating timelapse{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
+			<div class="mb-3 flex items-center justify-between">
+				<div class="flex items-center gap-2 text-sm font-medium text-blue-300">
+					<svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+					</svg>
+					Generating timelapse{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
+				</div>
+				<button
+					onclick={() => api.cancelGeneration(gen.generation_id).catch(() => {})}
+					class="rounded p-1 text-blue-600 transition-colors hover:bg-blue-900 hover:text-blue-400"
+					title="Stop"
+				>
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+					</svg>
+				</button>
 			</div>
 			<div class="space-y-1.5">
 				{#each gen.steps || [] as step}

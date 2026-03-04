@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import uuid
 from datetime import datetime, timedelta
 
@@ -22,6 +23,10 @@ import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class GenerationCancelled(Exception):
+    pass
 
 COLORMAP_MAP = {
     "jet": cv2.COLORMAP_JET,
@@ -168,6 +173,7 @@ def apply_heatmap_to_frames(
     heatmap_mode: str,
     colormap_name: str,
     threshold: int = 10,
+    cancel_check: callable = None,
 ) -> None:
     """Compute heatmaps and per-pixel alpha-blend them onto frames in-place."""
     colormap = COLORMAP_MAP.get(colormap_name, cv2.COLORMAP_JET)
@@ -177,6 +183,8 @@ def apply_heatmap_to_frames(
     if heatmap_mode == "sliding":
         heatmaps = compute_sliding_heatmaps(frame_paths, threshold=threshold)
         for i, path in enumerate(frame_paths):
+            if cancel_check and i % 10 == 0:
+                cancel_check()
             if i >= len(heatmaps) or heatmaps[i] is None:
                 continue
             frame = cv2.imread(path)
@@ -190,7 +198,9 @@ def apply_heatmap_to_frames(
         if heatmap is None:
             return
         colored = cv2.applyColorMap(heatmap, colormap)
-        for path in frame_paths:
+        for i, path in enumerate(frame_paths):
+            if cancel_check and i % 10 == 0:
+                cancel_check()
             frame = cv2.imread(path)
             if frame is None:
                 continue
@@ -200,7 +210,7 @@ def apply_heatmap_to_frames(
 MOTION_BLUR_FRAMES = {"off": 1, "low": 3, "medium": 5, "high": 7}
 
 
-def apply_motion_blur(frame_dir: str, blend_count: int) -> None:
+def apply_motion_blur(frame_dir: str, blend_count: int, cancel_check: callable = None) -> None:
     """Blend adjacent frames using gaussian-weighted averaging for motion blur."""
     frame_files = sorted(
         f for f in os.listdir(frame_dir)
@@ -229,6 +239,8 @@ def apply_motion_blur(frame_dir: str, blend_count: int) -> None:
 
     n = len(frames)
     for i in range(n):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
         if frames[i] is None:
             continue
         # Determine window with boundary clamping
@@ -341,6 +353,8 @@ async def generate_timelapse(
     output_width: int | None = None,
     output_height: int | None = None,
     quality_preset: str = "medium",
+    cancel_event: "threading.Event | None" = None,
+    generation_id: str | None = None,
 ) -> int:
     """Generate a timelapse video and return its database ID."""
     from app.services.events import emit
@@ -349,10 +363,17 @@ async def generate_timelapse(
         complete_generation, fail_generation,
     )
 
-    generation_id = str(uuid.uuid4())
+    from app.services.generation_queue import set_active_ffmpeg_proc
+
+    if generation_id is None:
+        generation_id = str(uuid.uuid4())
     db: Session = SessionLocal()
     tmp_filelist = None
     deflicker_dir = None
+
+    def _check_cancel():
+        if cancel_event and cancel_event.is_set():
+            raise GenerationCancelled(f"Generation {generation_id} cancelled")
 
     async def _progress(step_name: str, status: str) -> None:
         """Update step and emit SSE progress event."""
@@ -385,6 +406,7 @@ async def generate_timelapse(
         start_generation(generation_id, profile_id, steps)
 
         # Step: querying captures
+        _check_cancel()
         await _progress("querying_captures", "in_progress")
 
         stmt = (
@@ -425,6 +447,7 @@ async def generate_timelapse(
             pass
 
         # Step: deflickering / copying frames
+        _check_cancel()
         await _progress("deflickering", "in_progress")
         original_paths = [os.path.join(settings.DATA_DIR, cap.file_path) for cap in captures]
         deflicker_dir = tempfile.mkdtemp(prefix="lapsora_deflicker_")
@@ -438,7 +461,7 @@ async def generate_timelapse(
                 if os.path.exists(src):
                     _shutil.copy2(src, dst)
         else:
-            await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker)
+            await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker, cancel_check=_check_cancel)
         frame_paths = [p for p in deflickered_paths if os.path.exists(p)]
         if not frame_paths:
             raise ValueError(
@@ -452,12 +475,14 @@ async def generate_timelapse(
 
         # Step: motion blur
         if blur_blend > 1:
+            _check_cancel()
             await _progress("motion_blur", "in_progress")
-            await asyncio.to_thread(apply_motion_blur, deflicker_dir, blur_blend)
+            await asyncio.to_thread(apply_motion_blur, deflicker_dir, blur_blend, cancel_check=_check_cancel)
             await _progress("motion_blur", "completed")
 
         # Step: heatmap overlay
         if heatmap_overlay:
+            _check_cancel()
             await _progress("heatmap_overlay", "in_progress")
             await asyncio.to_thread(
                 apply_heatmap_to_frames,
@@ -465,16 +490,20 @@ async def generate_timelapse(
                 heatmap_mode,
                 heatmap_colormap,
                 heatmap_threshold,
+                cancel_check=_check_cancel,
             )
             await _progress("heatmap_overlay", "completed")
 
         # Step: weather overlay
         if weather_overlay:
+            _check_cancel()
             await _progress("weather_overlay", "in_progress")
             from PIL import Image, ImageDraw, ImageFont
             from app.services.weather import format_weather_text
 
             for i, path in enumerate(frame_paths):
+                if cancel_event and i % 10 == 0:
+                    _check_cancel()
                 if i >= len(captures):
                     break
                 cap = captures[i]
@@ -509,6 +538,7 @@ async def generate_timelapse(
             await _progress("weather_overlay", "completed")
 
         # Step: encoding
+        _check_cancel()
         await _progress("encoding", "in_progress")
 
         # Write concat file list
@@ -625,7 +655,11 @@ async def generate_timelapse(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=FFMPEG_TIMEOUT)
+        set_active_ffmpeg_proc(proc)
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=FFMPEG_TIMEOUT)
+        finally:
+            set_active_ffmpeg_proc(None)
 
         if proc.returncode != 0:
             error_msg = stderr.decode().strip() if stderr else "unknown error"
@@ -719,6 +753,18 @@ async def generate_timelapse(
 
         return timelapse.id
 
+    except GenerationCancelled:
+        logger.info("Timelapse generation cancelled for profile %d", profile_id)
+        from app.services.generation_progress import cancel_generation as cancel_progress
+        cancel_progress(generation_id)
+        try:
+            await emit(
+                "timelapse_cancelled",
+                f"Timelapse cancelled: profile {profile_id}",
+                f"Timelapse generation cancelled for profile {profile_id} ({period_type}).",
+            )
+        except Exception:
+            pass
     except Exception as exc:
         logger.exception("Timelapse generation failed for profile %d", profile_id)
         fail_generation(generation_id, str(exc))

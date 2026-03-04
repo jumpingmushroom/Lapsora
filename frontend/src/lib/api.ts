@@ -21,6 +21,8 @@ export const api = {
 	getStorage: () => request<StorageStats>('/storage'),
 	getSystemInfo: () => request<{ status: string; version: string; gpu_available: boolean; nvenc_available: boolean; nvenc_encoders: string[]; cupy_available: boolean }>('/system/info'),
 	getActiveGenerations: () => request<any[]>('/generations/active'),
+	getQueuedGenerations: () => request<any[]>('/generations/queue'),
+	cancelGeneration: (id: string) => request<{ status: string }>(`/generations/${id}`, { method: 'DELETE' }),
 
 	// Streams
 	getStreams: () => request<Stream[]>('/streams/'),

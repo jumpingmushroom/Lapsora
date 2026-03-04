@@ -81,7 +81,8 @@ def restore_jobs(db: Session) -> None:
 
 def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
     """Register an APScheduler cron job for a timelapse schedule."""
-    from app.services.timelapse import generate_timelapse, get_period_range
+    from app.services.timelapse import get_period_range
+    from app.services.generation_queue import enqueue_generation
 
     async def _run_schedule(schedule_id: int, profile_id: int, preset: str | None):
         from datetime import UTC, datetime, timedelta
@@ -100,7 +101,7 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
             else:
                 period = preset or "daily"
                 start, end = get_period_range(period)
-            await generate_timelapse(
+            await enqueue_generation(
                 profile_id=profile_id,
                 period_type=period,
                 period_start=start,

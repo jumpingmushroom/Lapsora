@@ -49,8 +49,9 @@
 			try {
 				const data = JSON.parse(e.data);
 
-				// Progress events are transient — dispatch but don't persist or toast
-				if (data.event_type === 'timelapse_progress') {
+				// Transient events — dispatch to page handlers but don't persist or toast
+				const transientEvents = ['timelapse_progress', 'timelapse_queued', 'timelapse_queue_updated', 'timelapse_cancelled'];
+				if (transientEvents.includes(data.event_type)) {
 					window.dispatchEvent(new CustomEvent('lapsora:notification', { detail: data }));
 					return;
 				}

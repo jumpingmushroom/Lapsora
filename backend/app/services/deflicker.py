@@ -49,6 +49,7 @@ def deflicker_frames(
     strength: str = "medium",
     sigma: float | None = 2.5,
     quality: int = 85,
+    cancel_check: callable = None,
 ) -> None:
     """Deflicker a sequence of frames by matching brightness to a smoothed curve.
 
@@ -72,6 +73,8 @@ def deflicker_frames(
     brightness = np.empty(n, dtype=np.float64)
     readable = [False] * n
     for i, path in enumerate(frame_paths):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
         img = cv2.imread(path)
         if img is None:
             logger.warning("Skipping unreadable frame: %s", path)
@@ -91,6 +94,8 @@ def deflicker_frames(
 
     # Pass 2: scale each frame in LAB colorspace and write
     for i, (src, dst) in enumerate(zip(frame_paths, output_paths)):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
         if not readable[i]:
             continue
         img = cv2.imread(src)

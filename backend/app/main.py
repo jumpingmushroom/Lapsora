@@ -57,6 +57,9 @@ async def lifespan(app: FastAPI):
     if gap_enabled:
         add_capture_gap_job()
 
+    from app.services.generation_queue import start_worker
+    start_worker()
+
     yield
 
     # Shutdown scheduler
