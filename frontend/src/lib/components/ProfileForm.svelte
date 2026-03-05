@@ -27,6 +27,8 @@
 		'8k': [7680, 4320]
 	};
 
+	const timePattern = '[0-9]{2}:[0-9]{2}';
+
 	function detectResPreset(w: number | null, h: number | null): string {
 		if (!w || !h) return 'custom';
 		for (const [key, dims] of Object.entries(RES_PRESETS)) {
@@ -191,8 +193,10 @@ let sun_events = $state<string[]>(
 				<label for="active-start" class="mb-1 block text-sm font-medium text-gray-300">Start time</label>
 				<input
 					id="active-start"
-					type="time"
+					type="text"
 					bind:value={active_start_time}
+					placeholder="HH:MM"
+					pattern={timePattern}
 					class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 				/>
 			</div>
@@ -200,8 +204,10 @@ let sun_events = $state<string[]>(
 				<label for="active-end" class="mb-1 block text-sm font-medium text-gray-300">End time</label>
 				<input
 					id="active-end"
-					type="time"
+					type="text"
 					bind:value={active_end_time}
+					placeholder="HH:MM"
+					pattern={timePattern}
 					class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 				/>
 			</div>
