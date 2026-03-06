@@ -18,20 +18,43 @@ def init_scheduler() -> None:
     logger.info("Capture scheduler started")
 
 
+def _compute_start_date(profile: Profile):
+    """Compute start_date so captures align to predictable clock times."""
+    from datetime import datetime, timedelta
+
+    now = datetime.now()
+
+    if profile.capture_mode == "manual" and profile.active_start_time:
+        h, m = map(int, profile.active_start_time.split(":"))
+        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if target <= now:
+            target += timedelta(days=1)
+        return target
+
+    # Align to clock boundary from top of hour
+    base = now.replace(minute=0, second=0, microsecond=0)
+    interval = profile.interval_seconds
+    elapsed = (now - base).total_seconds()
+    next_tick = (int(elapsed // interval) + 1) * interval
+    return base + timedelta(seconds=next_tick)
+
+
 def add_capture_job(profile: Profile) -> None:
     """Add an interval job for capturing frames."""
     from app.services.capture import capture_frame
 
     job_id = f"capture_{profile.id}"
+    start = _compute_start_date(profile)
     scheduler.add_job(
         capture_frame,
         "interval",
         seconds=profile.interval_seconds,
+        start_date=start,
         id=job_id,
         replace_existing=True,
         args=[profile.id],
     )
-    logger.info("Added capture job %s (every %ds)", job_id, profile.interval_seconds)
+    logger.info("Added capture job %s (every %ds, start=%s)", job_id, profile.interval_seconds, start)
 
 
 def remove_capture_job(profile_id: int) -> None:
