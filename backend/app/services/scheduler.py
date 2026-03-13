@@ -153,6 +153,7 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 schedule_id, profile_id,
             )
         finally:
+            db.rollback()
             db.close()
 
     parts = schedule.cron_expression.strip().split()
@@ -207,6 +208,7 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
                 schedule_id, profile_id,
             )
         finally:
+            db.rollback()
             db.close()
 
     parts = schedule.cron_expression.strip().split()

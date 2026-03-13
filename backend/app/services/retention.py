@@ -124,6 +124,7 @@ async def run_profile_cleanup(
                 row = threshold_db.query(Setting).filter(Setting.key == "health_low_disk_threshold_percent").first()
                 threshold = int(row.value) if row else 10
             finally:
+                threshold_db.rollback()
                 threshold_db.close()
 
             if free_pct < threshold:
@@ -140,6 +141,7 @@ async def run_profile_cleanup(
         return summary
 
     finally:
+        db.rollback()
         db.close()
 
 
@@ -184,4 +186,5 @@ def get_storage_stats() -> dict:
             "disk_total_bytes": disk_total,
         }
     finally:
+        db.rollback()
         db.close()

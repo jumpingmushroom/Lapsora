@@ -113,6 +113,7 @@ async def handle_event(event_type: str, title: str, body: str, level: str = "inf
     except Exception:
         logger.exception("Notification handling failed for event %s", event_type)
     finally:
+        db.rollback()
         db.close()
 
 
@@ -138,4 +139,5 @@ async def send_test_notification(url_id: int) -> bool:
         )
         return result
     finally:
+        db.rollback()
         db.close()

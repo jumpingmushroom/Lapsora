@@ -78,4 +78,5 @@ async def check_capture_gaps() -> None:
     except Exception:
         logger.exception("Capture gap check failed")
     finally:
+        db.rollback()
         db.close()

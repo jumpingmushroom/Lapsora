@@ -396,4 +396,5 @@ async def capture_frame(profile_id: int) -> None:
         except Exception:
             pass
     finally:
+        db.rollback()
         db.close()

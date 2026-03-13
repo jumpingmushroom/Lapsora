@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI):
         gap_row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
         gap_enabled = not gap_row or gap_row.value != "false"
     finally:
+        db.rollback()
         db.close()
     add_health_check_job(health_interval)
     if gap_enabled:

@@ -110,4 +110,5 @@ async def check_all_streams() -> None:
                 logger.exception("Health check failed for stream %d", stream.id)
 
     finally:
+        db.rollback()
         db.close()
