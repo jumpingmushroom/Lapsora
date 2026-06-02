@@ -462,7 +462,14 @@ async def generate_timelapse(
                     _shutil.copy2(src, dst)
         else:
             await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker, cancel_check=_check_cancel)
-        frame_paths = [p for p in deflickered_paths if os.path.exists(p)]
+        # Keep each surviving frame paired with its source capture. Filtering
+        # frame_paths alone would shift indices relative to `captures` whenever a
+        # frame is dropped, mislabelling the per-frame weather overlay below.
+        surviving = [
+            (cap, p) for cap, p in zip(captures, deflickered_paths) if os.path.exists(p)
+        ]
+        frame_paths = [p for _, p in surviving]
+        frame_captures = [cap for cap, _ in surviving]
         if not frame_paths:
             raise ValueError(
                 f"No readable frames for profile {profile_id} — "
@@ -504,9 +511,7 @@ async def generate_timelapse(
             for i, path in enumerate(frame_paths):
                 if cancel_event and i % 10 == 0:
                     _check_cancel()
-                if i >= len(captures):
-                    break
-                cap = captures[i]
+                cap = frame_captures[i]
                 if cap.weather_temp is None:
                     continue
                 try:
