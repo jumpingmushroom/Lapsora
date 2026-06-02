@@ -31,7 +31,10 @@ def queued_generations():
 
 
 @router.delete("/generations/{generation_id}")
-def cancel_generation_endpoint(generation_id: str):
+async def cancel_generation_endpoint(generation_id: str):
+    # Must run on the event loop thread: cancel_generation mutates the shared
+    # asyncio.Queue (and SSE queues), which are not thread-safe. A sync `def`
+    # endpoint would execute in FastAPI's threadpool and race the worker loop.
     from app.services.generation_queue import cancel_generation
     success = cancel_generation(generation_id)
     if not success:
