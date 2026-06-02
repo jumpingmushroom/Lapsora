@@ -61,7 +61,7 @@ def get_summary(db: Session = Depends(get_db)):
                 """
                 SELECT COALESCE(SUM(file_size), 0) AS bytes_7d
                 FROM captures
-                WHERE file_size IS NOT NULL AND date(captured_at) >= :cutoff
+                WHERE file_size IS NOT NULL AND captured_at >= :cutoff
                 """
             ),
             {"cutoff": seven_days_ago},
@@ -72,7 +72,7 @@ def get_summary(db: Session = Depends(get_db)):
                 """
                 SELECT COALESCE(SUM(file_size), 0) AS bytes_7d
                 FROM timelapses
-                WHERE file_size IS NOT NULL AND date(created_at) >= :cutoff
+                WHERE file_size IS NOT NULL AND created_at >= :cutoff
                 """
             ),
             {"cutoff": seven_days_ago},
@@ -105,9 +105,9 @@ def get_storage_trend(
             """
             SELECT COALESCE(SUM(file_size), 0) AS total
             FROM (
-                SELECT file_size FROM captures WHERE file_size IS NOT NULL AND date(captured_at) < :cutoff
+                SELECT file_size FROM captures WHERE file_size IS NOT NULL AND captured_at < :cutoff
                 UNION ALL
-                SELECT file_size FROM timelapses WHERE file_size IS NOT NULL AND date(created_at) < :cutoff
+                SELECT file_size FROM timelapses WHERE file_size IS NOT NULL AND created_at < :cutoff
             )
             """
         ),
@@ -121,10 +121,10 @@ def get_storage_trend(
             SELECT d, SUM(bytes) AS bytes_added
             FROM (
                 SELECT date(captured_at) AS d, COALESCE(file_size, 0) AS bytes
-                FROM captures WHERE date(captured_at) >= :cutoff AND file_size IS NOT NULL
+                FROM captures WHERE captured_at >= :cutoff AND file_size IS NOT NULL
                 UNION ALL
                 SELECT date(created_at) AS d, COALESCE(file_size, 0) AS bytes
-                FROM timelapses WHERE date(created_at) >= :cutoff AND file_size IS NOT NULL
+                FROM timelapses WHERE created_at >= :cutoff AND file_size IS NOT NULL
             )
             GROUP BY d ORDER BY d
             """
@@ -165,7 +165,7 @@ def get_capture_activity(
             f"""
             SELECT profile_id, date(captured_at) AS d, COUNT(*) AS cnt
             FROM captures
-            WHERE date(captured_at) >= :cutoff {profile_filter}
+            WHERE captured_at >= :cutoff {profile_filter}
             GROUP BY profile_id, d
             ORDER BY d
             """
@@ -200,7 +200,7 @@ def get_profile_storage(
                    COALESCE(SUM(file_size), 0) AS bytes,
                    COUNT(*) AS cnt
             FROM captures
-            WHERE date(captured_at) >= :cutoff AND file_size IS NOT NULL {profile_filter}
+            WHERE captured_at >= :cutoff AND file_size IS NOT NULL {profile_filter}
             GROUP BY profile_id, d
             ORDER BY d
             """

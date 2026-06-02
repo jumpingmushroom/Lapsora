@@ -5,7 +5,7 @@ import os
 import shutil
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.config import settings
 from app.database import SessionLocal
@@ -66,24 +66,33 @@ async def run_profile_cleanup(
 
         db.commit()
 
-        # 3. Clean orphaned DB records for this profile (file doesn't exist)
-        profile_captures = db.execute(
-            select(Capture).where(Capture.profile_id == profile_id)
-        ).scalars().all()
-        for cap in profile_captures:
-            cap_abs = os.path.join(settings.DATA_DIR, cap.file_path)
-            if not os.path.exists(cap_abs):
-                db.delete(cap)
-                summary["orphan_records_cleaned"] += 1
+        # 3. Clean orphaned DB records for this profile (file doesn't exist).
+        # Fetch only the columns needed for the existence check rather than
+        # hydrating full ORM rows, and remove orphans in a single DELETE.
+        # (The per-row stat is intrinsic to detecting missing files.)
+        capture_rows = db.execute(
+            select(Capture.id, Capture.file_path).where(Capture.profile_id == profile_id)
+        ).all()
+        orphan_capture_ids = [
+            cid for cid, fpath in capture_rows
+            if not os.path.exists(os.path.join(settings.DATA_DIR, fpath))
+        ]
+        if orphan_capture_ids:
+            db.execute(delete(Capture).where(Capture.id.in_(orphan_capture_ids)))
+            summary["orphan_records_cleaned"] += len(orphan_capture_ids)
 
-        profile_timelapses = db.execute(
-            select(Timelapse).where(Timelapse.profile_id == profile_id)
-        ).scalars().all()
-        for tl in profile_timelapses:
-            tl_abs = tl.file_path if os.path.isabs(tl.file_path) else os.path.join(settings.DATA_DIR, tl.file_path)
-            if not os.path.exists(tl_abs):
-                db.delete(tl)
-                summary["orphan_records_cleaned"] += 1
+        timelapse_rows = db.execute(
+            select(Timelapse.id, Timelapse.file_path).where(Timelapse.profile_id == profile_id)
+        ).all()
+        orphan_timelapse_ids = [
+            tid for tid, fpath in timelapse_rows
+            if not os.path.exists(
+                fpath if os.path.isabs(fpath) else os.path.join(settings.DATA_DIR, fpath)
+            )
+        ]
+        if orphan_timelapse_ids:
+            db.execute(delete(Timelapse).where(Timelapse.id.in_(orphan_timelapse_ids)))
+            summary["orphan_records_cleaned"] += len(orphan_timelapse_ids)
 
         db.commit()
 
