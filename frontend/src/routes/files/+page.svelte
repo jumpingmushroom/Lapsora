@@ -3,6 +3,7 @@
 	import type { Stream, Profile, Capture, Timelapse } from '$lib/types';
 	import { formatDate, formatDateTime, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
+	import CapturePreview from '$lib/components/CapturePreview.svelte';
 
 	let streams = $state<Stream[]>([]);
 	let selectedStreamId = $state<number | null>(null);
@@ -18,8 +19,9 @@
 	const capturePageSize = 24;
 	let hasMoreCaptures = $state(false);
 
-	// Lightbox
-	let lightboxCapture = $state<Capture | null>(null);
+	// Lightbox / preview viewer (navigates within the current page)
+	let previewOpen = $state(false);
+	let previewIndex = $state(0);
 
 	// Player
 	let selectedTimelapse = $state<Timelapse | null>(null);
@@ -197,6 +199,7 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
+		if (previewOpen) return; // viewer handles its own Escape/arrows
 		if (e.key === 'Escape' && selectionCount > 0) {
 			clearSelection();
 		}
@@ -266,7 +269,7 @@
 					{#each captures as capture, idx}
 						<div class="group relative overflow-hidden rounded-lg border bg-gray-900 transition-colors {selectedCaptures[capture.id] ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-gray-800'}">
 							<button
-								onclick={() => { lightboxCapture = capture; }}
+								onclick={() => { previewIndex = idx; previewOpen = true; }}
 								class="block w-full"
 							>
 								<img
@@ -431,30 +434,15 @@
 	</div>
 {/if}
 
-<!-- Lightbox -->
-{#if lightboxCapture}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onclick={() => { lightboxCapture = null; }}>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="relative max-h-[90vh] max-w-[90vw]" onclick={(e) => e.stopPropagation()}>
-			<img
-				src={api.getCaptureImageUrl(lightboxCapture.id)}
-				alt="Capture {lightboxCapture.id}"
-				class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain"
-			/>
-			<div class="absolute bottom-4 left-4 rounded bg-black/70 px-3 py-1 text-sm text-gray-200">
-				{formatDateTime(lightboxCapture.captured_at)}
-			</div>
-			<button
-				onclick={() => { lightboxCapture = null; }}
-				class="absolute right-2 top-2 rounded-full bg-black/60 p-2 text-gray-300 hover:text-white"
-			>
-				<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-					<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-				</svg>
-			</button>
-		</div>
-	</div>
+<!-- Snapshot preview viewer (navigates within the current page) -->
+{#if previewOpen}
+	<CapturePreview
+		{captures}
+		bind:index={previewIndex}
+		allLoaded={true}
+		onLoadMore={() => {}}
+		onClose={() => (previewOpen = false)}
+	/>
 {/if}
 
 <!-- Timelapse Player Modal -->
