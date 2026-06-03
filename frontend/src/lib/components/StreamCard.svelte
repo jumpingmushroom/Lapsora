@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Stream } from '$lib/types';
 	import { api } from '$lib/api';
+	import { timeAgo, healthDotClass } from '$lib/utils';
 
 	interface Props {
 		stream: Stream;
@@ -20,24 +21,7 @@
 
 	let previewSrc = $derived(`${api.getStreamPreviewUrl(stream.id)}?t=${previewKey}`);
 
-	let healthDotClass = $derived(
-		stream.health_status === 'healthy'
-			? 'bg-green-500'
-			: stream.health_status === 'unhealthy'
-				? 'bg-red-500'
-				: 'bg-gray-500'
-	);
-
-	function timeAgo(iso: string | null): string {
-		if (!iso) return 'never';
-		const diff = Date.now() - new Date(iso).getTime();
-		const mins = Math.floor(diff / 60000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		const hrs = Math.floor(mins / 60);
-		if (hrs < 24) return `${hrs}h ago`;
-		return `${Math.floor(hrs / 24)}d ago`;
-	}
+	let dotClass = $derived(healthDotClass(stream.health_status));
 </script>
 
 <a
@@ -55,7 +39,7 @@
 
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-2">
-			<span class="h-2.5 w-2.5 rounded-full {healthDotClass}" title="{stream.health_status}"></span>
+			<span class="h-2.5 w-2.5 rounded-full {dotClass}" title="{stream.health_status}"></span>
 			<h3 class="text-lg font-semibold text-gray-100">{stream.name}</h3>
 		</div>
 		<span

@@ -30,6 +30,7 @@ class StreamRead(BaseModel):
     name: str
     source_type: str
     go2rtc_name: str | None
+    url_masked: str | None = None
     enabled: bool
     health_status: str
     consecutive_failures: int

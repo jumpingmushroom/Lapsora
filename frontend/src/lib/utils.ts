@@ -50,3 +50,20 @@ export function formatInterval(seconds: number): string {
 	if (seconds >= 60) return `${Math.round(seconds / 60)}m`;
 	return `${seconds}s`;
 }
+
+export function timeAgo(iso: string | null): string {
+	if (!iso) return 'never';
+	const diff = Date.now() - new Date(iso).getTime();
+	const mins = Math.floor(diff / 60000);
+	if (mins < 1) return 'just now';
+	if (mins < 60) return `${mins}m ago`;
+	const hrs = Math.floor(mins / 60);
+	if (hrs < 24) return `${hrs}h ago`;
+	return `${Math.floor(hrs / 24)}d ago`;
+}
+
+export function healthDotClass(status: string): string {
+	if (status === 'healthy') return 'bg-green-500';
+	if (status === 'unhealthy') return 'bg-red-500';
+	return 'bg-gray-500';
+}

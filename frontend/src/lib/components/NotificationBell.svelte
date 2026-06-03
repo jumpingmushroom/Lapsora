@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { Notification } from '$lib/types';
+	import { timeAgo } from '$lib/utils';
 
 	interface Props {
 		notifications: Notification[];
@@ -45,16 +46,6 @@
 		if (level === 'error') return 'text-red-400';
 		if (level === 'warning') return 'text-yellow-400';
 		return 'text-blue-400';
-	}
-
-	function timeAgo(iso: string): string {
-		const diff = Date.now() - new Date(iso).getTime();
-		const mins = Math.floor(diff / 60000);
-		if (mins < 1) return 'just now';
-		if (mins < 60) return `${mins}m ago`;
-		const hrs = Math.floor(mins / 60);
-		if (hrs < 24) return `${hrs}h ago`;
-		return `${Math.floor(hrs / 24)}d ago`;
 	}
 </script>
 

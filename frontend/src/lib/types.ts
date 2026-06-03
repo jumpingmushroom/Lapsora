@@ -3,6 +3,7 @@ export interface Stream {
 	name: string;
 	source_type: string;
 	go2rtc_name: string | null;
+	url_masked: string | null;
 	enabled: boolean;
 	health_status: string;
 	consecutive_failures: number;

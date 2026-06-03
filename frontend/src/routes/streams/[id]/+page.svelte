@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture } from '$lib/types';
-	import { formatInterval } from '$lib/utils';
+	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture, TestResult } from '$lib/types';
+	import { formatInterval, formatDateTime, timeAgo, healthDotClass } from '$lib/utils';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
 	import CapturePreview from '$lib/components/CapturePreview.svelte';
@@ -44,6 +45,17 @@
 	let saving = $state(false);
 	let saveMsg = $state('');
 
+	// Connection test
+	let testing = $state(false);
+	let testResult = $state<TestResult | null>(null);
+	let testCodec = $derived(testResult?.details?.codec as string | undefined);
+	let testResolution = $derived(testResult?.details?.resolution as string | undefined);
+	let testFps = $derived(testResult?.details?.fps as string | undefined);
+
+	// Delete stream
+	let confirmDeleteStream = $state(false);
+	let deletingStream = $state(false);
+
 	// Profile form
 	let showProfileForm = $state(false);
 	let profileLoading = $state(false);
@@ -79,6 +91,8 @@
 		capturesProfileId = null;
 		allCapturesLoaded = false;
 		captures = [];
+		testResult = null;
+		confirmDeleteStream = false;
 
 		Promise.all([
 			api.getStream(currentId),
@@ -127,6 +141,29 @@
 			saveMsg = err instanceof Error ? err.message : 'Save failed';
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function handleTest() {
+		testing = true;
+		testResult = null;
+		try {
+			testResult = await api.testStream(id);
+		} catch (err) {
+			testResult = { success: false, message: err instanceof Error ? err.message : 'Test failed' };
+		} finally {
+			testing = false;
+		}
+	}
+
+	async function handleDeleteStream() {
+		deletingStream = true;
+		try {
+			await api.deleteStream(id);
+			goto('/streams');
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete stream');
+			deletingStream = false;
 		}
 	}
 
@@ -267,8 +304,11 @@
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Live Preview -->
 			<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
-				<div class="mb-3 flex items-center justify-between">
-					<h2 class="text-lg font-semibold text-gray-100">Live Preview</h2>
+				<div class="mb-2 flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<span class="h-2.5 w-2.5 rounded-full {healthDotClass(stream.health_status)}" title={stream.health_status}></span>
+						<h2 class="text-lg font-semibold text-gray-100">Live Preview</h2>
+					</div>
 					{#if stream.source_type === 'go2rtc'}
 						<button
 							onclick={async () => {
@@ -287,6 +327,19 @@
 						>
 							{showLiveView ? 'Stop Live' : 'Live View'}
 						</button>
+					{/if}
+				</div>
+				<div class="mb-3 flex flex-wrap items-center gap-x-1.5 text-xs text-gray-400">
+					<span class="capitalize {stream.health_status === 'unhealthy' ? 'text-red-400' : stream.health_status === 'healthy' ? 'text-green-400' : ''}">{stream.health_status}</span>
+					<span class="text-gray-600">·</span>
+					<span>Checked {timeAgo(stream.last_checked_at)}</span>
+					{#if stream.consecutive_failures > 0}
+						<span class="text-gray-600">·</span>
+						<span class="text-amber-400">{stream.consecutive_failures} fail{stream.consecutive_failures !== 1 ? 's' : ''}</span>
+					{/if}
+					{#if testCodec || testResolution}
+						<span class="text-gray-600">·</span>
+						<span>{[testCodec, testResolution].filter(Boolean).join(' ')}</span>
 					{/if}
 				</div>
 				{#if showLiveView && liveWsUrl}
@@ -328,6 +381,7 @@
 							placeholder="rtsp://..."
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						/>
+						<p class="mt-1 truncate text-xs text-gray-500" title={stream.url_masked ?? undefined}>Current: {stream.url_masked ?? '—'}</p>
 					</div>
 				{:else}
 					<div>
@@ -343,7 +397,7 @@
 						/>
 						<span class="text-sm text-gray-300">Enabled</span>
 					</label>
-					<div class="flex items-center gap-3">
+					<div class="flex flex-wrap items-center gap-3">
 						<button
 							type="submit"
 							disabled={saving}
@@ -351,11 +405,53 @@
 						>
 							{saving ? 'Saving...' : 'Save Changes'}
 						</button>
+						<button
+							type="button"
+							onclick={handleTest}
+							disabled={testing}
+							class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50"
+						>
+							{testing ? 'Testing...' : 'Test Connection'}
+						</button>
 						{#if saveMsg}
 							<span class="text-sm {saveMsg === 'Saved' ? 'text-green-400' : 'text-red-400'}">{saveMsg}</span>
 						{/if}
 					</div>
+					{#if testResult}
+						<div class="rounded-lg border p-3 text-sm {testResult.success ? 'border-green-800 bg-green-950/40 text-green-300' : 'border-red-800 bg-red-950/40 text-red-300'}">
+							<p>{testResult.message}</p>
+							{#if testResult.success && (testCodec || testResolution || testFps)}
+								<p class="mt-1 text-xs text-gray-400">
+									{[testCodec, testResolution, testFps && `${testFps} fps`].filter(Boolean).join(' · ')}
+								</p>
+							{/if}
+						</div>
+					{/if}
 				</form>
+
+				<div class="mt-4 border-t border-gray-800 pt-4">
+					{#if confirmDeleteStream}
+						<div class="flex items-center justify-between rounded-lg border border-red-800 bg-red-950/50 p-3">
+							<p class="text-sm text-gray-300">
+								Delete <strong class="text-white">{stream.name}</strong>? All profiles, captures, timelapses and schedules are permanently removed.
+							</p>
+							<div class="flex shrink-0 gap-2">
+								<button onclick={() => { confirmDeleteStream = false; }} class="rounded px-3 py-1 text-xs font-medium text-gray-400 hover:text-gray-200">Cancel</button>
+								<button onclick={handleDeleteStream} disabled={deletingStream} class="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50">{deletingStream ? 'Deleting...' : 'Delete'}</button>
+							</div>
+						</div>
+					{:else}
+						<button
+							onclick={() => { confirmDeleteStream = true; }}
+							class="text-sm font-medium text-red-400 hover:text-red-300"
+						>
+							Delete stream
+						</button>
+					{/if}
+					<p class="mt-3 text-xs text-gray-600">
+						Added {formatDateTime(stream.created_at)} · Updated {timeAgo(stream.updated_at)}
+					</p>
+				</div>
 			</div>
 		</div>
 

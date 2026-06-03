@@ -1,9 +1,12 @@
 """SQLAlchemy ORM models."""
 
 from datetime import UTC, datetime
+from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import Boolean, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from app.config import decrypt
 
 
 class Base(DeclarativeBase):
@@ -30,6 +33,31 @@ class Stream(Base):
     profiles: Mapped[list["Profile"]] = relationship(
         back_populates="stream", cascade="all, delete-orphan"
     )
+
+    @property
+    def url_masked(self) -> str | None:
+        """RTSP URL with the password redacted, for display. None for go2rtc
+        streams or if the stored URL cannot be decrypted."""
+        if self.source_type == "go2rtc":
+            return None
+        try:
+            raw = decrypt(self.url)
+        except Exception:
+            return None
+        if not raw:
+            return None
+        try:
+            parts = urlsplit(raw)
+            if parts.password:
+                netloc = f"{parts.username or ''}:•••@{parts.hostname or ''}"
+                if parts.port:
+                    netloc += f":{parts.port}"
+                return urlunsplit(
+                    (parts.scheme, netloc, parts.path, parts.query, parts.fragment)
+                )
+        except Exception:
+            return raw
+        return raw
 
 
 class ProfileTemplate(Base):
