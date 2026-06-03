@@ -167,6 +167,7 @@ class CaptureRead(BaseModel):
     is_hdr: bool
     weather_temp: float | None = None
     weather_code: int | None = None
+    weather_is_day: bool | None = None
     captured_at: datetime
 
 

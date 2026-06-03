@@ -193,6 +193,7 @@ class Capture(Base):
     is_hdr: Mapped[bool] = mapped_column(Boolean, default=False)
     weather_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     weather_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weather_is_day: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     profile: Mapped["Profile"] = relationship(back_populates="captures")
