@@ -5,6 +5,7 @@ A single card width is computed once per render (compute_layout) so the
 overlay never resizes/jumps between frames as the condition changes.
 """
 
+import functools
 import logging
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -57,7 +58,10 @@ def _truncate(draw, text, font, max_w) -> str:
     return text + "…"
 
 
+@functools.lru_cache(maxsize=64)
 def _icon(code, is_day, size):
+    # Cached: the same (code, is_day, size) recurs across many frames in one
+    # render. Callers only paste (read) the result, so sharing is safe.
     path = icon_path_for(code, is_day)
     if not path:
         return None
@@ -155,9 +159,17 @@ def _render_modern(img, cap, layout, style, position, unit):
     ImageDraw.Draw(mask).rounded_rectangle([0, 0, cw - 1, ch - 1], radius=RADIUS, fill=255)
     base.paste(card, (x, y), mask)
 
+    # Subtle translucent highlight border. Drawn on its own layer and
+    # alpha-composited — drawing directly on base then convert("RGB") would
+    # drop the alpha and render the border as harsh solid white.
+    border = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    ImageDraw.Draw(border).rounded_rectangle(
+        [x, y, x + cw - 1, y + ch - 1], radius=RADIUS,
+        outline=(255, 255, 255, 70), width=1,
+    )
+    base = Image.alpha_composite(base, border)
+
     draw = ImageDraw.Draw(base)
-    draw.rounded_rectangle([x, y, x + cw - 1, y + ch - 1], radius=RADIUS,
-                           outline=(255, 255, 255, 70), width=1)
 
     # icon, vertically centered
     ic = _icon(cap.weather_code or 0, cap.weather_is_day, icon_size)
