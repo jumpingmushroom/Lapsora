@@ -5,6 +5,7 @@
 	import { formatInterval } from '$lib/utils';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
+	import CapturePreview from '$lib/components/CapturePreview.svelte';
 
 	let id = $derived(Number($page.params.id));
 
@@ -13,6 +14,28 @@
 	let captures = $state<Capture[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Capture preview viewer
+	const CAPTURES_PAGE = 12;
+	let previewOpen = $state(false);
+	let previewIndex = $state(0);
+	let capturesProfileId = $state<number | null>(null);
+	let allCapturesLoaded = $state(false);
+	let loadingMore = $state(false);
+
+	async function loadMoreCaptures() {
+		if (loadingMore || allCapturesLoaded || capturesProfileId == null) return;
+		loadingMore = true;
+		try {
+			const more = await api.getProfileCaptures(capturesProfileId, CAPTURES_PAGE, captures.length);
+			captures = [...captures, ...more];
+			if (more.length < CAPTURES_PAGE) allCapturesLoaded = true;
+		} catch {
+			// ignore — keep what we have
+		} finally {
+			loadingMore = false;
+		}
+	}
 
 	// Edit form
 	let editName = $state('');
@@ -52,6 +75,10 @@
 		const currentId = id;
 		loading = true;
 		error = null;
+		previewOpen = false;
+		capturesProfileId = null;
+		allCapturesLoaded = false;
+		captures = [];
 
 		Promise.all([
 			api.getStream(currentId),
@@ -63,8 +90,12 @@
 				editEnabled = s.enabled;
 				profiles = p;
 				if (p.length > 0) {
-					api.getProfileCaptures(p[0].id, 12)
-						.then((c) => { captures = c; })
+					capturesProfileId = p[0].id;
+					api.getProfileCaptures(p[0].id, CAPTURES_PAGE)
+						.then((c) => {
+							captures = c;
+							allCapturesLoaded = c.length < CAPTURES_PAGE;
+						})
 						.catch(() => {});
 				}
 			})
@@ -494,8 +525,13 @@
 			<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 				<h2 class="mb-3 text-lg font-semibold text-gray-100">Recent Captures</h2>
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-					{#each captures as capture}
-						<div class="relative aspect-video overflow-hidden rounded-lg bg-gray-800">
+					{#each captures as capture, i}
+						<button
+							type="button"
+							onclick={() => { previewIndex = i; previewOpen = true; }}
+							class="relative aspect-video overflow-hidden rounded-lg bg-gray-800 ring-blue-500 transition hover:ring-2 focus:outline-none focus-visible:ring-2"
+							aria-label="Preview capture {i + 1}"
+						>
 							<img
 								src={api.getCaptureImageUrl(capture.id)}
 								alt="Capture {capture.id}"
@@ -507,10 +543,20 @@
 									{capture.weather_temp.toFixed(1)}°C
 								</div>
 							{/if}
-						</div>
+						</button>
 					{/each}
 				</div>
 			</div>
+		{/if}
+
+		{#if previewOpen}
+			<CapturePreview
+				{captures}
+				bind:index={previewIndex}
+				allLoaded={allCapturesLoaded}
+				onLoadMore={loadMoreCaptures}
+				onClose={() => (previewOpen = false)}
+			/>
 		{/if}
 	</div>
 {/if}
