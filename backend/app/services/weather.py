@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 TIMEOUT = httpx.Timeout(10.0)
 CACHE_TTL = 600  # 10 minutes
 
-_cache: dict[str, tuple[float, float, int]] = {}  # key -> (timestamp, temp, code)
+_cache: dict[str, tuple[float, float, int, bool]] = {}  # key -> (timestamp, temp, code, is_day)
 
 WMO_CODES: dict[int, str] = {
     0: "Clear",
@@ -44,10 +44,10 @@ WMO_CODES: dict[int, str] = {
 }
 
 
-async def get_current_weather(lat: float, lon: float) -> tuple[float, int] | None:
-    """Fetch current temperature and weather code from Open-Meteo.
+async def get_current_weather(lat: float, lon: float) -> tuple[float, int, bool] | None:
+    """Fetch current temperature, weather code, and day/night flag from Open-Meteo.
 
-    Returns (temperature_celsius, weather_code) or None on failure.
+    Returns (temperature_celsius, weather_code, is_day) or None on failure.
     Uses a 10-minute cache to avoid excessive API calls.
     """
     cache_key = f"{lat:.4f},{lon:.4f}"
@@ -55,7 +55,7 @@ async def get_current_weather(lat: float, lon: float) -> tuple[float, int] | Non
 
     cached = _cache.get(cache_key)
     if cached and (now - cached[0]) < CACHE_TTL:
-        return cached[1], cached[2]
+        return cached[1], cached[2], cached[3]
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -64,7 +64,7 @@ async def get_current_weather(lat: float, lon: float) -> tuple[float, int] | Non
                 params={
                     "latitude": lat,
                     "longitude": lon,
-                    "current": "temperature_2m,weather_code",
+                    "current": "temperature_2m,weather_code,is_day",
                 },
             )
             resp.raise_for_status()
@@ -72,8 +72,9 @@ async def get_current_weather(lat: float, lon: float) -> tuple[float, int] | Non
             current = data["current"]
             temp = float(current["temperature_2m"])
             code = int(current["weather_code"])
-            _cache[cache_key] = (now, temp, code)
-            return temp, code
+            is_day = bool(current.get("is_day", 1))
+            _cache[cache_key] = (now, temp, code, is_day)
+            return temp, code, is_day
     except Exception:
         logger.warning("Failed to fetch weather for %s,%s", lat, lon, exc_info=True)
         return None
