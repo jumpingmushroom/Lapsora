@@ -52,5 +52,11 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 8000
 
+# Write-aware healthcheck: probes a real DB + captures/ write (503 when the data
+# volume is unwritable). Baked into the image so it applies to every deployment
+# (Unraid `docker run`, plain docker, compose) — not just compose.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import httpx; httpx.get('http://localhost:8000/api/health/storage').raise_for_status()" || exit 1
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
