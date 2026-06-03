@@ -261,6 +261,17 @@ def remove_capture_gap_job() -> None:
         logger.debug("Capture gap check job not found, nothing to remove")
 
 
+def add_storage_watchdog_job(interval_seconds: int = 180) -> None:
+    """Add periodic storage write-health watchdog job."""
+    from app.services.storage_watchdog import check_storage_writable
+
+    scheduler.add_job(
+        check_storage_writable, "interval", seconds=interval_seconds,
+        id="storage_watchdog", replace_existing=True,
+    )
+    logger.info("Storage watchdog job scheduled every %ds", interval_seconds)
+
+
 def add_health_check_job(interval_seconds: int = 300) -> None:
     """Add periodic stream health check job."""
     from app.services.health import check_all_streams

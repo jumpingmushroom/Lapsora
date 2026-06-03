@@ -15,6 +15,22 @@ def health():
     return {"status": "ok", "version": "0.1.0"}
 
 
+@router.get("/health/storage")
+def storage_health():
+    """Write-health probe used by the container healthcheck.
+
+    Returns 503 when the data volume is not writable by the app process so the
+    orchestrator surfaces the degraded state (reads alone always succeed and
+    would otherwise mask a write outage).
+    """
+    from app.services.storage_watchdog import probe_storage_writable
+
+    ok, reason = probe_storage_writable()
+    if not ok:
+        raise HTTPException(503, f"storage not writable: {reason}")
+    return {"status": "ok", "writable": True}
+
+
 @router.get("/storage")
 def storage():
     return get_storage_stats()
