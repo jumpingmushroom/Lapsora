@@ -106,6 +106,7 @@
 	let weather_position = $state('bottom-right');
 	let weather_font_size = $state(24);
 	let weather_unit = $state('C');
+	let weather_style = $state('glass');
 	let heatmap_overlay = $state(false);
 	let heatmap_mode = $state('cumulative');
 	let heatmap_colormap = $state('jet');
@@ -181,6 +182,7 @@
 			weather_position: weather_overlay ? weather_position : undefined,
 			weather_font_size: weather_overlay ? weather_font_size : undefined,
 			weather_unit: weather_overlay ? weather_unit : undefined,
+			weather_style: weather_overlay ? weather_style : undefined,
 			heatmap_overlay,
 			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
 			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
@@ -461,6 +463,19 @@
 								<option value="top-right">Top Right</option>
 								<option value="bottom-left">Bottom Left</option>
 								<option value="bottom-right">Bottom Right</option>
+							</select>
+						</div>
+						<div>
+							<label for="gen-weather-style" class="mb-1 block text-sm font-medium text-gray-300">Style</label>
+							<select
+								id="gen-weather-style"
+								bind:value={weather_style}
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="glass">Glass (default)</option>
+								<option value="badge">Badge</option>
+								<option value="strip">Strip</option>
+								<option value="minimal">Minimal</option>
 							</select>
 						</div>
 						<div>
