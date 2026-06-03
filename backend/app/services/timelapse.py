@@ -343,6 +343,7 @@ async def generate_timelapse(
     weather_position: str = "bottom-right",
     weather_font_size: int = 24,
     weather_unit: str = "C",
+    weather_style: str = "glass",
     deflicker: str = "medium",
     heatmap_overlay: bool = False,
     heatmap_mode: str = "cumulative",
