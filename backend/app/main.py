@@ -33,7 +33,8 @@ async def lifespan(app: FastAPI):
     # Start capture scheduler and restore jobs
     from app.services.scheduler import (
         init_scheduler, restore_jobs,
-        add_health_check_job, add_capture_gap_job, scheduler as _scheduler,
+        add_health_check_job, add_capture_gap_job, add_storage_watchdog_job,
+        scheduler as _scheduler,
     )
     from app.services.events import on_event
     from app.services.notifications import handle_event
@@ -57,6 +58,7 @@ async def lifespan(app: FastAPI):
     add_health_check_job(health_interval)
     if gap_enabled:
         add_capture_gap_job()
+    add_storage_watchdog_job()
 
     from app.services.generation_queue import start_worker
     start_worker()
