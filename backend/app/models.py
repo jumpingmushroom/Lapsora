@@ -141,6 +141,7 @@ class TimelapseSchedule(Base):
     weather_position: Mapped[str] = mapped_column(Text, default="bottom-right")
     weather_font_size: Mapped[int] = mapped_column(Integer, default=24)
     weather_unit: Mapped[str] = mapped_column(Text, default="C")
+    weather_style: Mapped[str] = mapped_column(Text, default="glass")
     heatmap_overlay: Mapped[bool] = mapped_column(Boolean, default=False)
     heatmap_mode: Mapped[str] = mapped_column(Text, default="cumulative")
     heatmap_colormap: Mapped[str] = mapped_column(Text, default="jet")
@@ -193,6 +194,7 @@ class Capture(Base):
     is_hdr: Mapped[bool] = mapped_column(Boolean, default=False)
     weather_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     weather_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weather_is_day: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     profile: Mapped["Profile"] = relationship(back_populates="captures")

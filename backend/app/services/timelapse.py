@@ -343,6 +343,7 @@ async def generate_timelapse(
     weather_position: str = "bottom-right",
     weather_font_size: int = 24,
     weather_unit: str = "C",
+    weather_style: str = "glass",
     deflicker: str = "medium",
     heatmap_overlay: bool = False,
     heatmap_mode: str = "cumulative",
@@ -505,8 +506,15 @@ async def generate_timelapse(
         if weather_overlay:
             _check_cancel()
             await _progress("weather_overlay", "in_progress")
-            from PIL import Image, ImageDraw, ImageFont
-            from app.services.weather import format_weather_text
+            from PIL import Image
+            from app.services.weather_overlay import compute_layout, render_frame
+
+            valid_caps = [c for c in frame_captures if c.weather_temp is not None]
+            layout = (
+                compute_layout(valid_caps, weather_style, weather_unit, weather_font_size)
+                if weather_style != "minimal" and valid_caps
+                else None
+            )
 
             for i, path in enumerate(frame_paths):
                 if cancel_event and i % 10 == 0:
@@ -516,26 +524,10 @@ async def generate_timelapse(
                     continue
                 try:
                     img = Image.open(path)
-                    draw = ImageDraw.Draw(img)
-                    text = format_weather_text(cap.weather_temp, cap.weather_code or 0, weather_unit)
-                    try:
-                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", weather_font_size)
-                    except Exception:
-                        font = ImageFont.load_default()
-                    bbox = draw.textbbox((0, 0), text, font=font)
-                    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-                    w, h = img.size
-                    pad = 10
-                    positions = {
-                        "top-left": (pad, pad),
-                        "top-right": (w - tw - pad, pad),
-                        "bottom-left": (pad, h - th - pad),
-                        "bottom-right": (w - tw - pad, h - th - pad),
-                    }
-                    x, y = positions.get(weather_position, positions["bottom-right"])
-                    # Draw background box
-                    draw.rectangle([x - 5, y - 5, x + tw + 5, y + th + 5], fill=(0, 0, 0, 128))
-                    draw.text((x, y), text, font=font, fill="white")
+                    render_frame(
+                        img, cap, weather_style, weather_position,
+                        weather_unit, weather_font_size, layout,
+                    )
                     img.save(path, "JPEG", quality=95)
                     img.close()
                 except Exception:

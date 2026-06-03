@@ -350,6 +350,7 @@ async def capture_frame(profile_id: int) -> None:
         # Fetch weather data if enabled
         weather_temp = None
         weather_code = None
+        weather_is_day = None
         if profile.weather_enabled:
             from app.services.weather import get_current_weather
             lat_row = db.query(Setting).filter(Setting.key == "location_latitude").first()
@@ -357,7 +358,7 @@ async def capture_frame(profile_id: int) -> None:
             if lat_row and lon_row:
                 result = await get_current_weather(float(lat_row.value), float(lon_row.value))
                 if result:
-                    weather_temp, weather_code = result
+                    weather_temp, weather_code, weather_is_day = result
 
         # Create DB record
         capture = Capture(
@@ -369,6 +370,7 @@ async def capture_frame(profile_id: int) -> None:
             is_hdr=is_hdr,
             weather_temp=weather_temp,
             weather_code=weather_code,
+            weather_is_day=weather_is_day,
             captured_at=now,
         )
         db.add(capture)

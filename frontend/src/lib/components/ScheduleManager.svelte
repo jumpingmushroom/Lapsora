@@ -25,6 +25,7 @@
 	let formWeatherPosition = $state('bottom-right');
 	let formWeatherFontSize = $state(24);
 	let formWeatherUnit = $state('C');
+	let formWeatherStyle = $state('glass');
 	let formHeatmapOverlay = $state(false);
 	let formHeatmapMode = $state('cumulative');
 	let formHeatmapColormap = $state('jet');
@@ -146,6 +147,7 @@
 		formWeatherPosition = 'bottom-right';
 		formWeatherFontSize = 24;
 		formWeatherUnit = 'C';
+		formWeatherStyle = 'glass';
 		formHeatmapOverlay = false;
 		formHeatmapMode = 'cumulative';
 		formHeatmapColormap = 'jet';
@@ -173,6 +175,7 @@
 		formWeatherPosition = schedule.weather_position;
 		formWeatherFontSize = schedule.weather_font_size;
 		formWeatherUnit = schedule.weather_unit;
+		formWeatherStyle = schedule.weather_style ?? 'glass';
 		formHeatmapOverlay = schedule.heatmap_overlay;
 		formHeatmapMode = schedule.heatmap_mode;
 		formHeatmapColormap = schedule.heatmap_colormap;
@@ -224,6 +227,7 @@
 				weather_position: formWeatherPosition,
 				weather_font_size: formWeatherFontSize,
 				weather_unit: formWeatherUnit,
+				weather_style: formWeatherStyle,
 				heatmap_overlay: formHeatmapOverlay,
 				heatmap_mode: formHeatmapMode,
 				heatmap_colormap: formHeatmapColormap,
@@ -816,6 +820,19 @@
 									<option value="top-right">Top Right</option>
 									<option value="bottom-left">Bottom Left</option>
 									<option value="bottom-right">Bottom Right</option>
+								</select>
+							</div>
+							<div>
+								<label for="sched-weather-style" class="mb-1 block text-sm font-medium text-gray-300">Style</label>
+								<select
+									id="sched-weather-style"
+									bind:value={formWeatherStyle}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="glass">Glass (default)</option>
+									<option value="badge">Badge</option>
+									<option value="strip">Strip</option>
+									<option value="minimal">Minimal</option>
 								</select>
 							</div>
 							<div>

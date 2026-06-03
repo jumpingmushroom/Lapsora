@@ -167,6 +167,7 @@ class CaptureRead(BaseModel):
     is_hdr: bool
     weather_temp: float | None = None
     weather_code: int | None = None
+    weather_is_day: bool | None = None
     captured_at: datetime
 
 
@@ -201,6 +202,7 @@ class TimelapseGenerate(BaseModel):
     weather_position: str = "bottom-right"
     weather_font_size: int = 24
     weather_unit: str = "C"
+    weather_style: str = "glass"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
@@ -229,6 +231,7 @@ class TimelapseScheduleCreate(BaseModel):
     weather_position: str = "bottom-right"
     weather_font_size: int = 24
     weather_unit: str = "C"
+    weather_style: str = "glass"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
@@ -254,6 +257,7 @@ class TimelapseScheduleUpdate(BaseModel):
     weather_position: str | None = None
     weather_font_size: int | None = None
     weather_unit: str | None = None
+    weather_style: str | None = None
     heatmap_overlay: bool | None = None
     heatmap_mode: str | None = None
     heatmap_colormap: str | None = None
@@ -283,6 +287,7 @@ class TimelapseScheduleRead(BaseModel):
     weather_position: str
     weather_font_size: int
     weather_unit: str
+    weather_style: str
     heatmap_overlay: bool
     heatmap_mode: str
     heatmap_colormap: str
