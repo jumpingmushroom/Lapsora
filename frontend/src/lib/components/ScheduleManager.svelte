@@ -346,6 +346,7 @@
 
 	// Filter state
 	let activeStreamFilters = $state<Set<string>>(new Set());
+	let activeProfileFilters = $state<Set<string>>(new Set());
 	let activeFreqFilters = $state<Set<string>>(new Set());
 	let collapsedStreams = $state<Set<string>>(new Set());
 
@@ -353,6 +354,12 @@
 		const next = new Set(activeStreamFilters);
 		if (next.has(name)) next.delete(name); else next.add(name);
 		activeStreamFilters = next;
+	}
+
+	function toggleProfileFilter(name: string) {
+		const next = new Set(activeProfileFilters);
+		if (next.has(name)) next.delete(name); else next.add(name);
+		activeProfileFilters = next;
 	}
 
 	function toggleFreqFilter(freq: string) {
@@ -363,6 +370,7 @@
 
 	function resetFilters() {
 		activeStreamFilters = new Set();
+		activeProfileFilters = new Set();
 		activeFreqFilters = new Set();
 	}
 
@@ -373,11 +381,13 @@
 	}
 
 	let uniqueStreams = $derived([...new Set(schedules.map(s => streamName(s.profile_id)))].sort());
+	let uniqueProfiles = $derived([...new Set(schedules.map(s => profileOnlyName(s.profile_id)))].sort());
 	let uniqueFreqs = $derived([...new Set(schedules.map(s => frequencyLabel(s)))]);
 
 	let groupedSchedules = $derived.by(() => {
 		const filtered = schedules.filter(s => {
 			if (activeStreamFilters.size > 0 && !activeStreamFilters.has(streamName(s.profile_id))) return false;
+			if (activeProfileFilters.size > 0 && !activeProfileFilters.has(profileOnlyName(s.profile_id))) return false;
 			if (activeFreqFilters.size > 0 && !activeFreqFilters.has(frequencyLabel(s))) return false;
 			return true;
 		});
@@ -393,7 +403,7 @@
 		return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 	});
 
-	let hasActiveFilters = $derived(activeStreamFilters.size > 0 || activeFreqFilters.size > 0);
+	let hasActiveFilters = $derived(activeStreamFilters.size > 0 || activeProfileFilters.size > 0 || activeFreqFilters.size > 0);
 </script>
 
 <div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
@@ -427,7 +437,14 @@
 				>{sn}</button>
 			{/each}
 			<span class="mx-1 self-center text-gray-600">|</span>
-			{#each uniqueFreqs as freq}
+			{#each uniqueProfiles as pn}
+					<button
+						onclick={() => toggleProfileFilter(pn)}
+						class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeProfileFilters.has(pn) ? 'bg-teal-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}"
+					>{pn}</button>
+				{/each}
+				<span class="mx-1 self-center text-gray-600">|</span>
+				{#each uniqueFreqs as freq}
 				<button
 					onclick={() => toggleFreqFilter(freq)}
 					class="rounded-full px-3 py-1 text-xs font-medium transition-colors {activeFreqFilters.has(freq) ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'}"
@@ -456,9 +473,12 @@
 									<div class="flex items-center justify-between">
 										<div class="flex items-center gap-2 min-w-0">
 											<span class="font-medium text-white">{streamName(schedule.profile_id)}</span>
-											<span class="text-sm text-gray-400">{schedule.name || profileOnlyName(schedule.profile_id)}</span>
+											{#if schedule.name}
+												<span class="text-sm text-gray-400">{schedule.name}</span>
+											{/if}
 										</div>
 										<div class="flex items-center gap-2 shrink-0 ml-3">
+											<span class="rounded bg-teal-900/50 px-1.5 py-0.5 text-xs text-teal-300">{profileOnlyName(schedule.profile_id)}</span>
 											<span class="rounded bg-blue-900/50 px-1.5 py-0.5 text-xs text-blue-300">{frequencyLabel(schedule).toLowerCase()}</span>
 											{#if schedule.lookback_hours}
 												<span class="rounded bg-purple-900/50 px-1.5 py-0.5 text-xs text-purple-300">{formatLookback(schedule.lookback_hours)}</span>
