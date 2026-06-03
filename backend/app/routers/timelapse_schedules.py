@@ -117,6 +117,11 @@ def create_schedule(
         heatmap_mode=body.heatmap_mode,
         heatmap_colormap=body.heatmap_colormap,
         heatmap_threshold=body.heatmap_threshold,
+        motion_blur=body.motion_blur,
+        codec=body.codec,
+        output_width=body.output_width,
+        output_height=body.output_height,
+        quality_preset=body.quality_preset,
         enabled=body.enabled,
     )
     db.add(schedule)
@@ -219,5 +224,10 @@ async def trigger_schedule(
         heatmap_mode=schedule.heatmap_mode,
         heatmap_colormap=schedule.heatmap_colormap,
         heatmap_threshold=schedule.heatmap_threshold,
+        motion_blur=schedule.motion_blur,
+        codec=schedule.codec,
+        output_width=schedule.output_width,
+        output_height=schedule.output_height,
+        quality_preset=schedule.quality_preset,
     )
     return {"status": "queued", "message": "Timelapse generation queued", **result}
