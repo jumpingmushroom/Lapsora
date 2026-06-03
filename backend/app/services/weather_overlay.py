@@ -95,7 +95,13 @@ def compute_layout(captures, style: str, unit: str, font_size: int) -> dict:
     if style == "badge":
         text_w = max_temp_w
         content_h = max(icon_size, _text_h(temp_font))
-    else:  # glass / strip
+    elif style == "strip":
+        # Second line holds condition (left) + frame time (right); reserve room
+        # for both so they never overlap.
+        sub_w = _text_w(measure, "00:00", cond_font)
+        text_w = max(max_temp_w, max_cond_w + GAP + sub_w)
+        content_h = max(icon_size, _text_h(temp_font) + 2 + _text_h(cond_font))
+    else:  # glass
         text_w = max(max_temp_w, max_cond_w)
         content_h = max(icon_size, _text_h(temp_font) + 2 + _text_h(cond_font))
 
@@ -185,18 +191,25 @@ def _render_modern(img, cap, layout, style, position, unit):
         ty = y + (ch - _text_h(temp_font)) // 2
         draw.text((tx, ty), temp_txt, font=temp_font, fill=(255, 255, 255, 255))
     else:
-        cond_txt = _truncate(draw, WMO_CODES.get(cap.weather_code or 0, "Unknown"),
-                             cond_font, layout["text_w"])
         th, ch_t = _text_h(temp_font), _text_h(cond_font)
         block_h = th + 2 + ch_t
         ty = y + (ch - block_h) // 2
+        cond_line_y = ty + th + 2
         draw.text((tx, ty), temp_txt, font=temp_font, fill=(255, 255, 255, 255))
-        draw.text((tx, ty + th + 2), cond_txt, font=cond_font, fill=(255, 255, 255, 220))
+
+        # 'strip' adds the frame time at the right of the condition line; reserve
+        # its width so the (truncated) condition label never runs into it.
+        cond_max_w = layout["text_w"]
         if style == "strip":
             sub = cap.captured_at.strftime("%H:%M")
             sw = _text_w(draw, sub, cond_font)
-            draw.text((x + cw - PAD_H - sw, y + ch - ch_t - PAD_V),
+            cond_max_w = max(0, layout["text_w"] - GAP - sw)
+            draw.text((x + cw - PAD_H - sw, cond_line_y),
                       sub, font=cond_font, fill=(255, 255, 255, 160))
+
+        cond_txt = _truncate(draw, WMO_CODES.get(cap.weather_code or 0, "Unknown"),
+                             cond_font, cond_max_w)
+        draw.text((tx, cond_line_y), cond_txt, font=cond_font, fill=(255, 255, 255, 220))
 
     img.paste(base.convert("RGB"))
 
