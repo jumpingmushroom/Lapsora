@@ -348,8 +348,10 @@ export interface NotificationEventsConfig {
 	capture_failure: boolean;
 	stream_unhealthy: boolean;
 	stream_recovered: boolean;
+	timelapse_started: boolean;
 	timelapse_complete: boolean;
 	timelapse_failure: boolean;
+	timelapse_cancelled: boolean;
 	retention_summary: boolean;
 	low_disk_space: boolean;
 	capture_gap: boolean;

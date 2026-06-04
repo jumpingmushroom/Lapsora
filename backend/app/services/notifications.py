@@ -26,6 +26,7 @@ DEFAULT_EVENT_TOGGLES = {
     "timelapse_started": True,
     "timelapse_complete": True,
     "timelapse_failure": True,
+    "timelapse_cancelled": True,
     "retention_summary": False,
     "low_disk_space": True,
     "capture_gap": True,
@@ -38,12 +39,13 @@ DEFAULT_EVENT_TOGGLES = {
 def _get_event_toggles(db: Any) -> dict:
     """Load notification event toggles from settings table."""
     row = db.query(Setting).filter(Setting.key == "notification_events").first()
+    toggles = DEFAULT_EVENT_TOGGLES.copy()
     if row:
         try:
-            return json.loads(row.value)
+            toggles.update(json.loads(row.value))
         except (json.JSONDecodeError, TypeError):
             pass
-    return DEFAULT_EVENT_TOGGLES.copy()
+    return toggles
 
 
 async def handle_event(event_type: str, title: str, body: str, level: str = "info", data: dict | None = None) -> None:

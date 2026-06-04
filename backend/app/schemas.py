@@ -441,8 +441,10 @@ class NotificationEventsConfig(BaseModel):
     capture_failure: bool = True
     stream_unhealthy: bool = True
     stream_recovered: bool = True
+    timelapse_started: bool = True
     timelapse_complete: bool = True
     timelapse_failure: bool = True
+    timelapse_cancelled: bool = True
     retention_summary: bool = False
     low_disk_space: bool = True
     capture_gap: bool = True
