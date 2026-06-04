@@ -8,8 +8,9 @@ overlay never resizes/jumps between frames as the condition changes.
 import functools
 import logging
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
+from app.services.overlay_glass import draw_glass_card
 from app.services.weather import WMO_CODES, format_weather_text
 from app.services.weather_icons import icon_path_for
 
@@ -156,24 +157,7 @@ def _render_modern(img, cap, layout, style, position, unit):
     x, y = _anchor(position, W, H, cw, ch)
 
     base = img.convert("RGBA")
-
-    # frosted glass: blur the region behind the card, tint it, paste with rounded mask
-    region = base.crop((x, y, x + cw, y + ch)).filter(ImageFilter.GaussianBlur(8))
-    tint = Image.new("RGBA", (cw, ch), (20, 22, 28, 150))
-    card = Image.alpha_composite(region, tint)
-    mask = Image.new("L", (cw, ch), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, cw - 1, ch - 1], radius=RADIUS, fill=255)
-    base.paste(card, (x, y), mask)
-
-    # Subtle translucent highlight border. Drawn on its own layer and
-    # alpha-composited — drawing directly on base then convert("RGB") would
-    # drop the alpha and render the border as harsh solid white.
-    border = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    ImageDraw.Draw(border).rounded_rectangle(
-        [x, y, x + cw - 1, y + ch - 1], radius=RADIUS,
-        outline=(255, 255, 255, 70), width=1,
-    )
-    base = Image.alpha_composite(base, border)
+    base = draw_glass_card(base, x, y, cw, ch, radius=RADIUS)
 
     draw = ImageDraw.Draw(base)
 

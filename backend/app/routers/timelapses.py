@@ -59,6 +59,8 @@ async def generate(
         weather_font_size=body.weather_font_size,
         weather_unit=body.weather_unit,
         weather_style=body.weather_style,
+        ha_overlay=body.ha_overlay,
+        ha_overlay_position=body.ha_overlay_position,
         deflicker=body.deflicker,
         heatmap_overlay=body.heatmap_overlay,
         heatmap_mode=body.heatmap_mode,

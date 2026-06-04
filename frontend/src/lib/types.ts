@@ -44,6 +44,7 @@ export interface Profile {
 	quality: number;
 	hdr_enabled: boolean;
 	weather_enabled: boolean;
+	ha_sensors?: string | null;
 	enabled: boolean;
 	auto_disabled: boolean;
 	capture_mode: string;
@@ -102,6 +103,7 @@ export interface ProfileCreate {
 	quality?: number;
 	hdr_enabled?: boolean;
 	weather_enabled?: boolean;
+	ha_sensors?: string | null;
 	capture_mode?: string;
 	active_start_time?: string | null;
 	active_end_time?: string | null;
@@ -117,6 +119,7 @@ export interface ProfileUpdate {
 	quality?: number;
 	hdr_enabled?: boolean;
 	weather_enabled?: boolean;
+	ha_sensors?: string | null;
 	enabled?: boolean;
 	capture_mode?: string;
 	active_start_time?: string | null;
@@ -140,6 +143,7 @@ export interface Capture {
 	weather_temp: number | null;
 	weather_code: number | null;
 	captured_at: string;
+	sensor_data?: string | null;
 }
 
 export interface Timelapse {
@@ -172,6 +176,8 @@ export interface TimelapseSchedule {
 	weather_font_size: number;
 	weather_unit: string;
 	weather_style: string;
+	ha_overlay?: boolean;
+	ha_overlay_position?: string;
 	heatmap_overlay: boolean;
 	heatmap_mode: string;
 	heatmap_colormap: string;
@@ -202,6 +208,8 @@ export interface TimelapseScheduleCreate {
 	weather_font_size?: number;
 	weather_unit?: string;
 	weather_style?: string;
+	ha_overlay?: boolean;
+	ha_overlay_position?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
@@ -228,6 +236,8 @@ export interface TimelapseScheduleUpdate {
 	weather_font_size?: number;
 	weather_unit?: string;
 	weather_style?: string;
+	ha_overlay?: boolean;
+	ha_overlay_position?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
@@ -282,6 +292,8 @@ export interface TimelapseGenerate {
 	weather_font_size?: number;
 	weather_unit?: string;
 	weather_style?: string;
+	ha_overlay?: boolean;
+	ha_overlay_position?: string;
 	heatmap_overlay?: boolean;
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
@@ -390,4 +402,23 @@ export interface TimelapseSummary {
 	total_frames: number;
 	total_duration_seconds: number;
 	by_format: TimelapseFormatBreakdown[];
+}
+
+export interface HomeAssistantConfig {
+	base_url: string;
+	connected?: boolean;
+}
+
+export interface HAEntity {
+	entity_id: string;
+	friendly_name: string;
+	unit: string;
+	device_class: string;
+}
+
+export interface HASensor {
+	entity_id: string;
+	label: string;
+	unit: string;
+	icon: string;
 }

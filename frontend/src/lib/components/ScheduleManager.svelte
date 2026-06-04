@@ -23,6 +23,8 @@
 	let formTimestampOverlay = $state(false);
 	let formWeatherOverlay = $state(false);
 	let formWeatherPosition = $state('bottom-right');
+	let formHaOverlay = $state(false);
+	let formHaOverlayPosition = $state('top-left');
 	let formWeatherFontSize = $state(24);
 	let formWeatherUnit = $state('C');
 	let formWeatherStyle = $state('glass');
@@ -145,6 +147,8 @@
 		formTimestampOverlay = false;
 		formWeatherOverlay = false;
 		formWeatherPosition = 'bottom-right';
+		formHaOverlay = false;
+		formHaOverlayPosition = 'top-left';
 		formWeatherFontSize = 24;
 		formWeatherUnit = 'C';
 		formWeatherStyle = 'glass';
@@ -173,6 +177,8 @@
 		formTimestampOverlay = schedule.timestamp_overlay;
 		formWeatherOverlay = schedule.weather_overlay;
 		formWeatherPosition = schedule.weather_position;
+		formHaOverlay = schedule.ha_overlay ?? false;
+		formHaOverlayPosition = schedule.ha_overlay_position ?? 'top-left';
 		formWeatherFontSize = schedule.weather_font_size;
 		formWeatherUnit = schedule.weather_unit;
 		formWeatherStyle = schedule.weather_style ?? 'glass';
@@ -225,6 +231,8 @@
 				timestamp_overlay: formTimestampOverlay,
 				weather_overlay: formWeatherOverlay,
 				weather_position: formWeatherPosition,
+				ha_overlay: formHaOverlay,
+				ha_overlay_position: formHaOverlayPosition,
 				weather_font_size: formWeatherFontSize,
 				weather_unit: formWeatherUnit,
 				weather_style: formWeatherStyle,
@@ -536,6 +544,9 @@
 											{/if}
 											{#if schedule.weather_overlay}
 												<span class="rounded bg-sky-900/50 px-1.5 py-0.5 text-sky-300">Weather</span>
+											{/if}
+											{#if schedule.ha_overlay}
+												<span class="rounded bg-sky-900/50 px-1.5 py-0.5 text-sky-300">HA</span>
 											{/if}
 											{#if schedule.heatmap_overlay}
 												<span class="rounded bg-orange-900/50 px-1.5 py-0.5 text-orange-300">Heatmap</span>
@@ -858,6 +869,34 @@
 										°F
 									</label>
 								</div>
+							</div>
+						</div>
+					{/if}
+
+					<div class="flex items-center gap-3">
+						<input
+							id="sched-ha-overlay"
+							type="checkbox"
+							bind:checked={formHaOverlay}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+						/>
+						<label for="sched-ha-overlay" class="text-sm font-medium text-gray-300">Home Assistant sensor overlay</label>
+					</div>
+
+					{#if formHaOverlay}
+						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
+							<div>
+								<label for="sched-ha-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+								<select
+									id="sched-ha-pos"
+									bind:value={formHaOverlayPosition}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="top-left">Top Left</option>
+									<option value="top-right">Top Right</option>
+									<option value="bottom-left">Bottom Left</option>
+									<option value="bottom-right">Bottom Right</option>
+								</select>
 							</div>
 						</div>
 					{/if}
