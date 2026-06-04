@@ -360,6 +360,25 @@ async def capture_frame(profile_id: int) -> None:
                 if result:
                     weather_temp, weather_code, weather_is_day = result
 
+        # Fetch Home Assistant sensor data if configured for this profile
+        sensor_data = None
+        if profile.ha_sensors:
+            import json as _json
+            from app.services.homeassistant import (
+                build_sensor_snapshot,
+                get_ha_config,
+                read_sensors,
+            )
+            cfg = get_ha_config(db)
+            if cfg:
+                try:
+                    entity_ids = [s["entity_id"] for s in _json.loads(profile.ha_sensors)]
+                except (_json.JSONDecodeError, TypeError, KeyError):
+                    entity_ids = []
+                if entity_ids:
+                    readings = await read_sensors(cfg[0], cfg[1], entity_ids)
+                    sensor_data = build_sensor_snapshot(profile.ha_sensors, readings)
+
         # Create DB record
         capture = Capture(
             profile_id=profile_id,
@@ -371,6 +390,7 @@ async def capture_frame(profile_id: int) -> None:
             weather_temp=weather_temp,
             weather_code=weather_code,
             weather_is_day=weather_is_day,
+            sensor_data=sensor_data,
             captured_at=now,
         )
         db.add(capture)
