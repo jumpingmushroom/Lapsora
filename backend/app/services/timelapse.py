@@ -344,6 +344,8 @@ async def generate_timelapse(
     weather_font_size: int = 24,
     weather_unit: str = "C",
     weather_style: str = "glass",
+    ha_overlay: bool = False,
+    ha_overlay_position: str = "top-left",
     deflicker: str = "medium",
     heatmap_overlay: bool = False,
     heatmap_mode: str = "cumulative",
@@ -401,6 +403,8 @@ async def generate_timelapse(
             steps.append({"name": "heatmap_overlay", "label": "Applying heatmap overlay"})
         if weather_overlay:
             steps.append({"name": "weather_overlay", "label": "Applying weather overlay"})
+        if ha_overlay:
+            steps.append({"name": "sensor_overlay", "label": "Applying sensor overlay"})
         steps.append({"name": "encoding", "label": "Encoding video"})
         steps.append({"name": "finalizing", "label": "Finalizing"})
 
@@ -533,6 +537,35 @@ async def generate_timelapse(
                 except Exception:
                     logger.warning("Failed to apply weather overlay to frame %d", i)
             await _progress("weather_overlay", "completed")
+
+        # Step: Home Assistant sensor overlay
+        if ha_overlay:
+            _check_cancel()
+            await _progress("sensor_overlay", "in_progress")
+            from PIL import Image
+            from app.services.sensor_overlay import (
+                compute_layout as sensor_compute_layout,
+                render_frame as sensor_render_frame,
+            )
+
+            sensor_caps = [c for c in frame_captures if getattr(c, "sensor_data", None)]
+            sensor_layout = sensor_compute_layout(sensor_caps) if sensor_caps else None
+
+            if sensor_layout is not None:
+                for i, path in enumerate(frame_paths):
+                    if cancel_event and i % 10 == 0:
+                        _check_cancel()
+                    cap = frame_captures[i]
+                    if not getattr(cap, "sensor_data", None):
+                        continue
+                    try:
+                        img = Image.open(path)
+                        sensor_render_frame(img, cap, ha_overlay_position, sensor_layout)
+                        img.save(path, "JPEG", quality=95)
+                        img.close()
+                    except Exception:
+                        logger.warning("Failed to apply sensor overlay to frame %d", i)
+            await _progress("sensor_overlay", "completed")
 
         # Step: encoding
         _check_cancel()
