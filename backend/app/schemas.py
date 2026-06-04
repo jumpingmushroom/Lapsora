@@ -69,6 +69,7 @@ class ProfileCreate(BaseModel):
     sun_offset_minutes: int = Field(default=0, ge=0, le=180)
     sun_events: str = ""
     weather_enabled: bool = False
+    ha_sensors: str | None = None  # JSON string: [{entity_id,label,unit,icon}]
 
 
 class ProfileUpdate(BaseModel):
@@ -85,6 +86,7 @@ class ProfileUpdate(BaseModel):
     sun_offset_minutes: int | None = None
     sun_events: str | None = None
     weather_enabled: bool | None = None
+    ha_sensors: str | None = None
 
 
 class ProfileRead(BaseModel):
@@ -106,6 +108,7 @@ class ProfileRead(BaseModel):
     sun_offset_minutes: int
     sun_events: str
     weather_enabled: bool
+    ha_sensors: str | None = None
     source_template_id: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -173,6 +176,7 @@ class CaptureRead(BaseModel):
     weather_temp: float | None = None
     weather_code: int | None = None
     weather_is_day: bool | None = None
+    sensor_data: str | None = None
     captured_at: datetime
 
 
@@ -208,6 +212,8 @@ class TimelapseGenerate(BaseModel):
     weather_font_size: int = 24
     weather_unit: str = "C"
     weather_style: str = "glass"
+    ha_overlay: bool = False
+    ha_overlay_position: str = "top-left"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
@@ -237,6 +243,8 @@ class TimelapseScheduleCreate(BaseModel):
     weather_font_size: int = 24
     weather_unit: str = "C"
     weather_style: str = "glass"
+    ha_overlay: bool = False
+    ha_overlay_position: str = "top-left"
     heatmap_overlay: bool = False
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
@@ -263,6 +271,8 @@ class TimelapseScheduleUpdate(BaseModel):
     weather_font_size: int | None = None
     weather_unit: str | None = None
     weather_style: str | None = None
+    ha_overlay: bool | None = None
+    ha_overlay_position: str | None = None
     heatmap_overlay: bool | None = None
     heatmap_mode: str | None = None
     heatmap_colormap: str | None = None
@@ -293,6 +303,8 @@ class TimelapseScheduleRead(BaseModel):
     weather_font_size: int
     weather_unit: str
     weather_style: str
+    ha_overlay: bool
+    ha_overlay_position: str
     heatmap_overlay: bool
     heatmap_mode: str
     heatmap_colormap: str
