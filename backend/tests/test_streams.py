@@ -52,3 +52,68 @@ def test_create_stream_empty_name(client):
     # But we verify validation works for missing fields
     resp2 = client.post("/api/streams/", json={"url": "rtsp://x"})
     assert resp2.status_code == 422
+
+
+# --- HTTP image sources ---
+
+
+def test_create_http_snapshot_stream_with_auth(client, db):
+    from app.config import decrypt
+    from app.models import Stream
+
+    resp = client.post(
+        "/api/streams/",
+        json={
+            "name": "Garage cam",
+            "source_type": "http_snapshot",
+            "url": "http://cam.local/snapshot.jpg",
+            "auth_type": "basic",
+            "auth_username": "admin",
+            "auth_secret": "hunter2",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    data = resp.json()
+    assert data["source_type"] == "http_snapshot"
+    assert data["auth_type"] == "basic"
+    assert data["auth_username"] == "admin"
+    assert data["has_auth"] is True
+    # Secret and raw URL are never returned.
+    assert "auth_secret" not in data
+    assert "url" not in data
+
+    # Secret is stored encrypted, not plaintext.
+    stream = db.query(Stream).filter(Stream.id == data["id"]).first()
+    assert stream.auth_secret and stream.auth_secret != "hunter2"
+    assert decrypt(stream.auth_secret) == "hunter2"
+
+
+def test_create_http_mjpeg_requires_url(client):
+    resp = client.post(
+        "/api/streams/", json={"name": "no url", "source_type": "http_mjpeg"}
+    )
+    assert resp.status_code == 400
+
+
+def test_test_endpoint_dispatches_to_http_provider(client, monkeypatch):
+    async def fake_grab(url, auth=None, retries=3):
+        return b"\xff\xd8\xff\xe0jpeg\xff\xd9"
+
+    from app.services import http_source
+
+    monkeypatch.setattr(http_source, "grab_snapshot", fake_grab)
+
+    create = client.post(
+        "/api/streams/",
+        json={
+            "name": "snap",
+            "source_type": "http_snapshot",
+            "url": "http://cam.local/snapshot.jpg",
+        },
+    )
+    stream_id = create.json()["id"]
+    resp = client.post(f"/api/streams/{stream_id}/test")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["success"] is True
+    assert body["details"]["bytes"] > 0

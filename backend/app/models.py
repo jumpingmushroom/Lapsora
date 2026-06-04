@@ -21,6 +21,10 @@ class Stream(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     source_type: Mapped[str] = mapped_column(Text, default="rtsp", server_default="rtsp")
     go2rtc_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auth_type: Mapped[str] = mapped_column(Text, default="none", server_default="none")
+    auth_username: Mapped[str | None] = mapped_column(Text, nullable=True)
+    auth_secret: Mapped[str | None] = mapped_column(Text, nullable=True)  # encrypted
+    auth_header_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     health_status: Mapped[str] = mapped_column(Text, default="unknown")
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
@@ -35,9 +39,15 @@ class Stream(Base):
     )
 
     @property
+    def has_auth(self) -> bool:
+        """Whether an auth secret is stored for this (HTTP) source."""
+        return bool(self.auth_secret)
+
+    @property
     def url_masked(self) -> str | None:
-        """RTSP URL with the password redacted, for display. None for go2rtc
-        streams or if the stored URL cannot be decrypted."""
+        """Stream URL with the password redacted, for display. None for go2rtc
+        streams or if the stored URL cannot be decrypted. Applies to RTSP and
+        HTTP snapshot/MJPEG sources (which may embed credentials in the URL)."""
         if self.source_type == "go2rtc":
             return None
         try:

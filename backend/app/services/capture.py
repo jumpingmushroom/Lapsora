@@ -205,20 +205,33 @@ async def capture_frame(profile_id: int) -> None:
         abs_path = os.path.join(settings.DATA_DIR, rel_path)
         os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
-        if stream.source_type == "go2rtc":
-            from app.services.go2rtc import get_go2rtc_url, grab_frame as go2rtc_grab
+        from app.services import providers
 
-            base_url = get_go2rtc_url(db)
-            if not base_url:
-                logger.error("go2rtc URL not configured for profile %d", profile_id)
+        if stream.source_type in providers.BYTES_SOURCE_TYPES:
+            # Bytes-based sources (go2rtc, HTTP snapshot/MJPEG): fetch JPEG and
+            # write it. HDR (multi-frame fusion) only applies to RTSP, so it is
+            # intentionally ignored for these sources.
+            try:
+                jpeg_bytes = await providers.fetch_jpeg_bytes(stream, db)
+            except Exception as exc:
+                logger.error(
+                    "Frame fetch failed for profile %d (%s): %s",
+                    profile_id, stream.source_type, exc,
+                )
+                from app.services.events import emit
+                await emit(
+                    "capture_failure",
+                    f"Capture failed: {profile.name}",
+                    f"Could not fetch frame for profile '{profile.name}' on stream '{stream.name}': {exc}",
+                    level="error",
+                )
                 return
 
-            jpeg_bytes = await go2rtc_grab(base_url, stream.go2rtc_name)
             with open(abs_path, "wb") as f:
                 f.write(jpeg_bytes)
 
             if _is_frame_corrupt(abs_path):
-                logger.warning("go2rtc frame corrupt for profile %d, discarding", profile_id)
+                logger.warning("%s frame corrupt for profile %d, discarding", stream.source_type, profile_id)
                 if os.path.exists(abs_path):
                     os.remove(abs_path)
                 return

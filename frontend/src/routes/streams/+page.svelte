@@ -14,11 +14,28 @@
 	let newUrl = $state('');
 	let addLoading = $state(false);
 	let addError = $state('');
-	let addSourceType = $state<'rtsp' | 'go2rtc'>('rtsp');
+	let addSourceType = $state<'rtsp' | 'go2rtc' | 'http_snapshot' | 'http_mjpeg'>('rtsp');
 	let go2rtcStreams = $state<Go2rtcStreamInfo[]>([]);
 	let go2rtcLoading = $state(false);
 	let go2rtcError = $state('');
 	let selectedGo2rtcName = $state('');
+
+	// HTTP source auth
+	let authType = $state<'none' | 'basic' | 'digest' | 'bearer' | 'header'>('none');
+	let authUsername = $state('');
+	let authSecret = $state('');
+	let authHeaderName = $state('');
+
+	const sourceTabs = [
+		{ value: 'rtsp', label: 'RTSP' },
+		{ value: 'go2rtc', label: 'go2rtc' },
+		{ value: 'http_snapshot', label: 'HTTP Snapshot' },
+		{ value: 'http_mjpeg', label: 'HTTP MJPEG' }
+	] as const;
+
+	function isHttp(t: string): boolean {
+		return t === 'http_snapshot' || t === 'http_mjpeg';
+	}
 
 	// Delete confirmation
 	let deleteTarget = $state<Stream | null>(null);
@@ -61,13 +78,27 @@
 		try {
 			if (addSourceType === 'go2rtc') {
 				await api.createStream({ name: newName, source_type: 'go2rtc', go2rtc_name: selectedGo2rtcName });
+			} else if (isHttp(addSourceType)) {
+				await api.createStream({
+					name: newName,
+					source_type: addSourceType,
+					url: newUrl,
+					auth_type: authType,
+					auth_username: authType === 'basic' || authType === 'digest' ? authUsername : undefined,
+					auth_secret: authType !== 'none' ? authSecret : undefined,
+					auth_header_name: authType === 'header' ? authHeaderName : undefined
+				});
 			} else {
-				await api.createStream({ name: newName, url: newUrl });
+				await api.createStream({ name: newName, source_type: 'rtsp', url: newUrl });
 			}
 			showAddModal = false;
 			newName = '';
 			newUrl = '';
 			selectedGo2rtcName = '';
+			authType = 'none';
+			authUsername = '';
+			authSecret = '';
+			authHeaderName = '';
 			loading = true;
 			await loadStreams();
 		} catch (err) {
@@ -181,17 +212,14 @@
 			<h2 class="mb-4 text-lg font-semibold text-gray-100">Add Stream</h2>
 
 			<!-- Source type tabs -->
-			<div class="mb-4 flex rounded-lg border border-gray-700 bg-gray-800 p-0.5">
-				<button
-					type="button"
-					onclick={() => { addSourceType = 'rtsp'; }}
-					class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors {addSourceType === 'rtsp' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
-				>RTSP</button>
-				<button
-					type="button"
-					onclick={() => { addSourceType = 'go2rtc'; loadGo2rtcStreams(); }}
-					class="flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors {addSourceType === 'go2rtc' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
-				>go2rtc</button>
+			<div class="mb-4 grid grid-cols-2 gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-0.5">
+				{#each sourceTabs as tab}
+					<button
+						type="button"
+						onclick={() => { addSourceType = tab.value; if (tab.value === 'go2rtc') loadGo2rtcStreams(); }}
+						class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {addSourceType === tab.value ? 'bg-blue-600 text-white' : 'text-gray-400 hover:text-gray-200'}"
+					>{tab.label}</button>
+				{/each}
 			</div>
 
 			{#if addError}
@@ -222,9 +250,74 @@
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 						/>
 					</div>
+				{:else if isHttp(addSourceType)}
+					<div>
+						<label for="add-http-url" class="mb-1 block text-sm font-medium text-gray-300">
+							{addSourceType === 'http_mjpeg' ? 'MJPEG Stream URL' : 'Snapshot URL'}
+						</label>
+						<input
+							id="add-http-url"
+							type="text"
+							bind:value={newUrl}
+							required
+							placeholder={addSourceType === 'http_mjpeg' ? 'http://.../mjpeg' : 'http://.../snapshot.jpg'}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						/>
+						<p class="mt-1 text-xs text-gray-500">
+							{addSourceType === 'http_mjpeg'
+								? 'Multipart MJPEG stream — one frame is grabbed per capture.'
+								: 'Single JPEG endpoint, e.g. an IP cam, OctoPrint (?action=snapshot), Frigate or a public webcam.'}
+						</p>
+					</div>
+					<div>
+						<label for="add-auth-type" class="mb-1 block text-sm font-medium text-gray-300">Authentication</label>
+						<select
+							id="add-auth-type"
+							bind:value={authType}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+						>
+							<option value="none">None</option>
+							<option value="basic">Basic</option>
+							<option value="digest">Digest</option>
+							<option value="bearer">Bearer token</option>
+							<option value="header">Custom header</option>
+						</select>
+					</div>
+					{#if authType === 'basic' || authType === 'digest'}
+						<div>
+							<label for="add-auth-user" class="mb-1 block text-sm font-medium text-gray-300">Username</label>
+							<input id="add-auth-user" type="text" bind:value={authUsername}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+						</div>
+						<div>
+							<label for="add-auth-pass" class="mb-1 block text-sm font-medium text-gray-300">Password</label>
+							<input id="add-auth-pass" type="password" bind:value={authSecret} autocomplete="off"
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+						</div>
+					{:else if authType === 'bearer'}
+						<div>
+							<label for="add-auth-token" class="mb-1 block text-sm font-medium text-gray-300">Token</label>
+							<input id="add-auth-token" type="password" bind:value={authSecret} autocomplete="off"
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+						</div>
+					{:else if authType === 'header'}
+						<div>
+							<label for="add-auth-hname" class="mb-1 block text-sm font-medium text-gray-300">Header name</label>
+							<input id="add-auth-hname" type="text" bind:value={authHeaderName} placeholder="X-API-Key"
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+						</div>
+						<div>
+							<label for="add-auth-hval" class="mb-1 block text-sm font-medium text-gray-300">Header value</label>
+							<input id="add-auth-hval" type="password" bind:value={authSecret} autocomplete="off"
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+						</div>
+					{/if}
 				{:else}
 					<div>
 						<label for="add-go2rtc" class="mb-1 block text-sm font-medium text-gray-300">go2rtc Stream</label>
+						<p class="mb-2 text-xs text-gray-500">
+							For RTMP, HLS, WebRTC, ONVIF and vendor cameras (Nest, Ring, Tapo…), add them to go2rtc and select here.
+						</p>
 						{#if go2rtcLoading}
 							<p class="text-sm text-gray-400">Loading streams...</p>
 						{:else if go2rtcError}

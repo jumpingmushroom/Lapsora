@@ -10,17 +10,29 @@ from pydantic import BaseModel, ConfigDict, Field
 # --- Streams ---
 
 
+AuthType = Literal["none", "basic", "digest", "bearer", "header"]
+SourceType = Literal["rtsp", "go2rtc", "http_snapshot", "http_mjpeg"]
+
+
 class StreamCreate(BaseModel):
     name: str
     url: str | None = None
-    source_type: Literal["rtsp", "go2rtc"] = "rtsp"
+    source_type: SourceType = "rtsp"
     go2rtc_name: str | None = None
+    auth_type: AuthType = "none"
+    auth_username: str | None = None
+    auth_secret: str | None = None  # write-only; password / token / header value
+    auth_header_name: str | None = None
 
 
 class StreamUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
     enabled: bool | None = None
+    auth_type: AuthType | None = None
+    auth_username: str | None = None
+    auth_secret: str | None = None  # write-only; omit to keep existing
+    auth_header_name: str | None = None
 
 
 class StreamRead(BaseModel):
@@ -31,6 +43,10 @@ class StreamRead(BaseModel):
     source_type: str
     go2rtc_name: str | None
     url_masked: str | None = None
+    auth_type: str = "none"
+    auth_username: str | None = None
+    auth_header_name: str | None = None
+    has_auth: bool = False
     enabled: bool
     health_status: str
     consecutive_failures: int

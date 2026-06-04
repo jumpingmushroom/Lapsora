@@ -1,16 +1,14 @@
 """Stream management endpoints."""
 
-from cryptography.fernet import InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.config import decrypt, encrypt
+from app.config import encrypt
 from app.database import get_db
-from app.models import Setting, Stream
+from app.models import Stream
 from app.schemas import StreamCreate, StreamRead, StreamUpdate
-from app.services import rtsp
-from app.services import go2rtc
+from app.services import go2rtc, providers
 
 router = APIRouter(prefix="/api/streams", tags=["streams"])
 
@@ -43,9 +41,18 @@ def create_stream(body: StreamCreate, db: Session = Depends(get_db)):
             go2rtc_name=body.go2rtc_name,
         )
     else:
+        # rtsp, http_snapshot, http_mjpeg all need a URL.
         if not body.url:
-            raise HTTPException(400, "url is required for RTSP streams")
-        stream = Stream(name=body.name, url=encrypt(body.url), source_type="rtsp")
+            raise HTTPException(400, "url is required for this source type")
+        stream = Stream(
+            name=body.name,
+            url=encrypt(body.url),
+            source_type=body.source_type,
+            auth_type=body.auth_type or "none",
+            auth_username=body.auth_username,
+            auth_secret=encrypt(body.auth_secret) if body.auth_secret else None,
+            auth_header_name=body.auth_header_name,
+        )
     db.add(stream)
     db.commit()
     db.refresh(stream)
@@ -72,6 +79,15 @@ def update_stream(stream_id: int, body: StreamUpdate, db: Session = Depends(get_
         stream.url = encrypt(body.url)
     if body.enabled is not None:
         stream.enabled = body.enabled
+    if body.auth_type is not None:
+        stream.auth_type = body.auth_type
+    if body.auth_username is not None:
+        stream.auth_username = body.auth_username
+    if body.auth_secret is not None:
+        # Empty string clears the stored secret; otherwise encrypt and store.
+        stream.auth_secret = encrypt(body.auth_secret) if body.auth_secret else None
+    if body.auth_header_name is not None:
+        stream.auth_header_name = body.auth_header_name
 
     db.commit()
     db.refresh(stream)
@@ -98,18 +114,7 @@ async def test_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-
-    if stream.source_type == "go2rtc":
-        base_url = go2rtc.get_go2rtc_url(db)
-        if not base_url:
-            raise HTTPException(400, "go2rtc URL not configured")
-        return await go2rtc.test_stream(base_url, stream.go2rtc_name)
-
-    try:
-        url = decrypt(stream.url)
-    except (InvalidToken, Exception):
-        raise HTTPException(400, "Stream URL could not be decrypted. Please re-enter the RTSP URL.")
-    return await rtsp.test_connection(url)
+    return await providers.test_source(stream, db)
 
 
 @router.get("/{stream_id}/preview")
@@ -117,24 +122,9 @@ async def preview_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-
-    if stream.source_type == "go2rtc":
-        base_url = go2rtc.get_go2rtc_url(db)
-        if not base_url:
-            raise HTTPException(400, "go2rtc URL not configured")
-        try:
-            jpeg_bytes = await go2rtc.grab_frame(base_url, stream.go2rtc_name)
-        except Exception as exc:
-            raise HTTPException(502, str(exc))
-        return Response(content=jpeg_bytes, media_type="image/jpeg")
-
     try:
-        url = decrypt(stream.url)
-    except (InvalidToken, Exception):
-        raise HTTPException(400, "Stream URL could not be decrypted. Please re-enter the RTSP URL.")
-    try:
-        jpeg_bytes = await rtsp.grab_frame(url)
-    except RuntimeError as exc:
+        jpeg_bytes = await providers.grab_preview(stream, db)
+    except Exception as exc:
         raise HTTPException(502, str(exc))
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 

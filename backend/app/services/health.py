@@ -4,11 +4,9 @@ import json
 import logging
 from datetime import UTC, datetime
 
-from app.config import decrypt
 from app.database import SessionLocal
 from app.models import Profile, Setting, Stream
 from app.services.events import emit
-from app.services.rtsp import test_connection
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +30,8 @@ async def check_all_streams() -> None:
 
         for stream in streams:
             try:
-                if stream.source_type == "go2rtc":
-                    from app.services.go2rtc import get_go2rtc_url, test_stream as go2rtc_test
-                    base_url = get_go2rtc_url(db)
-                    if not base_url:
-                        logger.warning("go2rtc URL not configured, skipping stream %d", stream.id)
-                        continue
-                    result = await go2rtc_test(base_url, stream.go2rtc_name)
-                else:
-                    url = decrypt(stream.url)
-                    result = await test_connection(url)
+                from app.services import providers
+                result = await providers.test_source(stream, db)
                 now = datetime.now(UTC)
                 stream.last_checked_at = now
 

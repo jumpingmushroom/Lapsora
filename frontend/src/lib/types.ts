@@ -1,9 +1,16 @@
+export type StreamSourceType = 'rtsp' | 'go2rtc' | 'http_snapshot' | 'http_mjpeg';
+export type StreamAuthType = 'none' | 'basic' | 'digest' | 'bearer' | 'header';
+
 export interface Stream {
 	id: number;
 	name: string;
 	source_type: string;
 	go2rtc_name: string | null;
 	url_masked: string | null;
+	auth_type?: string;
+	auth_username?: string | null;
+	auth_header_name?: string | null;
+	has_auth?: boolean;
 	enabled: boolean;
 	health_status: string;
 	consecutive_failures: number;
@@ -15,8 +22,12 @@ export interface Stream {
 export interface StreamCreate {
 	name: string;
 	url?: string;
-	source_type?: 'rtsp' | 'go2rtc';
+	source_type?: StreamSourceType;
 	go2rtc_name?: string;
+	auth_type?: StreamAuthType;
+	auth_username?: string | null;
+	auth_secret?: string | null;
+	auth_header_name?: string | null;
 }
 
 export interface Go2rtcConfig {
@@ -32,6 +43,10 @@ export interface StreamUpdate {
 	name?: string;
 	url?: string;
 	enabled?: boolean;
+	auth_type?: StreamAuthType;
+	auth_username?: string | null;
+	auth_secret?: string | null;
+	auth_header_name?: string | null;
 }
 
 export interface Profile {
