@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity } from './types';
 
 const BASE = '/api';
 
@@ -132,6 +132,14 @@ export const api = {
 	getGo2rtcConfig: () => request<Go2rtcConfig>('/settings/go2rtc'),
 	updateGo2rtcConfig: (data: Go2rtcConfig) => request<Go2rtcConfig>('/settings/go2rtc', { method: 'PUT', body: JSON.stringify(data) }),
 	testGo2rtcServer: (data: Go2rtcConfig) => request<TestResult>('/settings/go2rtc/test', { method: 'POST', body: JSON.stringify(data) }),
+
+	// Settings — Home Assistant
+	getHAConfig: () => request<HomeAssistantConfig>('/settings/homeassistant'),
+	updateHAConfig: (data: { base_url: string; token?: string }) =>
+		request<HomeAssistantConfig>('/settings/homeassistant', { method: 'PUT', body: JSON.stringify(data) }),
+	testHAConnection: (data: { base_url: string; token?: string }) =>
+		request<{ success: boolean; message: string }>('/settings/homeassistant/test', { method: 'POST', body: JSON.stringify(data) }),
+	getHAEntities: () => request<HAEntity[]>('/settings/homeassistant/entities'),
 
 	// Settings — Capture Gap
 	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),
