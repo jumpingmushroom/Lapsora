@@ -61,6 +61,36 @@
 	let prusaTestResult = $state<string | null>(null);
 
 	let loading = $state(true);
+	let logoInfo = $state<{ exists: boolean; uploaded_at: string | null }>({ exists: false, uploaded_at: null });
+	let logoCacheBust = $state(0);
+	let uploadingLogo = $state(false);
+
+	async function onLogoSelected(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		uploadingLogo = true;
+		try {
+			logoInfo = await api.uploadLogo(file);
+			logoCacheBust++;
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to upload logo');
+		} finally {
+			uploadingLogo = false;
+			input.value = '';
+		}
+	}
+
+	async function removeLogo() {
+		if (!confirm('Remove the uploaded logo?')) return;
+		try {
+			await api.deleteLogo();
+			logoInfo = { exists: false, uploaded_at: null };
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete logo');
+		}
+	}
+
 	let newLabel = $state('');
 	let newUrl = $state('');
 	let testingId = $state<number | null>(null);
@@ -69,8 +99,8 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig(), api.getHAConfig(), api.getPrusaLinkConfig()])
-			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg, haCfg, prusaCfg]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig(), api.getHAConfig(), api.getPrusaLinkConfig(), api.getLogo()])
+			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg, haCfg, prusaCfg, logoCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
@@ -80,6 +110,7 @@
 				timeFormatConfig = tfCfg;
 				haConfig = haCfg;
 				prusaConfig = prusaCfg;
+				logoInfo = logoCfg;
 			})
 			.finally(() => {
 				loading = false;
@@ -518,6 +549,41 @@
 				>
 					{savingLocation ? 'Saving...' : 'Save Location'}
 				</button>
+			</section>
+
+			<!-- Branding -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Branding</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					Upload a logo to watermark onto generated timelapses. PNG with transparency works best. Enable it per-timelapse in the generate dialog or a schedule, where you pick the corner, size, and opacity.
+				</p>
+
+				<div class="flex items-center gap-4">
+					{#if logoInfo.exists}
+						<img
+							src={`/static/logos/logo.png?v=${logoCacheBust}`}
+							alt="Current logo"
+							class="h-16 w-16 rounded-lg border border-gray-700 bg-[length:16px_16px] object-contain p-1"
+							style="background-image: linear-gradient(45deg,#374151 25%,transparent 25%),linear-gradient(-45deg,#374151 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#374151 75%),linear-gradient(-45deg,transparent 75%,#374151 75%); background-position:0 0,0 8px,8px -8px,-8px 0;"
+						/>
+					{:else}
+						<div class="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-gray-700 text-xs text-gray-500">None</div>
+					{/if}
+					<div class="flex flex-col gap-2">
+						<label class="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 {uploadingLogo ? 'opacity-50' : ''}">
+							{uploadingLogo ? 'Uploading...' : logoInfo.exists ? 'Replace logo' : 'Upload logo'}
+							<input type="file" accept="image/*" class="hidden" onchange={onLogoSelected} disabled={uploadingLogo} />
+						</label>
+						{#if logoInfo.exists}
+							<button
+								onclick={removeLogo}
+								class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
+							>
+								Remove
+							</button>
+						{/if}
+					</div>
+				</div>
 			</section>
 
 		{/if}

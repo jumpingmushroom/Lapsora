@@ -32,6 +32,14 @@
 	let formHeatmapMode = $state('cumulative');
 	let formHeatmapColormap = $state('jet');
 	let formHeatmapThreshold = $state(10);
+	let formLogoOverlay = $state(false);
+	let formLogoPosition = $state('bottom-right');
+	let formLogoSize = $state(12); // percent of frame width
+	let formLogoOpacity = $state(80); // percent
+	let logoExists = $state(false);
+	$effect(() => {
+		api.getLogo().then((r) => (logoExists = r.exists)).catch(() => {});
+	});
 	let formCodec = $state('auto');
 	let formResolutionPreset = $state('original');
 	let formOutputWidth = $state<number | null>(null);
@@ -156,6 +164,10 @@
 		formHeatmapMode = 'cumulative';
 		formHeatmapColormap = 'jet';
 		formHeatmapThreshold = 10;
+		formLogoOverlay = false;
+		formLogoPosition = 'bottom-right';
+		formLogoSize = 12;
+		formLogoOpacity = 80;
 		formCodec = 'auto';
 		formResolutionPreset = 'original';
 		formOutputWidth = null;
@@ -186,6 +198,10 @@
 		formHeatmapMode = schedule.heatmap_mode;
 		formHeatmapColormap = schedule.heatmap_colormap;
 		formHeatmapThreshold = schedule.heatmap_threshold;
+		formLogoOverlay = schedule.logo_overlay ?? false;
+		formLogoPosition = schedule.logo_position ?? 'bottom-right';
+		formLogoSize = Math.round((schedule.logo_size ?? 0.12) * 100);
+		formLogoOpacity = Math.round((schedule.logo_opacity ?? 0.8) * 100);
 		formCodec = schedule.codec || 'auto';
 		formOutputWidth = schedule.output_width;
 		formOutputHeight = schedule.output_height;
@@ -240,6 +256,10 @@
 				heatmap_mode: formHeatmapMode,
 				heatmap_colormap: formHeatmapColormap,
 			heatmap_threshold: formHeatmapThreshold,
+				logo_overlay: formLogoOverlay,
+				logo_position: formLogoPosition,
+				logo_size: formLogoSize / 100,
+				logo_opacity: formLogoOpacity / 100,
 				motion_blur: formMotionBlur,
 				codec: formCodec,
 				output_width: formOutputWidth,
@@ -949,6 +969,61 @@
 									<option value="viridis">Viridis</option>
 									<option value="turbo">Turbo</option>
 								</select>
+							</div>
+						</div>
+					{/if}
+
+					<div class="flex items-center gap-3">
+						<input
+							id="sched-logo"
+							type="checkbox"
+							bind:checked={formLogoOverlay}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+						/>
+						<label for="sched-logo" class="text-sm font-medium text-gray-300">Logo / watermark overlay</label>
+					</div>
+
+					{#if formLogoOverlay}
+						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
+							{#if !logoExists}
+								<p class="text-xs text-amber-400">No logo uploaded yet — add one in Settings → Branding.</p>
+							{/if}
+							<div>
+								<label for="sched-logo-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+								<select
+									id="sched-logo-pos"
+									bind:value={formLogoPosition}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+								>
+									<option value="top-left">Top Left</option>
+									<option value="top-right">Top Right</option>
+									<option value="bottom-left">Bottom Left</option>
+									<option value="bottom-right">Bottom Right</option>
+								</select>
+							</div>
+							<div>
+								<label for="sched-logo-size" class="mb-1 block text-sm font-medium text-gray-300">Size: {formLogoSize}% of width</label>
+								<input
+									id="sched-logo-size"
+									type="range"
+									bind:value={formLogoSize}
+									min="2"
+									max="50"
+									step="1"
+									class="w-full accent-blue-500"
+								/>
+							</div>
+							<div>
+								<label for="sched-logo-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {formLogoOpacity}%</label>
+								<input
+									id="sched-logo-opacity"
+									type="range"
+									bind:value={formLogoOpacity}
+									min="10"
+									max="100"
+									step="1"
+									class="w-full accent-blue-500"
+								/>
 							</div>
 						</div>
 					{/if}

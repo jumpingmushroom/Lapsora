@@ -2,11 +2,17 @@
 
 import json
 import logging
+import os
+from datetime import UTC, datetime
+from io import BytesIO
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.config import decrypt, encrypt
+from app.config import settings as app_settings
 from app.database import get_db
 from app.models import NotificationURL, Setting
 from app.schemas import (
@@ -358,3 +364,50 @@ async def test_prusalink_connection(data: PrusaLinkConfig, db: Session = Depends
         pw_row = db.query(Setting).filter(Setting.key == "prusalink_password").first()
         password = decrypt(pw_row.value) if pw_row and pw_row.value else ""
     return await test_connection(data.base_url.rstrip("/"), data.username or "maker", password)
+
+
+# --- Logo / watermark ---
+
+LOGO_DIR = Path(app_settings.DATA_DIR) / "logos"
+LOGO_PATH = LOGO_DIR / "logo.png"
+
+
+def _logo_info(db: Session) -> dict:
+    row = db.query(Setting).filter(Setting.key == "logo_file_path").first()
+    if row and os.path.exists(row.value):
+        mtime = datetime.fromtimestamp(os.path.getmtime(row.value), UTC)
+        return {"exists": True, "uploaded_at": mtime.isoformat()}
+    return {"exists": False, "uploaded_at": None}
+
+
+@router.get("/logo")
+def get_logo(db: Session = Depends(get_db)):
+    return _logo_info(db)
+
+
+@router.post("/logo")
+async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    data = await file.read()
+    try:
+        Image.open(BytesIO(data)).verify()
+        img = Image.open(BytesIO(data)).convert("RGBA")
+    except Exception:
+        raise HTTPException(400, "Uploaded file is not a valid image")
+    LOGO_DIR.mkdir(parents=True, exist_ok=True)
+    img.save(LOGO_PATH, "PNG")
+    _upsert_setting(db, "logo_file_path", str(LOGO_PATH))
+    db.commit()
+    return _logo_info(db)
+
+
+@router.delete("/logo", status_code=204)
+def delete_logo(db: Session = Depends(get_db)):
+    row = db.query(Setting).filter(Setting.key == "logo_file_path").first()
+    if row:
+        if os.path.exists(row.value):
+            try:
+                os.unlink(row.value)
+            except OSError:
+                pass
+        db.delete(row)
+        db.commit()

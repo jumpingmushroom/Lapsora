@@ -141,6 +141,20 @@ export const api = {
 		request<{ success: boolean; message: string }>('/settings/homeassistant/test', { method: 'POST', body: JSON.stringify(data) }),
 	getHAEntities: () => request<HAEntity[]>('/settings/homeassistant/entities'),
 
+	// Settings — Logo / watermark
+	getLogo: () => request<{ exists: boolean; uploaded_at: string | null }>('/settings/logo'),
+	uploadLogo: async (file: File) => {
+		const form = new FormData();
+		form.append('file', file);
+		const res = await fetch(`${BASE}/settings/logo`, { method: 'POST', body: form });
+		if (!res.ok) {
+			const text = await res.text().catch(() => '');
+			throw new Error(`API error ${res.status}: ${text}`);
+		}
+		return res.json() as Promise<{ exists: boolean; uploaded_at: string | null }>;
+	},
+	deleteLogo: () => request<void>('/settings/logo', { method: 'DELETE' }),
+
 	// Settings — PrusaLink (3D-print timelapse trigger)
 	getPrusaLinkConfig: () => request<PrusaLinkConfig>('/settings/prusalink'),
 	updatePrusaLinkConfig: (data: PrusaLinkConfig) =>

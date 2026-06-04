@@ -244,6 +244,10 @@ class TimelapseGenerate(BaseModel):
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
+    logo_overlay: bool = False
+    logo_position: str = "bottom-right"
+    logo_size: float = 0.12
+    logo_opacity: float = 0.8
     motion_blur: Literal["off", "low", "medium", "high"] = "off"
     codec: str = "auto"
     output_width: int | None = None
@@ -275,6 +279,10 @@ class TimelapseScheduleCreate(BaseModel):
     heatmap_mode: str = "cumulative"
     heatmap_colormap: str = "jet"
     heatmap_threshold: int = 10
+    logo_overlay: bool = False
+    logo_position: str = "bottom-right"
+    logo_size: float = 0.12
+    logo_opacity: float = 0.8
     motion_blur: Literal["off", "low", "medium", "high"] = "off"
     codec: str = "auto"
     output_width: int | None = None
@@ -303,6 +311,10 @@ class TimelapseScheduleUpdate(BaseModel):
     heatmap_mode: str | None = None
     heatmap_colormap: str | None = None
     heatmap_threshold: int | None = None
+    logo_overlay: bool | None = None
+    logo_position: str | None = None
+    logo_size: float | None = None
+    logo_opacity: float | None = None
     motion_blur: Literal["off", "low", "medium", "high"] | None = None
     codec: str | None = None
     output_width: int | None = None
@@ -335,6 +347,10 @@ class TimelapseScheduleRead(BaseModel):
     heatmap_mode: str
     heatmap_colormap: str
     heatmap_threshold: int
+    logo_overlay: bool
+    logo_position: str
+    logo_size: float
+    logo_opacity: float
     motion_blur: str
     codec: str
     output_width: int | None

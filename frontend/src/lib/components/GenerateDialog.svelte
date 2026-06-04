@@ -113,6 +113,16 @@
 	let heatmap_mode = $state('cumulative');
 	let heatmap_colormap = $state('jet');
 	let heatmap_threshold = $state(10);
+	let logo_overlay = $state(false);
+	let logo_position = $state('bottom-right');
+	let logo_size = $state(12); // percent of frame width
+	let logo_opacity = $state(80); // percent
+	let logoExists = $state(false);
+	$effect(() => {
+		if (open) {
+			api.getLogo().then((r) => (logoExists = r.exists)).catch(() => {});
+		}
+	});
 	let codec = $state('auto');
 	let resolution_preset = $state('original');
 	let output_width = $state<number | null>(null);
@@ -191,6 +201,10 @@
 			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
 			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
 		heatmap_threshold: heatmap_overlay ? heatmap_threshold : undefined,
+			logo_overlay,
+			logo_position: logo_overlay ? logo_position : undefined,
+			logo_size: logo_overlay ? logo_size / 100 : undefined,
+			logo_opacity: logo_overlay ? logo_opacity / 100 : undefined,
 			codec: (format === 'mp4' || format === 'mkv') ? codec : undefined,
 			output_width: output_width || undefined,
 			output_height: output_height || undefined,
@@ -585,6 +599,61 @@
 								<option value="viridis">Viridis</option>
 								<option value="turbo">Turbo</option>
 							</select>
+						</div>
+					</div>
+				{/if}
+
+				<div class="flex items-center gap-3">
+					<input
+						id="gen-logo"
+						type="checkbox"
+						bind:checked={logo_overlay}
+						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+					/>
+					<label for="gen-logo" class="text-sm font-medium text-gray-300">Logo / watermark overlay</label>
+				</div>
+
+				{#if logo_overlay}
+					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
+						{#if !logoExists}
+							<p class="text-xs text-amber-400">No logo uploaded yet — add one in Settings → Branding.</p>
+						{/if}
+						<div>
+							<label for="gen-logo-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+							<select
+								id="gen-logo-pos"
+								bind:value={logo_position}
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="top-left">Top Left</option>
+								<option value="top-right">Top Right</option>
+								<option value="bottom-left">Bottom Left</option>
+								<option value="bottom-right">Bottom Right</option>
+							</select>
+						</div>
+						<div>
+							<label for="gen-logo-size" class="mb-1 block text-sm font-medium text-gray-300">Size: {logo_size}% of width</label>
+							<input
+								id="gen-logo-size"
+								type="range"
+								bind:value={logo_size}
+								min="2"
+								max="50"
+								step="1"
+								class="w-full accent-blue-500"
+							/>
+						</div>
+						<div>
+							<label for="gen-logo-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {logo_opacity}%</label>
+							<input
+								id="gen-logo-opacity"
+								type="range"
+								bind:value={logo_opacity}
+								min="10"
+								max="100"
+								step="1"
+								class="w-full accent-blue-500"
+							/>
 						</div>
 					</div>
 				{/if}

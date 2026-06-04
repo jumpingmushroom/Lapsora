@@ -110,6 +110,10 @@ timelapses_dir = data_dir / "timelapses"
 timelapses_dir.mkdir(exist_ok=True)
 app.mount("/static/timelapses", StaticFiles(directory=str(timelapses_dir)), name="static_timelapses")
 
+logos_dir = data_dir / "logos"
+logos_dir.mkdir(exist_ok=True)
+app.mount("/static/logos", StaticFiles(directory=str(logos_dir)), name="static_logos")
+
 # Serve frontend build if it exists (SPA with fallback)
 _candidates = [
     Path(__file__).parent.parent / "frontend" / "build",      # Docker: /app/frontend/build

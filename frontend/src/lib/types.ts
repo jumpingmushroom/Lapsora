@@ -182,6 +182,10 @@ export interface TimelapseSchedule {
 	heatmap_mode: string;
 	heatmap_colormap: string;
 	heatmap_threshold: number;
+	logo_overlay: boolean;
+	logo_position: string;
+	logo_size: number;
+	logo_opacity: number;
 	motion_blur: string;
 	codec: string;
 	output_width: number | null;
@@ -214,6 +218,10 @@ export interface TimelapseScheduleCreate {
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	logo_overlay?: boolean;
+	logo_position?: string;
+	logo_size?: number;
+	logo_opacity?: number;
 	motion_blur?: string;
 	codec?: string;
 	output_width?: number | null;
@@ -242,6 +250,10 @@ export interface TimelapseScheduleUpdate {
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	logo_overlay?: boolean;
+	logo_position?: string;
+	logo_size?: number;
+	logo_opacity?: number;
 	motion_blur?: string;
 	codec?: string;
 	output_width?: number | null;
@@ -298,6 +310,10 @@ export interface TimelapseGenerate {
 	heatmap_mode?: string;
 	heatmap_colormap?: string;
 	heatmap_threshold?: number;
+	logo_overlay?: boolean;
+	logo_position?: string;
+	logo_size?: number;
+	logo_opacity?: number;
 	motion_blur?: string;
 	codec?: string;
 	output_width?: number | null;

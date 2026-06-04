@@ -351,6 +351,10 @@ async def generate_timelapse(
     heatmap_mode: str = "cumulative",
     heatmap_colormap: str = "jet",
     heatmap_threshold: int = 10,
+    logo_overlay: bool = False,
+    logo_position: str = "bottom-right",
+    logo_size: float = 0.12,
+    logo_opacity: float = 0.8,
     motion_blur: str = "off",
     codec: str = "auto",
     output_width: int | None = None,
@@ -405,6 +409,8 @@ async def generate_timelapse(
             steps.append({"name": "weather_overlay", "label": "Applying weather overlay"})
         if ha_overlay:
             steps.append({"name": "sensor_overlay", "label": "Applying sensor overlay"})
+        if logo_overlay:
+            steps.append({"name": "logo_overlay", "label": "Applying logo overlay"})
         steps.append({"name": "encoding", "label": "Encoding video"})
         steps.append({"name": "finalizing", "label": "Finalizing"})
 
@@ -566,6 +572,49 @@ async def generate_timelapse(
                     except Exception:
                         logger.warning("Failed to apply sensor overlay to frame %d", i)
             await _progress("sensor_overlay", "completed")
+
+        # Step: logo / watermark overlay (applied last so it sits on top)
+        if logo_overlay:
+            _check_cancel()
+            await _progress("logo_overlay", "in_progress")
+            from PIL import Image
+            from app.models import Setting
+            from app.services.logo_overlay import (
+                compute_layout as logo_compute_layout,
+                render_frame as logo_render_frame,
+            )
+
+            row = db.query(Setting).filter(Setting.key == "logo_file_path").first()
+            logo_path = row.value if row else None
+
+            dims = None
+            for p in frame_paths:
+                probe = cv2.imread(p)
+                if probe is not None:
+                    dims = (probe.shape[1], probe.shape[0])
+                    break
+
+            logo_layout = (
+                logo_compute_layout(
+                    logo_path, dims[0], dims[1], logo_size, logo_opacity, logo_position
+                )
+                if logo_path and dims
+                else None
+            )
+            if logo_layout is None:
+                logger.warning("Logo overlay enabled but no logo uploaded; skipping")
+            else:
+                for i, path in enumerate(frame_paths):
+                    if cancel_event and i % 10 == 0:
+                        _check_cancel()
+                    try:
+                        img = Image.open(path)
+                        logo_render_frame(img, logo_layout)
+                        img.save(path, "JPEG", quality=95)
+                        img.close()
+                    except Exception:
+                        logger.warning("Failed to apply logo overlay to frame %d", i)
+            await _progress("logo_overlay", "completed")
 
         # Step: encoding
         _check_cancel()
