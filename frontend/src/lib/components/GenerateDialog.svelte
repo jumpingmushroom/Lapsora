@@ -104,6 +104,8 @@
 	let timestamp_overlay = $state(false);
 	let weather_overlay = $state(false);
 	let weather_position = $state('bottom-right');
+	let ha_overlay = $state(false);
+	let ha_overlay_position = $state('top-left');
 	let weather_font_size = $state(24);
 	let weather_unit = $state('C');
 	let weather_style = $state('glass');
@@ -183,6 +185,8 @@
 			weather_font_size: weather_overlay ? weather_font_size : undefined,
 			weather_unit: weather_overlay ? weather_unit : undefined,
 			weather_style: weather_overlay ? weather_style : undefined,
+			ha_overlay,
+			ha_overlay_position: ha_overlay ? ha_overlay_position : undefined,
 			heatmap_overlay,
 			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
 			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
@@ -501,6 +505,34 @@
 									°F
 								</label>
 							</div>
+						</div>
+					</div>
+				{/if}
+
+				<div class="flex items-center gap-3">
+					<input
+						id="gen-ha-overlay"
+						type="checkbox"
+						bind:checked={ha_overlay}
+						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+					/>
+					<label for="gen-ha-overlay" class="text-sm font-medium text-gray-300">Home Assistant sensor overlay</label>
+				</div>
+
+				{#if ha_overlay}
+					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
+						<div>
+							<label for="gen-ha-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
+							<select
+								id="gen-ha-pos"
+								bind:value={ha_overlay_position}
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+							>
+								<option value="top-left">Top Left</option>
+								<option value="top-right">Top Right</option>
+								<option value="bottom-left">Bottom Left</option>
+								<option value="bottom-right">Bottom Right</option>
+							</select>
 						</div>
 					</div>
 				{/if}
