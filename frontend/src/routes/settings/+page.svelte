@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { setUse24h } from '$lib/utils';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig, HomeAssistantConfig } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
+
+	let activeTab = $state<'general' | 'integrations'>('general');
 
 	let urls = $state<NotificationURL[]>([]);
 	let events = $state<NotificationEventsConfig>({
@@ -36,6 +38,12 @@
 	let timeFormatConfig = $state<TimeFormatConfig>({ use_24h: false });
 	let savingTimeFormat = $state(false);
 
+	let haConfig = $state<HomeAssistantConfig>({ base_url: '', connected: false });
+	let haToken = $state('');
+	let savingHA = $state(false);
+	let testingHA = $state(false);
+	let haTestResult = $state<string | null>(null);
+
 	let loading = $state(true);
 	let newLabel = $state('');
 	let newUrl = $state('');
@@ -45,8 +53,8 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig()])
-			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig(), api.getHAConfig()])
+			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg, haCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
@@ -54,6 +62,7 @@
 				captureGapConfig = gapCfg;
 				go2rtcConfig = g2rCfg;
 				timeFormatConfig = tfCfg;
+				haConfig = haCfg;
 			})
 			.finally(() => {
 				loading = false;
@@ -169,6 +178,35 @@
 		}
 	}
 
+	async function saveHA() {
+		savingHA = true;
+		haTestResult = null;
+		try {
+			const payload: { base_url: string; token?: string } = { base_url: haConfig.base_url };
+			if (haToken) payload.token = haToken;
+			haConfig = await api.updateHAConfig(payload);
+			haToken = '';
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save Home Assistant config');
+		} finally {
+			savingHA = false;
+		}
+	}
+
+	async function testHA() {
+		testingHA = true;
+		haTestResult = null;
+		try {
+			const payload: { base_url: string; token?: string } = { base_url: haConfig.base_url };
+			if (haToken) payload.token = haToken;
+			const result = await api.testHAConnection(payload);
+			haTestResult = result.success ? 'Connected successfully' : result.message || 'Connection failed';
+		} catch (err) {
+			haTestResult = err instanceof Error ? err.message : 'Test failed';
+		}
+		testingHA = false;
+	}
+
 	const eventLabels: Record<string, string> = {
 		capture_failure: 'Capture failure',
 		stream_unhealthy: 'Stream unhealthy',
@@ -186,285 +224,338 @@
 <div class="space-y-8">
 	<h1 class="text-3xl font-bold text-white">Settings</h1>
 
+	<div class="flex gap-2 border-b border-gray-800">
+		<button
+			onclick={() => (activeTab = 'general')}
+			class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'general' ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-gray-200'}"
+		>General</button>
+		<button
+			onclick={() => (activeTab = 'integrations')}
+			class="px-4 py-2 text-sm font-medium transition-colors {activeTab === 'integrations' ? 'border-b-2 border-blue-500 text-white' : 'text-gray-400 hover:text-gray-200'}"
+		>Integrations</button>
+	</div>
+
 	{#if loading}
 		<p class="text-gray-400">Loading settings...</p>
 	{:else}
-		<!-- Display -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">Display</h2>
-			<label class="mb-4 flex items-center gap-3">
-				<input
-					type="checkbox"
-					bind:checked={timeFormatConfig.use_24h}
-					class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
-				/>
-				<span class="text-sm text-gray-200">Use 24-hour time format</span>
-			</label>
-			<button
-				onclick={saveTimeFormat}
-				disabled={savingTimeFormat}
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-			>
-				{savingTimeFormat ? 'Saving...' : 'Save'}
-			</button>
-		</section>
-
-		<!-- Notification URLs -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">Notification URLs</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Add Apprise-compatible URLs to receive alerts via Discord, Telegram, email, ntfy, and 100+ services.
-			</p>
-
-			{#if urls.length > 0}
-				<div class="mb-4 space-y-2">
-					{#each urls as nu}
-						<div class="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/50 p-3">
-							<div class="flex items-center gap-3">
-								<button
-									onclick={() => toggleUrl(nu)}
-									class="rounded px-2 py-1 text-xs font-medium transition-colors {nu.enabled ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}"
-								>
-									{nu.enabled ? 'On' : 'Off'}
-								</button>
-								<span class="text-sm text-gray-200">{nu.label}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<button
-									onclick={() => testUrl(nu.id)}
-									disabled={testingId === nu.id}
-									class="rounded bg-blue-900 px-3 py-1 text-xs text-blue-300 transition-colors hover:bg-blue-800 disabled:opacity-50"
-								>
-									{testingId === nu.id ? 'Testing...' : 'Test'}
-								</button>
-								<button
-									onclick={() => removeUrl(nu.id)}
-									class="rounded bg-red-900 px-3 py-1 text-xs text-red-300 transition-colors hover:bg-red-800"
-								>
-									Delete
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{/if}
-
-			<div class="flex gap-2">
-				<input
-					bind:value={newLabel}
-					placeholder="Label (e.g. Discord)"
-					class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
-				/>
-				<input
-					bind:value={newUrl}
-					placeholder="Apprise URL (e.g. discord://...)"
-					class="flex-[2] rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
-				/>
-				<button
-					onclick={addUrl}
-					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-				>
-					Add
-				</button>
-			</div>
-		</section>
-
-		<!-- Event Toggles -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">Notification Events</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Choose which events trigger external notifications (Apprise). All events always appear in the in-app notification panel.
-			</p>
-
-			<div class="mb-4 grid grid-cols-2 gap-3">
-				{#each Object.entries(eventLabels) as [key, label]}
-					<label class="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-800/50 p-3">
-						<input
-							type="checkbox"
-							bind:checked={events[key as keyof NotificationEventsConfig]}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
-						/>
-						<span class="text-sm text-gray-200">{label}</span>
-					</label>
-				{/each}
-			</div>
-
-			<button
-				onclick={saveEvents}
-				disabled={savingEvents}
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-			>
-				{savingEvents ? 'Saving...' : 'Save Event Settings'}
-			</button>
-		</section>
-
-		<!-- Health Monitoring -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">Health Monitoring</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Configure how often streams are checked and when they're marked as unhealthy.
-			</p>
-
-			<div class="mb-4 grid grid-cols-3 gap-4">
-				<div>
-					<label for="check-interval" class="mb-1 block text-sm text-gray-400">Check interval (seconds)</label>
-					<input
-						id="check-interval"
-						type="number"
-						min="30"
-						bind:value={healthConfig.check_interval_seconds}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
-					/>
-				</div>
-				<div>
-					<label for="failure-threshold" class="mb-1 block text-sm text-gray-400">Failure threshold</label>
-					<input
-						id="failure-threshold"
-						type="number"
-						min="1"
-						bind:value={healthConfig.failure_threshold}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
-					/>
-				</div>
-				<div>
-					<label for="disk-threshold" class="mb-1 block text-sm text-gray-400">Low disk threshold (%)</label>
-					<input
-						id="disk-threshold"
-						type="number"
-						min="1"
-						max="50"
-						bind:value={healthConfig.low_disk_threshold_percent}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
-					/>
-				</div>
-			</div>
-
-			<button
-				onclick={saveHealth}
-				disabled={savingHealth}
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-			>
-				{savingHealth ? 'Saving...' : 'Save Health Settings'}
-			</button>
-		</section>
-		<!-- Location -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">Location</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Used for sunrise/sunset capture scheduling. Set your camera site's coordinates.
-			</p>
-
-			<div class="mb-4 grid grid-cols-2 gap-4">
-				<div>
-					<label for="latitude" class="mb-1 block text-sm text-gray-400">Latitude</label>
-					<input
-						id="latitude"
-						type="number"
-						step="0.0001"
-						min="-90"
-						max="90"
-						bind:value={locationConfig.latitude}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
-					/>
-				</div>
-				<div>
-					<label for="longitude" class="mb-1 block text-sm text-gray-400">Longitude</label>
-					<input
-						id="longitude"
-						type="number"
-						step="0.0001"
-						min="-180"
-						max="180"
-						bind:value={locationConfig.longitude}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
-					/>
-				</div>
-			</div>
-
-			<button
-				onclick={saveLocation}
-				disabled={savingLocation}
-				class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-			>
-				{savingLocation ? 'Saving...' : 'Save Location'}
-			</button>
-		</section>
-
-		<!-- go2rtc -->
-		<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-white">go2rtc</h2>
-			<p class="mb-4 text-sm text-gray-400">
-				Connect to an external go2rtc server for stream discovery, live MSE video, and HTTP snapshot capture.
-			</p>
-
-			<div class="mb-4">
-				<label for="go2rtc-url" class="mb-1 block text-sm text-gray-400">Server URL</label>
-				<input
-					id="go2rtc-url"
-					type="text"
-					bind:value={go2rtcConfig.url}
-					placeholder="http://192.168.1.100:1984"
-					class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
-				/>
-			</div>
-
-			{#if go2rtcTestResult}
-				<p class="mb-3 text-sm {go2rtcTestResult.startsWith('Connected') ? 'text-green-400' : 'text-red-400'}">{go2rtcTestResult}</p>
-			{/if}
-
-			<div class="flex gap-2">
-				<button
-					onclick={testGo2rtc}
-					disabled={testingGo2rtc || !go2rtcConfig.url}
-					class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50"
-				>
-					{testingGo2rtc ? 'Testing...' : 'Test Connection'}
-				</button>
-				<button
-					onclick={saveGo2rtc}
-					disabled={savingGo2rtc}
-					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-				>
-					{savingGo2rtc ? 'Saving...' : 'Save'}
-				</button>
-			</div>
-		</section>
-
-		<!-- Jobs -->
-		<section class="space-y-6">
-			<h2 class="text-xl font-semibold text-white">Jobs</h2>
-
-			<!-- Capture Gap Alerting -->
-			<div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-				<h3 class="mb-2 text-lg font-medium text-white">Capture Gap Alerting</h3>
-				<p class="mb-4 text-sm text-gray-400">
-					Alert when no frame is captured within 3× a profile's configured interval. Checks run every 60 minutes.
-				</p>
+		{#if activeTab === 'general'}
+			<!-- Display -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Display</h2>
 				<label class="mb-4 flex items-center gap-3">
 					<input
 						type="checkbox"
-						bind:checked={captureGapConfig.enabled}
+						bind:checked={timeFormatConfig.use_24h}
 						class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
 					/>
-					<span class="text-sm text-gray-200">Enable capture gap alerting</span>
+					<span class="text-sm text-gray-200">Use 24-hour time format</span>
 				</label>
 				<button
-					onclick={saveCaptureGap}
-					disabled={savingCaptureGap}
+					onclick={saveTimeFormat}
+					disabled={savingTimeFormat}
 					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
 				>
-					{savingCaptureGap ? 'Saving...' : 'Save'}
+					{savingTimeFormat ? 'Saving...' : 'Save'}
 				</button>
-			</div>
+			</section>
 
-			<!-- Data Cleanup -->
-			<div>
-				<h3 class="mb-2 text-lg font-medium text-white">Data Cleanup</h3>
+			<!-- Notification URLs -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Notification URLs</h2>
 				<p class="mb-4 text-sm text-gray-400">
-					Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
+					Add Apprise-compatible URLs to receive alerts via Discord, Telegram, email, ntfy, and 100+ services.
 				</p>
-				<CleanupScheduleManager />
-			</div>
-		</section>
+
+				{#if urls.length > 0}
+					<div class="mb-4 space-y-2">
+						{#each urls as nu}
+							<div class="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/50 p-3">
+								<div class="flex items-center gap-3">
+									<button
+										onclick={() => toggleUrl(nu)}
+										class="rounded px-2 py-1 text-xs font-medium transition-colors {nu.enabled ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}"
+									>
+										{nu.enabled ? 'On' : 'Off'}
+									</button>
+									<span class="text-sm text-gray-200">{nu.label}</span>
+								</div>
+								<div class="flex items-center gap-2">
+									<button
+										onclick={() => testUrl(nu.id)}
+										disabled={testingId === nu.id}
+										class="rounded bg-blue-900 px-3 py-1 text-xs text-blue-300 transition-colors hover:bg-blue-800 disabled:opacity-50"
+									>
+										{testingId === nu.id ? 'Testing...' : 'Test'}
+									</button>
+									<button
+										onclick={() => removeUrl(nu.id)}
+										class="rounded bg-red-900 px-3 py-1 text-xs text-red-300 transition-colors hover:bg-red-800"
+									>
+										Delete
+									</button>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<div class="flex gap-2">
+					<input
+						bind:value={newLabel}
+						placeholder="Label (e.g. Discord)"
+						class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+					/>
+					<input
+						bind:value={newUrl}
+						placeholder="Apprise URL (e.g. discord://...)"
+						class="flex-[2] rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+					/>
+					<button
+						onclick={addUrl}
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+					>
+						Add
+					</button>
+				</div>
+			</section>
+
+			<!-- Event Toggles -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Notification Events</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					Choose which events trigger external notifications (Apprise). All events always appear in the in-app notification panel.
+				</p>
+
+				<div class="mb-4 grid grid-cols-2 gap-3">
+					{#each Object.entries(eventLabels) as [key, label]}
+						<label class="flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-800/50 p-3">
+							<input
+								type="checkbox"
+								bind:checked={events[key as keyof NotificationEventsConfig]}
+								class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
+							/>
+							<span class="text-sm text-gray-200">{label}</span>
+						</label>
+					{/each}
+				</div>
+
+				<button
+					onclick={saveEvents}
+					disabled={savingEvents}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{savingEvents ? 'Saving...' : 'Save Event Settings'}
+				</button>
+			</section>
+
+			<!-- Health Monitoring -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Health Monitoring</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					Configure how often streams are checked and when they're marked as unhealthy.
+				</p>
+
+				<div class="mb-4 grid grid-cols-3 gap-4">
+					<div>
+						<label for="check-interval" class="mb-1 block text-sm text-gray-400">Check interval (seconds)</label>
+						<input
+							id="check-interval"
+							type="number"
+							min="30"
+							bind:value={healthConfig.check_interval_seconds}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="failure-threshold" class="mb-1 block text-sm text-gray-400">Failure threshold</label>
+						<input
+							id="failure-threshold"
+							type="number"
+							min="1"
+							bind:value={healthConfig.failure_threshold}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="disk-threshold" class="mb-1 block text-sm text-gray-400">Low disk threshold (%)</label>
+						<input
+							id="disk-threshold"
+							type="number"
+							min="1"
+							max="50"
+							bind:value={healthConfig.low_disk_threshold_percent}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<button
+					onclick={saveHealth}
+					disabled={savingHealth}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{savingHealth ? 'Saving...' : 'Save Health Settings'}
+				</button>
+			</section>
+
+			<!-- Location -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">Location</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					Used for sunrise/sunset capture scheduling. Set your camera site's coordinates.
+				</p>
+
+				<div class="mb-4 grid grid-cols-2 gap-4">
+					<div>
+						<label for="latitude" class="mb-1 block text-sm text-gray-400">Latitude</label>
+						<input
+							id="latitude"
+							type="number"
+							step="0.0001"
+							min="-90"
+							max="90"
+							bind:value={locationConfig.latitude}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+						/>
+					</div>
+					<div>
+						<label for="longitude" class="mb-1 block text-sm text-gray-400">Longitude</label>
+						<input
+							id="longitude"
+							type="number"
+							step="0.0001"
+							min="-180"
+							max="180"
+							bind:value={locationConfig.longitude}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none"
+						/>
+					</div>
+				</div>
+
+				<button
+					onclick={saveLocation}
+					disabled={savingLocation}
+					class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+				>
+					{savingLocation ? 'Saving...' : 'Save Location'}
+				</button>
+			</section>
+
+			<!-- Jobs -->
+			<section class="space-y-6">
+				<h2 class="text-xl font-semibold text-white">Jobs</h2>
+
+				<!-- Capture Gap Alerting -->
+				<div class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+					<h3 class="mb-2 text-lg font-medium text-white">Capture Gap Alerting</h3>
+					<p class="mb-4 text-sm text-gray-400">
+						Alert when no frame is captured within 3× a profile's configured interval. Checks run every 60 minutes.
+					</p>
+					<label class="mb-4 flex items-center gap-3">
+						<input
+							type="checkbox"
+							bind:checked={captureGapConfig.enabled}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600"
+						/>
+						<span class="text-sm text-gray-200">Enable capture gap alerting</span>
+					</label>
+					<button
+						onclick={saveCaptureGap}
+						disabled={savingCaptureGap}
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+					>
+						{savingCaptureGap ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+
+				<!-- Data Cleanup -->
+				<div>
+					<h3 class="mb-2 text-lg font-medium text-white">Data Cleanup</h3>
+					<p class="mb-4 text-sm text-gray-400">
+						Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
+					</p>
+					<CleanupScheduleManager />
+				</div>
+			</section>
+		{/if}
+
+		{#if activeTab === 'integrations'}
+			<!-- Home Assistant -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<div class="mb-4 flex items-center gap-3">
+					<h2 class="text-xl font-semibold text-white">Home Assistant</h2>
+					<span class="rounded-full px-2 py-0.5 text-xs {haConfig.connected ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}">
+						{haConfig.connected ? 'Connected' : 'Not configured'}
+					</span>
+				</div>
+				<p class="mb-4 text-sm text-gray-400">Read sensor entities to overlay on timelapses. Create a long-lived access token in your HA profile.</p>
+
+				<div class="mb-4">
+					<label for="ha-url" class="mb-1 block text-sm text-gray-400">Base URL</label>
+					<input id="ha-url" type="text" bind:value={haConfig.base_url} placeholder="http://homeassistant.local:8123"
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
+				</div>
+				<div class="mb-4">
+					<label for="ha-token" class="mb-1 block text-sm text-gray-400">Long-lived access token</label>
+					<input id="ha-token" type="password" bind:value={haToken} placeholder={haConfig.connected ? '•••••••• (leave blank to keep)' : 'Paste token'}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
+				</div>
+
+				{#if haTestResult}
+					<p class="mb-3 text-sm {haTestResult.startsWith('Connected') ? 'text-green-400' : 'text-red-400'}">{haTestResult}</p>
+				{/if}
+
+				<div class="flex gap-2">
+					<button onclick={testHA} disabled={testingHA || !haConfig.base_url}
+						class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50">
+						{testingHA ? 'Testing...' : 'Test Connection'}
+					</button>
+					<button onclick={saveHA} disabled={savingHA}
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
+						{savingHA ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</section>
+
+			<!-- go2rtc -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<h2 class="mb-4 text-xl font-semibold text-white">go2rtc</h2>
+				<p class="mb-4 text-sm text-gray-400">
+					Connect to an external go2rtc server for stream discovery, live MSE video, and HTTP snapshot capture.
+				</p>
+
+				<div class="mb-4">
+					<label for="go2rtc-url" class="mb-1 block text-sm text-gray-400">Server URL</label>
+					<input
+						id="go2rtc-url"
+						type="text"
+						bind:value={go2rtcConfig.url}
+						placeholder="http://192.168.1.100:1984"
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none"
+					/>
+				</div>
+
+				{#if go2rtcTestResult}
+					<p class="mb-3 text-sm {go2rtcTestResult.startsWith('Connected') ? 'text-green-400' : 'text-red-400'}">{go2rtcTestResult}</p>
+				{/if}
+
+				<div class="flex gap-2">
+					<button
+						onclick={testGo2rtc}
+						disabled={testingGo2rtc || !go2rtcConfig.url}
+						class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50"
+					>
+						{testingGo2rtc ? 'Testing...' : 'Test Connection'}
+					</button>
+					<button
+						onclick={saveGo2rtc}
+						disabled={savingGo2rtc}
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
+					>
+						{savingGo2rtc ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</section>
+		{/if}
 	{/if}
 </div>
