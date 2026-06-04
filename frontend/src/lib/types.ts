@@ -103,6 +103,7 @@ export interface ProfileCreate {
 	quality?: number;
 	hdr_enabled?: boolean;
 	weather_enabled?: boolean;
+	ha_sensors?: string | null;
 	capture_mode?: string;
 	active_start_time?: string | null;
 	active_end_time?: string | null;
@@ -118,6 +119,7 @@ export interface ProfileUpdate {
 	quality?: number;
 	hdr_enabled?: boolean;
 	weather_enabled?: boolean;
+	ha_sensors?: string | null;
 	enabled?: boolean;
 	capture_mode?: string;
 	active_start_time?: string | null;

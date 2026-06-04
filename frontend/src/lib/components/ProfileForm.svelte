@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Profile, ProfileCreate, ProfileUpdate } from '$lib/types';
+	import type { Profile, ProfileCreate, ProfileUpdate, HAEntity, HASensor } from '$lib/types';
+	import { api } from '$lib/api';
 
 	interface Props {
 		profile?: Profile | null;
@@ -54,6 +55,35 @@ let sun_events = $state<string[]>(
 	profile?.sun_events ? profile.sun_events.split(',').filter(Boolean) : ['daylight']
 );
 
+	const ICON_KEYS = ['', 'thermometer', 'humidity', 'water', 'wind', 'power', 'light', 'battery', 'gauge'];
+
+	let haSensors = $state<HASensor[]>(
+		(() => { try { return profile?.ha_sensors ? JSON.parse(profile.ha_sensors) : []; } catch { return []; } })()
+	);
+	let haEntities = $state<HAEntity[]>([]);
+	let haEntitiesLoaded = $state(false);
+	let pickEntityId = $state('');
+
+	async function loadHAEntities() {
+		try {
+			haEntities = await api.getHAEntities();
+		} catch {
+			haEntities = [];
+		}
+		haEntitiesLoaded = true;
+	}
+
+	function addHASensor() {
+		const e = haEntities.find((x) => x.entity_id === pickEntityId);
+		if (!e || haSensors.some((s) => s.entity_id === e.entity_id)) return;
+		haSensors = [...haSensors, { entity_id: e.entity_id, label: e.friendly_name, unit: e.unit, icon: '' }];
+		pickEntityId = '';
+	}
+
+	function removeHASensor(id: string) {
+		haSensors = haSensors.filter((s) => s.entity_id !== id);
+	}
+
 	function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		const data: ProfileCreate | ProfileUpdate = {
@@ -68,7 +98,8 @@ let sun_events = $state<string[]>(
 			active_start_time: capture_mode === 'manual' ? active_start_time : null,
 			active_end_time: capture_mode === 'manual' ? active_end_time : null,
 			sun_offset_minutes: capture_mode === 'sun' ? sun_offset_minutes : 0,
-		sun_events: capture_mode === 'sun' ? sun_events.join(',') : ''
+		sun_events: capture_mode === 'sun' ? sun_events.join(',') : '',
+		ha_sensors: haSensors.length ? JSON.stringify(haSensors) : null
 		};
 		onsubmit(data);
 	}
@@ -166,6 +197,45 @@ let sun_events = $state<string[]>(
 			class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
 		/>
 		<label for="weather" class="text-sm font-medium text-gray-300">Collect weather data</label>
+	</div>
+
+	<!-- Home Assistant Sensors -->
+	<div class="space-y-2">
+		<div class="flex items-center justify-between">
+			<label class="text-sm font-medium text-gray-200">Home Assistant Sensors</label>
+			{#if !haEntitiesLoaded}
+				<button type="button" onclick={loadHAEntities} class="text-xs text-blue-400 hover:underline">Load entities</button>
+			{/if}
+		</div>
+
+		{#if haEntitiesLoaded}
+			<div class="flex gap-2">
+				<select bind:value={pickEntityId} class="flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200">
+					<option value="">Select a sensor…</option>
+					{#each haEntities as e}
+						<option value={e.entity_id}>{e.friendly_name} ({e.entity_id})</option>
+					{/each}
+				</select>
+				<button type="button" onclick={addHASensor} disabled={!pickEntityId} class="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50">Add</button>
+			</div>
+			{#if haEntities.length === 0}
+				<p class="text-xs text-gray-500">No sensors found — check the Home Assistant connection in Settings → Integrations.</p>
+			{/if}
+		{/if}
+
+		{#each haSensors as s (s.entity_id)}
+			<div class="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-800/50 p-2">
+				<input bind:value={s.label} placeholder="Label" class="w-32 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-200" />
+				<input bind:value={s.unit} placeholder="Unit" class="w-16 rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-200" />
+				<select bind:value={s.icon} class="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-200">
+					{#each ICON_KEYS as k}
+						<option value={k}>{k || 'no icon'}</option>
+					{/each}
+				</select>
+				<span class="flex-1 truncate text-xs text-gray-500">{s.entity_id}</span>
+				<button type="button" onclick={() => removeHASensor(s.entity_id)} class="rounded bg-red-900 px-2 py-1 text-xs text-red-300">Remove</button>
+			</div>
+		{/each}
 	</div>
 
 	<!-- Capture Mode -->
