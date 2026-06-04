@@ -2,7 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture, TestResult } from '$lib/types';
+	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture, TestResult, HASensor } from '$lib/types';
 	import { formatInterval, formatDateTime, timeAgo, healthDotClass } from '$lib/utils';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
@@ -23,6 +23,11 @@
 	let capturesProfileId = $state<number | null>(null);
 	let allCapturesLoaded = $state(false);
 	let loadingMore = $state(false);
+
+	function haSensorsOf(profile: Profile): HASensor[] {
+		try { return profile.ha_sensors ? JSON.parse(profile.ha_sensors) : []; }
+		catch { return []; }
+	}
 
 	async function loadMoreCaptures() {
 		if (loadingMore || allCapturesLoaded || capturesProfileId == null) return;
@@ -565,6 +570,9 @@
 								{/if}
 								{#if profile.weather_enabled}
 									<span class="rounded bg-cyan-900 px-1.5 py-0.5 text-xs font-medium text-cyan-300">Weather</span>
+								{/if}
+								{#if haSensorsOf(profile).length}
+									<span class="rounded bg-blue-900 px-1.5 py-0.5 text-xs font-medium text-blue-300" title={haSensorsOf(profile).map((s) => s.label).join(', ')}>HA</span>
 								{/if}
 								{#if profile.auto_disabled}
 									<span class="rounded bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-300" title="Automatically disabled due to stream health issues">Auto</span>
