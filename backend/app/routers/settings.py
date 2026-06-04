@@ -6,13 +6,14 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.config import encrypt
+from app.config import decrypt, encrypt
 from app.database import get_db
 from app.models import NotificationURL, Setting
 from app.schemas import (
     CaptureGapUpdate,
     Go2rtcConfig,
     HealthConfig,
+    HomeAssistantConfig,
     LocationConfig,
     NotificationEventsConfig,
     NotificationURLCreate,
@@ -245,3 +246,53 @@ def update_time_format_config(data: TimeFormatConfig, db: Session = Depends(get_
         db.add(Setting(key="time_format_use_24h", value=value))
     db.commit()
     return data
+
+
+# --- Home Assistant ---
+
+
+def _upsert_setting(db: Session, key: str, value: str) -> None:
+    row = db.query(Setting).filter(Setting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(Setting(key=key, value=value))
+
+
+@router.get("/homeassistant")
+def get_ha_settings(db: Session = Depends(get_db)):
+    url_row = db.query(Setting).filter(Setting.key == "ha_base_url").first()
+    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
+    base_url = url_row.value if url_row else ""
+    connected = bool(base_url and tok_row and tok_row.value)
+    return {"base_url": base_url, "connected": connected}
+
+
+@router.put("/homeassistant")
+def update_ha_settings(data: HomeAssistantConfig, db: Session = Depends(get_db)):
+    url = data.base_url.rstrip("/")
+    _upsert_setting(db, "ha_base_url", url)
+    if data.token:  # only overwrite token when a new one is supplied
+        _upsert_setting(db, "ha_token", encrypt(data.token))
+    db.commit()
+    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
+    return {"base_url": url, "connected": bool(tok_row and tok_row.value)}
+
+
+@router.post("/homeassistant/test")
+async def test_ha_connection(data: HomeAssistantConfig, db: Session = Depends(get_db)):
+    from app.services.homeassistant import test_connection
+    token = data.token
+    if not token:  # fall back to the stored token
+        tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
+        token = decrypt(tok_row.value) if tok_row and tok_row.value else ""
+    return await test_connection(data.base_url.rstrip("/"), token)
+
+
+@router.get("/homeassistant/entities")
+async def get_ha_entities(db: Session = Depends(get_db)):
+    from app.services.homeassistant import get_ha_config, list_sensor_entities
+    cfg = get_ha_config(db)
+    if not cfg:
+        raise HTTPException(400, "Home Assistant not configured")
+    return await list_sensor_entities(*cfg)

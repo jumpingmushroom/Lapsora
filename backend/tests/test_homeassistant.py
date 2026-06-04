@@ -64,3 +64,24 @@ async def test_read_sensors_returns_value_and_unit(monkeypatch):
     monkeypatch.setattr(ha, "get_states", fake_get_states)
     out = await ha.read_sensors("http://x", "tok", ["sensor.temp", "sensor.missing"])
     assert out == {"sensor.temp": {"value": "21.4", "unit": "°C"}}
+
+
+def test_ha_settings_roundtrip_masks_token(client):
+    # Save URL + token
+    resp = client.put("/api/settings/homeassistant",
+                      json={"base_url": "http://ha.local:8123/", "token": "secret-token"})
+    assert resp.status_code == 200, resp.text
+    # GET never returns the token, reports connected
+    got = client.get("/api/settings/homeassistant").json()
+    assert got["base_url"] == "http://ha.local:8123"  # trailing slash stripped
+    assert got["connected"] is True
+    assert "token" not in got
+
+
+def test_ha_settings_update_without_token_keeps_existing(client):
+    client.put("/api/settings/homeassistant", json={"base_url": "http://a", "token": "tok1"})
+    # Update URL only (no token) — should stay connected
+    client.put("/api/settings/homeassistant", json={"base_url": "http://b"})
+    got = client.get("/api/settings/homeassistant").json()
+    assert got["base_url"] == "http://b"
+    assert got["connected"] is True

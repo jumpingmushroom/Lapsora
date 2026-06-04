@@ -43,6 +43,11 @@ class Go2rtcConfig(BaseModel):
     url: str
 
 
+class HomeAssistantConfig(BaseModel):
+    base_url: str
+    token: str | None = None  # write-only; omitted on read
+
+
 class Go2rtcStreamInfo(BaseModel):
     name: str
     producers: list
