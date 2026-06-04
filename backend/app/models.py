@@ -98,6 +98,7 @@ class Profile(Base):
     sun_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     sun_events: Mapped[str] = mapped_column(Text, default="", server_default="")
     weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    ha_sensors: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
     )
@@ -142,6 +143,8 @@ class TimelapseSchedule(Base):
     weather_font_size: Mapped[int] = mapped_column(Integer, default=24)
     weather_unit: Mapped[str] = mapped_column(Text, default="C")
     weather_style: Mapped[str] = mapped_column(Text, default="glass")
+    ha_overlay: Mapped[bool] = mapped_column(Boolean, default=False)
+    ha_overlay_position: Mapped[str] = mapped_column(Text, default="top-left")
     heatmap_overlay: Mapped[bool] = mapped_column(Boolean, default=False)
     heatmap_mode: Mapped[str] = mapped_column(Text, default="cumulative")
     heatmap_colormap: Mapped[str] = mapped_column(Text, default="jet")
@@ -195,6 +198,7 @@ class Capture(Base):
     weather_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     weather_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     weather_is_day: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    sensor_data: Mapped[str | None] = mapped_column(Text, nullable=True)
     captured_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     profile: Mapped["Profile"] = relationship(back_populates="captures")
