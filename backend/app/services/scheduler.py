@@ -286,3 +286,23 @@ def add_health_check_job(interval_seconds: int = 300) -> None:
     logger.info("Health check job scheduled every %ds", interval_seconds)
 
 
+def add_prusalink_poll_job(interval_seconds: int = 10) -> None:
+    """Add periodic PrusaLink status-poll job (drives print-triggered capture)."""
+    from app.services.prusalink import poll_printer
+
+    scheduler.add_job(
+        poll_printer, "interval", seconds=interval_seconds,
+        id="prusalink_poll", replace_existing=True,
+    )
+    logger.info("PrusaLink poll job scheduled every %ds", interval_seconds)
+
+
+def remove_prusalink_poll_job() -> None:
+    """Remove the PrusaLink poll job. Silently ignores a missing job."""
+    try:
+        scheduler.remove_job("prusalink_poll")
+        logger.info("Removed PrusaLink poll job")
+    except Exception:
+        logger.debug("PrusaLink poll job not found, nothing to remove")
+
+

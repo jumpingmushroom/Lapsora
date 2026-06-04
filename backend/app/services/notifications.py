@@ -29,6 +29,9 @@ DEFAULT_EVENT_TOGGLES = {
     "retention_summary": False,
     "low_disk_space": True,
     "capture_gap": True,
+    "print_started": False,
+    "print_finished": True,
+    "print_failed": True,
 }
 
 

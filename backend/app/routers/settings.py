@@ -19,6 +19,8 @@ from app.schemas import (
     NotificationURLCreate,
     NotificationURLRead,
     NotificationURLUpdate,
+    PrusaLinkConfig,
+    PrusaLinkRead,
     TimeFormatConfig,
 )
 
@@ -296,3 +298,63 @@ async def get_ha_entities(db: Session = Depends(get_db)):
     if not cfg:
         raise HTTPException(400, "Home Assistant not configured")
     return await list_sensor_entities(*cfg)
+
+
+# --- PrusaLink (3D-print timelapse trigger) ---
+
+_PRUSALINK_BLOB_FIELDS = (
+    "profile_id", "poll_interval_seconds", "generate_on_finish",
+    "generate_on_cancel", "fps", "format", "enabled",
+)
+
+
+def _read_prusalink(db: Session) -> dict:
+    base = db.query(Setting).filter(Setting.key == "prusalink_base_url").first()
+    user = db.query(Setting).filter(Setting.key == "prusalink_username").first()
+    pw = db.query(Setting).filter(Setting.key == "prusalink_password").first()
+    blob_row = db.query(Setting).filter(Setting.key == "prusalink_config").first()
+    cfg = {f: getattr(PrusaLinkConfig.model_fields[f], "default") for f in _PRUSALINK_BLOB_FIELDS}
+    if blob_row:
+        try:
+            cfg.update({k: v for k, v in json.loads(blob_row.value).items() if k in _PRUSALINK_BLOB_FIELDS})
+        except (json.JSONDecodeError, TypeError):
+            pass
+    cfg["base_url"] = base.value if base else ""
+    cfg["username"] = user.value if user else "maker"
+    cfg["connected"] = bool((base and base.value) and (pw and pw.value))
+    return cfg
+
+
+@router.get("/prusalink", response_model=PrusaLinkRead)
+def get_prusalink_settings(db: Session = Depends(get_db)):
+    return _read_prusalink(db)
+
+
+@router.put("/prusalink", response_model=PrusaLinkRead)
+def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends(get_db)):
+    url = data.base_url.rstrip("/")
+    _upsert_setting(db, "prusalink_base_url", url)
+    _upsert_setting(db, "prusalink_username", data.username or "maker")
+    if data.password:  # only overwrite when a new one is supplied
+        _upsert_setting(db, "prusalink_password", encrypt(data.password))
+    blob = {f: getattr(data, f) for f in _PRUSALINK_BLOB_FIELDS}
+    _upsert_setting(db, "prusalink_config", json.dumps(blob))
+    db.commit()
+
+    from app.services.scheduler import add_prusalink_poll_job, remove_prusalink_poll_job
+    if data.enabled and url and data.profile_id:
+        add_prusalink_poll_job(data.poll_interval_seconds)
+    else:
+        remove_prusalink_poll_job()
+
+    return _read_prusalink(db)
+
+
+@router.post("/prusalink/test")
+async def test_prusalink_connection(data: PrusaLinkConfig, db: Session = Depends(get_db)):
+    from app.services.prusalink import test_connection
+    password = data.password
+    if not password:  # fall back to stored password
+        pw_row = db.query(Setting).filter(Setting.key == "prusalink_password").first()
+        password = decrypt(pw_row.value) if pw_row and pw_row.value else ""
+    return await test_connection(data.base_url.rstrip("/"), data.username or "maker", password)

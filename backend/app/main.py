@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
     from app.services.scheduler import (
         init_scheduler, restore_jobs,
         add_health_check_job, add_capture_gap_job, add_storage_watchdog_job,
+        add_prusalink_poll_job,
         scheduler as _scheduler,
     )
     from app.services.events import on_event
@@ -52,6 +53,9 @@ async def lifespan(app: FastAPI):
         # Capture gap alerting
         gap_row = db.query(Setting).filter(Setting.key == "capture_gap_enabled").first()
         gap_enabled = not gap_row or gap_row.value != "false"
+        # PrusaLink print-trigger polling
+        from app.services.prusalink import get_config as get_prusalink_config
+        prusalink_cfg = get_prusalink_config(db)
     finally:
         db.rollback()
         db.close()
@@ -59,6 +63,8 @@ async def lifespan(app: FastAPI):
     if gap_enabled:
         add_capture_gap_job()
     add_storage_watchdog_job()
+    if prusalink_cfg and prusalink_cfg.get("enabled", True) and prusalink_cfg.get("profile_id"):
+        add_prusalink_poll_job(prusalink_cfg.get("poll_interval_seconds", 10))
 
     from app.services.generation_queue import start_worker
     start_worker()

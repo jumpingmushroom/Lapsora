@@ -48,6 +48,32 @@ class HomeAssistantConfig(BaseModel):
     token: str | None = None  # write-only; omitted on read
 
 
+class PrusaLinkConfig(BaseModel):
+    base_url: str
+    username: str = "maker"
+    password: str | None = None  # write-only; omitted on read
+    profile_id: int | None = None
+    poll_interval_seconds: int = Field(default=10, ge=5)
+    generate_on_finish: bool = True
+    generate_on_cancel: bool = False
+    fps: int = 24
+    format: str = "mp4"
+    enabled: bool = True
+
+
+class PrusaLinkRead(BaseModel):
+    base_url: str
+    username: str
+    profile_id: int | None
+    poll_interval_seconds: int
+    generate_on_finish: bool
+    generate_on_cancel: bool
+    fps: int
+    format: str
+    enabled: bool
+    connected: bool
+
+
 class Go2rtcStreamInfo(BaseModel):
     name: str
     producers: list
@@ -420,6 +446,9 @@ class NotificationEventsConfig(BaseModel):
     retention_summary: bool = False
     low_disk_space: bool = True
     capture_gap: bool = True
+    print_started: bool = False
+    print_finished: bool = True
+    print_failed: bool = True
 
 
 # --- Statistics ---

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { setUse24h } from '$lib/utils';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig, HomeAssistantConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig, HomeAssistantConfig, PrusaLinkConfig } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let activeTab = $state<'general' | 'notifications' | 'maintenance' | 'integrations'>('general');
@@ -15,7 +15,10 @@
 		timelapse_failure: true,
 		retention_summary: false,
 		low_disk_space: true,
-		capture_gap: true
+		capture_gap: true,
+		print_started: false,
+		print_finished: true,
+		print_failed: true
 	});
 	let healthConfig = $state<HealthConfig>({
 		check_interval_seconds: 300,
@@ -44,6 +47,17 @@
 	let testingHA = $state(false);
 	let haTestResult = $state<string | null>(null);
 
+	let prusaConfig = $state<PrusaLinkConfig>({
+		base_url: '', username: 'maker', profile_id: null, poll_interval_seconds: 10,
+		generate_on_finish: true, generate_on_cancel: false, fps: 24, format: 'mp4',
+		enabled: true, connected: false
+	});
+	let prusaPassword = $state('');
+	let prusaProfiles = $state<{ id: number; label: string }[]>([]);
+	let savingPrusa = $state(false);
+	let testingPrusa = $state(false);
+	let prusaTestResult = $state<string | null>(null);
+
 	let loading = $state(true);
 	let newLabel = $state('');
 	let newUrl = $state('');
@@ -53,8 +67,8 @@
 	let savingLocation = $state(false);
 
 	$effect(() => {
-		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig(), api.getHAConfig()])
-			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg, haCfg]) => {
+		Promise.all([api.getNotificationSettings(), api.getHealthConfig(), api.getLocationConfig(), api.getCaptureGapConfig(), api.getGo2rtcConfig(), api.getTimeFormatConfig(), api.getHAConfig(), api.getPrusaLinkConfig()])
+			.then(([notifSettings, hc, loc, gapCfg, g2rCfg, tfCfg, haCfg, prusaCfg]) => {
 				urls = notifSettings.urls;
 				events = notifSettings.events;
 				healthConfig = hc;
@@ -63,11 +77,23 @@
 				go2rtcConfig = g2rCfg;
 				timeFormatConfig = tfCfg;
 				haConfig = haCfg;
+				prusaConfig = prusaCfg;
 			})
 			.finally(() => {
 				loading = false;
 			});
+		loadPrusaProfiles();
 	});
+
+	async function loadPrusaProfiles() {
+		try {
+			const streams = await api.getStreams();
+			const lists = await Promise.all(streams.map((s) => api.getStreamProfiles(s.id)));
+			prusaProfiles = streams.flatMap((s, i) => lists[i].map((p) => ({ id: p.id, label: `${s.name} / ${p.name}` })));
+		} catch {
+			prusaProfiles = [];
+		}
+	}
 
 	async function addUrl() {
 		if (!newLabel.trim() || !newUrl.trim()) return;
@@ -207,6 +233,38 @@
 		testingHA = false;
 	}
 
+	function prusaPayload(): PrusaLinkConfig {
+		const payload = { ...prusaConfig };
+		if (prusaPassword) payload.password = prusaPassword;
+		else delete payload.password;
+		return payload;
+	}
+
+	async function savePrusa() {
+		savingPrusa = true;
+		prusaTestResult = null;
+		try {
+			prusaConfig = await api.updatePrusaLinkConfig(prusaPayload());
+			prusaPassword = '';
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to save PrusaLink config');
+		} finally {
+			savingPrusa = false;
+		}
+	}
+
+	async function testPrusa() {
+		testingPrusa = true;
+		prusaTestResult = null;
+		try {
+			const result = await api.testPrusaLinkConnection(prusaPayload());
+			prusaTestResult = result.success ? 'Connected successfully' : result.message || 'Connection failed';
+		} catch (err) {
+			prusaTestResult = err instanceof Error ? err.message : 'Test failed';
+		}
+		testingPrusa = false;
+	}
+
 	const eventLabels: Record<string, string> = {
 		capture_failure: 'Capture failure',
 		stream_unhealthy: 'Stream unhealthy',
@@ -215,7 +273,10 @@
 		timelapse_failure: 'Timelapse failure',
 		retention_summary: 'Retention summary',
 		low_disk_space: 'Low disk space',
-		capture_gap: 'Capture gap'
+		capture_gap: 'Capture gap',
+		print_started: 'Print started',
+		print_finished: 'Print finished',
+		print_failed: 'Print stopped/failed'
 	};
 </script>
 
@@ -565,6 +626,106 @@
 						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
 					>
 						{savingGo2rtc ? 'Saving...' : 'Save'}
+					</button>
+				</div>
+			</section>
+
+			<!-- PrusaLink (3D-print timelapse trigger) -->
+			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
+				<div class="mb-4 flex items-center gap-3">
+					<h2 class="text-xl font-semibold text-white">3D Printing (PrusaLink)</h2>
+					<span class="rounded-full px-2 py-0.5 text-xs {prusaConfig.connected ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}">
+						{prusaConfig.connected ? 'Configured' : 'Not configured'}
+					</span>
+				</div>
+				<p class="mb-4 text-sm text-gray-400">
+					Poll a Prusa printer's local PrusaLink API and capture a timelapse for the duration of each print. Point a capture profile's camera at the printer, then select it below. Create a password/API access in the printer's PrusaLink settings.
+				</p>
+
+				<div class="mb-4 grid grid-cols-2 gap-4">
+					<div>
+						<label for="prusa-url" class="mb-1 block text-sm text-gray-400">Base URL</label>
+						<input id="prusa-url" type="text" bind:value={prusaConfig.base_url} placeholder="http://prusa.local"
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
+					</div>
+					<div>
+						<label for="prusa-user" class="mb-1 block text-sm text-gray-400">Username</label>
+						<input id="prusa-user" type="text" bind:value={prusaConfig.username} placeholder="maker"
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
+					</div>
+				</div>
+
+				<div class="mb-4">
+					<label for="prusa-pass" class="mb-1 block text-sm text-gray-400">Password</label>
+					<input id="prusa-pass" type="password" bind:value={prusaPassword} placeholder={prusaConfig.connected ? '•••••••• (leave blank to keep)' : 'PrusaLink password'}
+						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
+				</div>
+
+				<div class="mb-4 grid grid-cols-2 gap-4">
+					<div>
+						<label for="prusa-profile" class="mb-1 block text-sm text-gray-400">Capture profile</label>
+						<select id="prusa-profile" bind:value={prusaConfig.profile_id}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none">
+							<option value={null}>— Select a profile —</option>
+							{#each prusaProfiles as p}
+								<option value={p.id}>{p.label}</option>
+							{/each}
+						</select>
+					</div>
+					<div>
+						<label for="prusa-poll" class="mb-1 block text-sm text-gray-400">Poll interval (seconds)</label>
+						<input id="prusa-poll" type="number" min="5" bind:value={prusaConfig.poll_interval_seconds}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
+					</div>
+				</div>
+
+				<div class="mb-4 grid grid-cols-2 gap-4">
+					<div>
+						<label for="prusa-fps" class="mb-1 block text-sm text-gray-400">Timelapse FPS</label>
+						<input id="prusa-fps" type="number" min="1" bind:value={prusaConfig.fps}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
+					</div>
+					<div>
+						<label for="prusa-format" class="mb-1 block text-sm text-gray-400">Format</label>
+						<select id="prusa-format" bind:value={prusaConfig.format}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none">
+							<option value="mp4">MP4</option>
+							<option value="webm">WebM</option>
+							<option value="gif">GIF</option>
+						</select>
+					</div>
+				</div>
+
+				<div class="mb-4 space-y-2">
+					<label class="flex items-center gap-3">
+						<input type="checkbox" bind:checked={prusaConfig.enabled}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+						<span class="text-sm text-gray-200">Enable print-triggered capture</span>
+					</label>
+					<label class="flex items-center gap-3">
+						<input type="checkbox" bind:checked={prusaConfig.generate_on_finish}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+						<span class="text-sm text-gray-200">Auto-generate timelapse when a print finishes</span>
+					</label>
+					<label class="flex items-center gap-3">
+						<input type="checkbox" bind:checked={prusaConfig.generate_on_cancel}
+							class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+						<span class="text-sm text-gray-200">Also generate on cancelled/failed prints</span>
+					</label>
+				</div>
+
+				{#if prusaTestResult}
+					<p class="mb-3 text-sm {prusaTestResult.startsWith('Connected') ? 'text-green-400' : 'text-red-400'}">{prusaTestResult}</p>
+				{/if}
+
+				<div class="flex gap-2">
+					<button onclick={testPrusa} disabled={testingPrusa || !prusaConfig.base_url}
+						class="rounded-lg border border-gray-600 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 disabled:opacity-50">
+						{testingPrusa ? 'Testing...' : 'Test Connection'}
+					</button>
+					<button onclick={savePrusa} disabled={savingPrusa}
+						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
+						{savingPrusa ? 'Saving...' : 'Save'}
 					</button>
 				</div>
 			</section>

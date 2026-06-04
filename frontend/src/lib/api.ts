@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity } from './types';
+import type { Stream, StreamCreate, StreamUpdate, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity, PrusaLinkConfig } from './types';
 
 const BASE = '/api';
 
@@ -140,6 +140,13 @@ export const api = {
 	testHAConnection: (data: { base_url: string; token?: string }) =>
 		request<{ success: boolean; message: string }>('/settings/homeassistant/test', { method: 'POST', body: JSON.stringify(data) }),
 	getHAEntities: () => request<HAEntity[]>('/settings/homeassistant/entities'),
+
+	// Settings — PrusaLink (3D-print timelapse trigger)
+	getPrusaLinkConfig: () => request<PrusaLinkConfig>('/settings/prusalink'),
+	updatePrusaLinkConfig: (data: PrusaLinkConfig) =>
+		request<PrusaLinkConfig>('/settings/prusalink', { method: 'PUT', body: JSON.stringify(data) }),
+	testPrusaLinkConnection: (data: PrusaLinkConfig) =>
+		request<{ success: boolean; message: string }>('/settings/prusalink/test', { method: 'POST', body: JSON.stringify(data) }),
 
 	// Settings — Capture Gap
 	getCaptureGapConfig: () => request<CaptureGapConfig>('/settings/capture-gap'),

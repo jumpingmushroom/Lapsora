@@ -353,6 +353,9 @@ export interface NotificationEventsConfig {
 	retention_summary: boolean;
 	low_disk_space: boolean;
 	capture_gap: boolean;
+	print_started: boolean;
+	print_finished: boolean;
+	print_failed: boolean;
 }
 
 export interface CaptureGapConfig {
@@ -406,6 +409,20 @@ export interface TimelapseSummary {
 
 export interface HomeAssistantConfig {
 	base_url: string;
+	connected?: boolean;
+}
+
+export interface PrusaLinkConfig {
+	base_url: string;
+	username: string;
+	password?: string;
+	profile_id: number | null;
+	poll_interval_seconds: number;
+	generate_on_finish: boolean;
+	generate_on_cancel: boolean;
+	fps: number;
+	format: string;
+	enabled: boolean;
 	connected?: boolean;
 }
 
