@@ -138,6 +138,8 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 weather_font_size=sched.weather_font_size,
                 weather_unit=sched.weather_unit,
                 weather_style=sched.weather_style,
+                ha_overlay=sched.ha_overlay,
+                ha_overlay_position=sched.ha_overlay_position,
                 heatmap_overlay=sched.heatmap_overlay,
                 heatmap_mode=sched.heatmap_mode,
                 heatmap_colormap=sched.heatmap_colormap,
