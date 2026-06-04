@@ -103,6 +103,11 @@ and store it in `capture.sensor_data`. On HA error/timeout, log a warning and
 leave `sensor_data` null — the frame is still captured (same resilience as
 weather).
 
+**No backfill:** only frames captured *after* a sensor is added to a profile
+will have a snapshot for it (HA's REST `/api/states` returns only the current
+value, not history). Earlier captures render `—` for that row, or no overlay at
+all if no capture in the period has data.
+
 ## Render flow
 
 `services/sensor_overlay.py` (parallels `weather_overlay.py`):
