@@ -545,6 +545,9 @@
 											{#if schedule.weather_overlay}
 												<span class="rounded bg-sky-900/50 px-1.5 py-0.5 text-sky-300">Weather</span>
 											{/if}
+											{#if schedule.ha_overlay}
+												<span class="rounded bg-sky-900/50 px-1.5 py-0.5 text-sky-300">HA</span>
+											{/if}
 											{#if schedule.heatmap_overlay}
 												<span class="rounded bg-orange-900/50 px-1.5 py-0.5 text-orange-300">Heatmap</span>
 											{/if}
