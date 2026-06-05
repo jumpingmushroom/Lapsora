@@ -8,7 +8,7 @@ import shutil
 import tempfile
 import threading
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -90,10 +90,16 @@ def compute_cumulative_heatmap(frame_paths: list[str], threshold: int = 10) -> n
 
 
 def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, threshold: int = 10) -> list[np.ndarray | None]:
-    """Compute per-frame heatmaps using exponential decay sliding window."""
-    heatmaps: list[np.ndarray | None] = [None]  # first frame has no heatmap
+    """Compute per-frame heatmaps using exponential decay sliding window.
+
+    Returns a list index-aligned with ``frame_paths``: ``heatmaps[i]`` is the
+    heatmap for ``frame_paths[i]`` (or ``None`` for the first frame and any
+    unreadable frame). Index alignment must hold even when a frame fails to
+    decode, otherwise overlays get painted onto the wrong frames.
+    """
+    heatmaps: list[np.ndarray | None] = [None] * len(frame_paths)
     if len(frame_paths) < 2:
-        return [None] * len(frame_paths)
+        return heatmaps
 
     use_gpu = is_cupy_available()
     if use_gpu:
@@ -105,8 +111,6 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
     for i, path in enumerate(frame_paths):
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         if img is None:
-            if i > 0:
-                heatmaps.append(None)
             prev_gray = None
             continue
         if prev_gray is not None:
@@ -125,7 +129,7 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
                     normalized = (normalized / max_val * 255).astype(cp.uint8)
                 else:
                     normalized = normalized.astype(cp.uint8)
-                heatmaps.append(cp.asnumpy(normalized))
+                heatmaps[i] = cp.asnumpy(normalized)
             else:
                 diff = cv2.absdiff(prev_gray, img)
                 diff[diff < threshold] = 0
@@ -139,7 +143,7 @@ def compute_sliding_heatmaps(frame_paths: list[str], decay: float = 0.9, thresho
                     normalized = (normalized / max_val * 255).astype(np.uint8)
                 else:
                     normalized = normalized.astype(np.uint8)
-                heatmaps.append(normalized)
+                heatmaps[i] = normalized
         prev_gray = img
     return heatmaps
 
@@ -300,8 +304,12 @@ FFMPEG_TIMEOUT = 300  # 5 minutes
 def get_period_range(
     period_type: str, reference_date: datetime | None = None
 ) -> tuple[datetime, datetime]:
-    """Return (start, end) for a named period relative to reference_date."""
-    ref = reference_date or datetime.now()
+    """Return (start, end) for a named period relative to reference_date.
+
+    Bounds are naive datetimes in UTC, matching how ``Capture.captured_at`` is
+    stored, so period selection lines up with the data on non-UTC hosts.
+    """
+    ref = reference_date or datetime.now(UTC)
 
     if period_type == "daily":
         day = ref.date() - timedelta(days=1)
@@ -393,8 +401,8 @@ async def generate_timelapse(
         if period_type != "custom" and (period_start is None or period_end is None):
             period_start, period_end = get_period_range(period_type)
         elif period_start is None or period_end is None:
-            # Default custom to last 24 hours
-            period_end = datetime.now()
+            # Default custom to last 24 hours (UTC, matching stored captured_at)
+            period_end = datetime.now(UTC).replace(tzinfo=None)
             period_start = period_end - timedelta(hours=24)
 
         # Build dynamic step list based on options
@@ -826,6 +834,7 @@ async def generate_timelapse(
                 "timelapse_complete",
                 f"Timelapse generated: {period_type}",
                 f"Timelapse for profile {profile_id} ({period_type}): {frame_count} frames, {duration_seconds or 0:.1f}s duration.",
+                data={"generation_id": generation_id},
             )
         except Exception:
             pass
@@ -853,6 +862,7 @@ async def generate_timelapse(
                 f"Timelapse failed: profile {profile_id}",
                 f"Timelapse generation failed for profile {profile_id} ({period_type}): {exc}",
                 level="error",
+                data={"generation_id": generation_id},
             )
         except Exception:
             pass
