@@ -20,23 +20,27 @@ Self-hosted RTSP timelapse web application. Capture frames from RTSP cameras on 
 ## Features
 
 ### Stream Management
-- RTSP and [go2rtc](https://github.com/AlexxIT/go2rtc) stream support
+- Multiple source types: RTSP, [go2rtc](https://github.com/AlexxIT/go2rtc), HTTP snapshot (single JPEG endpoint), and HTTP MJPEG (multipart stream)
+- HTTP source auth: basic / digest / bearer / custom-header (covers generic IP-cam CGI, OctoPrint, Frigate, UniFi, Reolink/Amcrest, public webcams)
 - Encrypted credential storage (Fernet encryption)
-- Stream health monitoring with configurable failure thresholds
+- Stream health monitoring with configurable failure thresholds and live reachability badges
 - Live preview and go2rtc WebSocket live view
 
 ### Capture System
 - Scheduled frame capture at configurable intervals
 - HDR / synthetic exposure bracketing with Mertens fusion
 - Sun-based scheduling (sunrise/sunset offsets via location settings)
+- IR-only frame filter — keep only true greyscale/IR night frames (chroma-spread detection), trimming the color frames around dusk/dawn
 - Weather data integration (OpenWeatherMap)
+- Per-frame Home Assistant sensor snapshotting (for sensor overlays)
 - Quality control with frame corruption detection
 - Capture gap alerting
 
 ### Timelapse Generation
 - Output formats: MP4, WebM, GIF
 - Deflicker processing (luminance curve smoothing)
-- Overlay options: timestamps, weather data, heatmap blending
+- Overlay options: timestamps, weather data, multicolor weather icons (WMO-mapped), Home Assistant sensor values, logo/watermark, heatmap blending
+- Per-timelapse overlay configuration (style, position, size, opacity)
 - Motion blur effect
 - Codec selection: H.264, H.265, VP8, VP9
 - Quality presets (low / medium / high / ultra)
@@ -47,9 +51,15 @@ Self-hosted RTSP timelapse web application. Capture frames from RTSP cameras on 
 - NVIDIA NVENC hardware encoding (H.264 / H.265)
 - CuPy-accelerated compute for heatmap blending and deflicker
 
+### Integrations
+- **[Home Assistant](https://www.home-assistant.io/)** — pick sensors per profile, snapshot their values per frame, and render them as a styled overlay on timelapses
+- **[PrusaLink](https://github.com/prusa3d/Prusa-Link)** — drive a capture profile for the duration of a 3D print: start capturing on `PRINTING`, and on `FINISHED` auto-generate a timelapse over the exact print window and notify
+- **[go2rtc](https://github.com/AlexxIT/go2rtc)** — restream/transcode source for exotic transports (RTMP/HLS/WebRTC/ONVIF)
+- Live reachability badges for each integration in Settings
+
 ### Notifications
 - [Apprise](https://github.com/caronc/apprise) integration — supports ntfy, Discord, Telegram, Slack, email, and [many more](https://github.com/caronc/apprise/wiki)
-- 9 configurable event types (capture success/failure, timelapse complete, health alerts, etc.)
+- 13 configurable event types (capture failure, stream health, timelapse lifecycle, retention summary, low disk, capture gap, and PrusaLink print started/finished/failed)
 - Real-time Server-Sent Events (SSE) for in-app notifications
 
 ### Retention & Cleanup
@@ -110,12 +120,17 @@ Set variables with the `LAPSORA_` prefix (e.g., `LAPSORA_SECRET_KEY`) or in a `.
 
 Configured through the web UI under Settings:
 
+Settings are organized into tabs (General, Integrations, Notifications, Branding):
+
 | Setting | Description |
 |---------|-------------|
 | Location | Latitude/longitude for sun-based scheduling and weather |
 | Health Check | Failure thresholds and monitoring intervals |
 | Notifications | Apprise URLs and per-event toggles |
 | go2rtc | Server URL for go2rtc integration |
+| Home Assistant | Base URL + long-lived access token for sensor overlays |
+| PrusaLink | Printer host + API key for 3D-print timelapses |
+| Branding | Upload a logo/watermark for timelapse overlays |
 | Time Format | 12-hour or 24-hour display |
 | Capture Gap Alerting | Alert when captures are missed |
 
@@ -146,7 +161,8 @@ All endpoints are under `/api`. Full CRUD is available for most resources.
 | Cleanup Schedules | `CRUD /cleanup-schedules/`, `POST /cleanup-schedules/{id}/trigger` | Retention policy management |
 | Profile Templates | `CRUD /profile-templates/`, `POST /profile-templates/{id}/apply` | Preset templates |
 | Notifications | `GET /notifications/`, `GET /notifications/stream` | Notification history and SSE |
-| Settings | `GET|PUT /settings/location`, `GET|PUT /settings/notifications`, etc. | App configuration |
+| Settings | `GET|PUT /settings/location`, `GET|PUT /settings/notifications`, `GET|PUT /settings/{homeassistant,prusalink,go2rtc}` | App configuration & integrations |
+| Branding | `POST|GET|DELETE /settings/logo` | Logo/watermark upload |
 | Statistics | `GET /statistics/summary`, `GET /statistics/storage-trend`, etc. | Dashboard data |
 
 ## Development Setup
