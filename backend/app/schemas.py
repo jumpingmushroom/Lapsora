@@ -111,6 +111,8 @@ class ProfileCreate(BaseModel):
     active_end_time: str | None = None
     sun_offset_minutes: int = Field(default=0, ge=0, le=180)
     sun_events: str = ""
+    ir_only: bool = False
+    ir_chroma_threshold: float = Field(default=10.0, ge=0, le=100)
     weather_enabled: bool = False
     ha_sensors: str | None = None  # JSON string: [{entity_id,label,unit,icon}]
 
@@ -128,6 +130,8 @@ class ProfileUpdate(BaseModel):
     active_end_time: str | None = None
     sun_offset_minutes: int | None = None
     sun_events: str | None = None
+    ir_only: bool | None = None
+    ir_chroma_threshold: float | None = Field(default=None, ge=0, le=100)
     weather_enabled: bool | None = None
     ha_sensors: str | None = None
 
@@ -150,6 +154,8 @@ class ProfileRead(BaseModel):
     active_end_time: str | None
     sun_offset_minutes: int
     sun_events: str
+    ir_only: bool
+    ir_chroma_threshold: float
     weather_enabled: bool
     ha_sensors: str | None = None
     source_template_id: int | None = None
