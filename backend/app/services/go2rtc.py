@@ -11,11 +11,27 @@ from app.models import Setting
 logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx.Timeout(10.0)
+# Shorter timeout for the settings-page health probe so a dead server
+# doesn't stall the whole settings load.
+HEALTH_TIMEOUT = httpx.Timeout(3.0)
 
 
 def get_go2rtc_url(db) -> str | None:
     row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
     return row.value if row else None
+
+
+async def health(base_url: str) -> bool:
+    """Quick reachability probe for the configured go2rtc server."""
+    if not base_url:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
+            resp = await client.get(f"{base_url}/api/streams")
+            resp.raise_for_status()
+        return True
+    except Exception:
+        return False
 
 
 async def test_server(base_url: str) -> dict:

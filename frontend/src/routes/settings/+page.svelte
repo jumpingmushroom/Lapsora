@@ -205,7 +205,9 @@
 		savingGo2rtc = true;
 		go2rtcTestResult = null;
 		try {
-			await api.updateGo2rtcConfig(go2rtcConfig);
+			await api.updateGo2rtcConfig({ url: go2rtcConfig.url });
+			// Re-fetch to refresh the live health badge against the saved URL.
+			go2rtcConfig = await api.getGo2rtcConfig();
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to save go2rtc config');
 		} finally {
@@ -217,10 +219,12 @@
 		testingGo2rtc = true;
 		go2rtcTestResult = null;
 		try {
-			const result = await api.testGo2rtcServer(go2rtcConfig);
+			const result = await api.testGo2rtcServer({ url: go2rtcConfig.url });
 			go2rtcTestResult = result.success ? 'Connected successfully' : result.message || 'Connection failed';
+			go2rtcConfig = { ...go2rtcConfig, configured: !!go2rtcConfig.url, connected: result.success };
 		} catch (err) {
 			go2rtcTestResult = err instanceof Error ? err.message : 'Test failed';
+			go2rtcConfig = { ...go2rtcConfig, connected: false };
 		}
 		testingGo2rtc = false;
 	}
@@ -662,7 +666,16 @@
 
 			<!-- go2rtc -->
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
-				<h2 class="mb-4 text-xl font-semibold text-white">go2rtc</h2>
+				<div class="mb-4 flex items-center gap-3">
+					<h2 class="text-xl font-semibold text-white">go2rtc</h2>
+					{#if !go2rtcConfig.configured}
+						<span class="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Not configured</span>
+					{:else if go2rtcConfig.connected}
+						<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Connected</span>
+					{:else}
+						<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Unreachable</span>
+					{/if}
+				</div>
 				<p class="mb-4 text-sm text-gray-400">
 					Connect to an external go2rtc server for stream discovery, live MSE video, and HTTP snapshot capture.
 				</p>

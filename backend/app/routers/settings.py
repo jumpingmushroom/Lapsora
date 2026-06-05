@@ -181,9 +181,11 @@ def update_health_config(data: HealthConfig, db: Session = Depends(get_db)):
 
 
 @router.get("/go2rtc")
-def get_go2rtc_config(db: Session = Depends(get_db)):
+async def get_go2rtc_config(db: Session = Depends(get_db)):
+    from app.services.go2rtc import health
     row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
-    return {"url": row.value if row else ""}
+    url = row.value if row else ""
+    return {"url": url, "configured": bool(url), "connected": await health(url)}
 
 
 @router.put("/go2rtc")

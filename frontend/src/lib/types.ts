@@ -32,6 +32,8 @@ export interface StreamCreate {
 
 export interface Go2rtcConfig {
 	url: string;
+	configured?: boolean;
+	connected?: boolean;
 }
 
 export interface Go2rtcStreamInfo {
