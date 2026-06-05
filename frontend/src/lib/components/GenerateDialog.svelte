@@ -230,14 +230,14 @@
 		onclick={handleBackdrop}
 		onkeydown={() => {}}
 	>
-		<div class="w-full max-w-md rounded-lg bg-gray-800 p-6">
-			<h2 class="mb-4 text-xl font-semibold text-gray-100">Generate Timelapse</h2>
+		<div class="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg bg-gray-800 p-6">
+			<h2 class="mb-4 shrink-0 text-xl font-semibold text-gray-100">Generate Timelapse</h2>
 
 			{#if error}
 				<p class="mb-3 rounded-md bg-red-900/50 px-3 py-2 text-sm text-red-300">{error}</p>
 			{/if}
 
-			<form onsubmit={handleSubmit} class="space-y-4">
+			<form onsubmit={handleSubmit} class="space-y-4 overflow-y-auto">
 				<div>
 					<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
 					<select
