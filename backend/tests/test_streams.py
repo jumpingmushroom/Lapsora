@@ -117,3 +117,32 @@ def test_test_endpoint_dispatches_to_http_provider(client, monkeypatch):
     body = resp.json()
     assert body["success"] is True
     assert body["details"]["bytes"] > 0
+
+
+def test_ir_test_endpoint_returns_chroma_and_preview(client, db, monkeypatch):
+    import io
+    import numpy as np
+    from PIL import Image
+    from app.models import Stream
+
+    stream = Stream(name="cam", source_type="go2rtc", go2rtc_name="cam", url="")
+    db.add(stream)
+    db.commit()
+    db.refresh(stream)
+
+    buf = io.BytesIO()
+    grey = np.full((120, 160, 3), 100, dtype="uint8")
+    Image.fromarray(grey, "RGB").save(buf, "JPEG", quality=95)
+    jpeg = buf.getvalue()
+
+    async def _fake_preview(s, d):
+        return jpeg
+
+    from app.services import providers
+    monkeypatch.setattr(providers, "grab_preview", _fake_preview)
+
+    resp = client.get(f"/api/streams/{stream.id}/ir-test")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["chroma"] < 1.0
+    assert isinstance(body["preview"], str) and len(body["preview"]) > 0
