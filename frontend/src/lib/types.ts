@@ -69,6 +69,8 @@ export interface Profile {
 	active_end_time: string | null;
 	sun_offset_minutes: number;
 	sun_events: string;
+	ir_only: boolean;
+	ir_chroma_threshold: number;
 	source_template_id: number | null;
 	created_at: string;
 	updated_at: string;
@@ -126,6 +128,8 @@ export interface ProfileCreate {
 	active_end_time?: string | null;
 	sun_offset_minutes?: number;
 	sun_events?: string;
+	ir_only?: boolean;
+	ir_chroma_threshold?: number;
 }
 
 export interface ProfileUpdate {
@@ -143,6 +147,8 @@ export interface ProfileUpdate {
 	active_end_time?: string | null;
 	sun_offset_minutes?: number;
 	sun_events?: string;
+	ir_only?: boolean;
+	ir_chroma_threshold?: number;
 }
 
 export interface LocationConfig {
