@@ -54,6 +54,23 @@ async def get_states(base_url: str, token: str) -> list[dict] | None:
         return None
 
 
+HEALTH_TIMEOUT = httpx.Timeout(3.0)  # short probe for the settings badge
+
+
+async def health(base_url: str, token: str) -> bool:
+    """Quick reachability + auth probe for the settings status badge."""
+    base = base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
+            resp = await client.get(
+                f"{base}/api/",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 async def test_connection(base_url: str, token: str) -> dict:
     """Validate reachability + auth against HA's /api/ root."""
     base = base_url.rstrip("/")

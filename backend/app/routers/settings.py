@@ -182,14 +182,16 @@ def update_health_config(data: HealthConfig, db: Session = Depends(get_db)):
 
 @router.get("/go2rtc")
 async def get_go2rtc_config(db: Session = Depends(get_db)):
-    from app.services.go2rtc import health
+    from app.services import go2rtc, health_status
     row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
     url = row.value if row else ""
-    return {"url": url, "configured": bool(url), "connected": await health(url)}
+    connected = await health_status.reachable("go2rtc", lambda: go2rtc.health(url)) if url else False
+    return {"url": url, "configured": bool(url), "connected": connected}
 
 
 @router.put("/go2rtc")
 def update_go2rtc_config(data: Go2rtcConfig, db: Session = Depends(get_db)):
+    from app.services import health_status
     url = data.url.rstrip("/")
     row = db.query(Setting).filter(Setting.key == "go2rtc_url").first()
     if row:
@@ -197,6 +199,7 @@ def update_go2rtc_config(data: Go2rtcConfig, db: Session = Depends(get_db)):
     else:
         db.add(Setting(key="go2rtc_url", value=url))
     db.commit()
+    health_status.invalidate("go2rtc")
     return {"url": url}
 
 
@@ -269,24 +272,32 @@ def _upsert_setting(db: Session, key: str, value: str) -> None:
         db.add(Setting(key=key, value=value))
 
 
-@router.get("/homeassistant")
-def get_ha_settings(db: Session = Depends(get_db)):
+async def _read_ha(db: Session) -> dict:
+    """base_url + configured (creds present) + connected (cached live probe)."""
+    from app.services import health_status, homeassistant
     url_row = db.query(Setting).filter(Setting.key == "ha_base_url").first()
-    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
     base_url = url_row.value if url_row else ""
-    connected = bool(base_url and tok_row and tok_row.value)
-    return {"base_url": base_url, "connected": connected}
+    cfg = homeassistant.get_ha_config(db)  # (base_url, token) or None
+    configured = cfg is not None
+    connected = await health_status.reachable("ha", lambda: homeassistant.health(*cfg)) if configured else False
+    return {"base_url": base_url, "configured": configured, "connected": connected}
+
+
+@router.get("/homeassistant")
+async def get_ha_settings(db: Session = Depends(get_db)):
+    return await _read_ha(db)
 
 
 @router.put("/homeassistant")
-def update_ha_settings(data: HomeAssistantConfig, db: Session = Depends(get_db)):
+async def update_ha_settings(data: HomeAssistantConfig, db: Session = Depends(get_db)):
+    from app.services import health_status
     url = data.base_url.rstrip("/")
     _upsert_setting(db, "ha_base_url", url)
     if data.token:  # only overwrite token when a new one is supplied
         _upsert_setting(db, "ha_token", encrypt(data.token))
     db.commit()
-    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
-    return {"base_url": url, "connected": bool(tok_row and tok_row.value)}
+    health_status.invalidate("ha")
+    return await _read_ha(db)
 
 
 @router.post("/homeassistant/test")
@@ -329,17 +340,32 @@ def _read_prusalink(db: Session) -> dict:
             pass
     cfg["base_url"] = base.value if base else ""
     cfg["username"] = user.value if user else "maker"
-    cfg["connected"] = bool((base and base.value) and (pw and pw.value))
+    cfg["configured"] = bool((base and base.value) and (pw and pw.value))
+    return cfg
+
+
+async def _read_prusalink_live(db: Session) -> dict:
+    """`_read_prusalink` + a cached live reachability probe for the badge."""
+    from app.services import health_status, prusalink
+    cfg = _read_prusalink(db)
+    pcfg = prusalink.get_config(db)  # includes decrypted password, or None
+    if cfg["configured"] and pcfg:
+        cfg["connected"] = await health_status.reachable(
+            "prusalink",
+            lambda: prusalink.health(pcfg["base_url"], pcfg["username"], pcfg["password"]),
+        )
+    else:
+        cfg["connected"] = False
     return cfg
 
 
 @router.get("/prusalink", response_model=PrusaLinkRead)
-def get_prusalink_settings(db: Session = Depends(get_db)):
-    return _read_prusalink(db)
+async def get_prusalink_settings(db: Session = Depends(get_db)):
+    return await _read_prusalink_live(db)
 
 
 @router.put("/prusalink", response_model=PrusaLinkRead)
-def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends(get_db)):
+async def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends(get_db)):
     url = data.base_url.rstrip("/")
     _upsert_setting(db, "prusalink_base_url", url)
     _upsert_setting(db, "prusalink_username", data.username or "maker")
@@ -349,13 +375,15 @@ def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends(get_d
     _upsert_setting(db, "prusalink_config", json.dumps(blob))
     db.commit()
 
+    from app.services import health_status
     from app.services.scheduler import add_prusalink_poll_job, remove_prusalink_poll_job
     if data.enabled and url and data.profile_id:
         add_prusalink_poll_job(data.poll_interval_seconds)
     else:
         remove_prusalink_poll_job()
 
-    return _read_prusalink(db)
+    health_status.invalidate("prusalink")
+    return await _read_prusalink_live(db)
 
 
 @router.post("/prusalink/test")

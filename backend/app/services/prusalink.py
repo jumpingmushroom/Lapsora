@@ -114,6 +114,20 @@ def _auth(username: str, password: str) -> httpx.DigestAuth:
     return httpx.DigestAuth(username or "maker", password or "")
 
 
+HEALTH_TIMEOUT = httpx.Timeout(3.0)  # short probe for the settings badge
+
+
+async def health(base_url: str, username: str, password: str) -> bool:
+    """Quick reachability + auth probe for the settings status badge."""
+    base = base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=HEALTH_TIMEOUT) as client:
+            resp = await client.get(f"{base}/api/v1/status", auth=_auth(username, password))
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 async def test_connection(base_url: str, username: str, password: str) -> dict:
     """Validate reachability + auth against PrusaLink's /api/v1/status."""
     base = base_url.rstrip("/")

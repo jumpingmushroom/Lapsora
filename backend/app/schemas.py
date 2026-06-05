@@ -87,7 +87,8 @@ class PrusaLinkRead(BaseModel):
     fps: int
     format: str
     enabled: bool
-    connected: bool
+    configured: bool  # credentials present (drives the password placeholder)
+    connected: bool  # live reachability probe (cached); drives the status badge
 
 
 class Go2rtcStreamInfo(BaseModel):

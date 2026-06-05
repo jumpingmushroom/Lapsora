@@ -631,9 +631,13 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<div class="mb-4 flex items-center gap-3">
 					<h2 class="text-xl font-semibold text-white">Home Assistant</h2>
-					<span class="rounded-full px-2 py-0.5 text-xs {haConfig.connected ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}">
-						{haConfig.connected ? 'Connected' : 'Not configured'}
-					</span>
+					{#if !haConfig.configured}
+						<span class="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Not configured</span>
+					{:else if haConfig.connected}
+						<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Connected</span>
+					{:else}
+						<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Unreachable</span>
+					{/if}
 				</div>
 				<p class="mb-4 text-sm text-gray-400">Read sensor entities to overlay on timelapses. Create a long-lived access token in your HA profile.</p>
 
@@ -644,7 +648,7 @@
 				</div>
 				<div class="mb-4">
 					<label for="ha-token" class="mb-1 block text-sm text-gray-400">Long-lived access token</label>
-					<input id="ha-token" type="password" bind:value={haToken} placeholder={haConfig.connected ? '•••••••• (leave blank to keep)' : 'Paste token'}
+					<input id="ha-token" type="password" bind:value={haToken} placeholder={haConfig.configured ? '•••••••• (leave blank to keep)' : 'Paste token'}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
 				</div>
 
@@ -717,9 +721,13 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<div class="mb-4 flex items-center gap-3">
 					<h2 class="text-xl font-semibold text-white">3D Printing (PrusaLink)</h2>
-					<span class="rounded-full px-2 py-0.5 text-xs {prusaConfig.connected ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-400'}">
-						{prusaConfig.connected ? 'Configured' : 'Not configured'}
-					</span>
+					{#if !prusaConfig.configured}
+						<span class="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Not configured</span>
+					{:else if prusaConfig.connected}
+						<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Connected</span>
+					{:else}
+						<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Unreachable</span>
+					{/if}
 				</div>
 				<p class="mb-4 text-sm text-gray-400">
 					Poll a Prusa printer's local PrusaLink API and capture a timelapse for the duration of each print. Point a capture profile's camera at the printer, then select it below. Create a password/API access in the printer's PrusaLink settings.
@@ -740,7 +748,7 @@
 
 				<div class="mb-4">
 					<label for="prusa-pass" class="mb-1 block text-sm text-gray-400">Password</label>
-					<input id="prusa-pass" type="password" bind:value={prusaPassword} placeholder={prusaConfig.connected ? '•••••••• (leave blank to keep)' : 'PrusaLink password'}
+					<input id="prusa-pass" type="password" bind:value={prusaPassword} placeholder={prusaConfig.configured ? '•••••••• (leave blank to keep)' : 'PrusaLink password'}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
 				</div>
 

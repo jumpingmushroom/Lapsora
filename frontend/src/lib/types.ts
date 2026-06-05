@@ -444,6 +444,7 @@ export interface TimelapseSummary {
 
 export interface HomeAssistantConfig {
 	base_url: string;
+	configured?: boolean;
 	connected?: boolean;
 }
 
@@ -458,6 +459,7 @@ export interface PrusaLinkConfig {
 	fps: number;
 	format: string;
 	enabled: boolean;
+	configured?: boolean;
 	connected?: boolean;
 }
 
