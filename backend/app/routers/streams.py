@@ -100,13 +100,17 @@ def delete_stream(stream_id: int, db: Session = Depends(get_db)):
     if not stream:
         raise HTTPException(404, "Stream not found")
 
-    # Remove scheduler jobs for all profiles before cascade delete
-    from app.services.scheduler import remove_capture_job
-    for profile in stream.profiles:
-        remove_capture_job(profile.id)
+    # Commit the cascade delete first, then tear down scheduler jobs. Doing the
+    # irreversible job removal only after a successful commit avoids leaving
+    # still-present profiles without their capture jobs if the commit fails.
+    profile_ids = [profile.id for profile in stream.profiles]
 
     db.delete(stream)
     db.commit()
+
+    from app.services.scheduler import remove_capture_job
+    for pid in profile_ids:
+        remove_capture_job(pid)
 
 
 @router.post("/{stream_id}/test")
