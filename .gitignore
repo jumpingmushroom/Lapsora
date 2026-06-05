@@ -13,3 +13,6 @@ CLAUDE.md
 docs/plans/
 .superpowers/
 .claude/
+
+# Python build artifacts
+*.egg-info/
