@@ -325,7 +325,10 @@
 										const data = await api.getStreamLiveUrl(id);
 										liveWsUrl = data.ws_url;
 										showLiveView = true;
-									} catch { /* ignore */ }
+									} catch (err) {
+										console.error('Failed to start live view', err);
+										alert('Could not start live view. Check that go2rtc is reachable.');
+									}
 								}
 							}}
 							class="rounded px-3 py-1 text-xs font-medium transition-colors {showLiveView ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}"

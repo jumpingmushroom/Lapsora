@@ -74,7 +74,9 @@
 				}, 5000);
 
 				window.dispatchEvent(new CustomEvent('lapsora:notification', { detail: data }));
-			} catch {}
+			} catch (err) {
+				console.warn('Failed to handle SSE notification frame', err);
+			}
 		});
 
 		return () => es.close();
