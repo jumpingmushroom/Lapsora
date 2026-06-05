@@ -1,6 +1,6 @@
 """Statistics endpoints for storage trends and capture activity."""
 
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
@@ -15,7 +15,7 @@ from app.schemas import (
     TimelapseFormatBreakdown,
     TimelapseSummary,
 )
-from app.services.retention import get_storage_stats
+from app.services.retention import get_disk_free_bytes
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
@@ -55,7 +55,9 @@ def get_summary(db: Session = Depends(get_db)):
     # Days until full based on 7-day rate
     days_until_full = None
     if avg_bytes_per_day > 0:
-        seven_days_ago = (date.today() - timedelta(days=7)).isoformat()
+        # Captures are stored with UTC timestamps; derive the cutoff in UTC so
+        # the window matches the stored data on non-UTC hosts.
+        seven_days_ago = (datetime.now(UTC).date() - timedelta(days=7)).isoformat()
         recent = db.execute(
             text(
                 """
@@ -80,8 +82,7 @@ def get_summary(db: Session = Depends(get_db)):
         total_7d = recent.bytes_7d + recent_tl.bytes_7d
         if total_7d > 0:
             daily_rate = total_7d / 7
-            storage = get_storage_stats()
-            free = storage["disk_free_bytes"]
+            free = get_disk_free_bytes()
             days_until_full = free / daily_rate if daily_rate > 0 else None
 
     return StatsSummary(
@@ -97,7 +98,7 @@ def get_storage_trend(
     days: int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
 ):
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
 
     # Pre-cutoff totals for anchoring cumulative sum
     pre = db.execute(
@@ -152,7 +153,7 @@ def get_capture_activity(
     profile_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
     params: dict = {"cutoff": cutoff}
 
     profile_filter = ""
@@ -185,7 +186,7 @@ def get_profile_storage(
     profile_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
     params: dict = {"cutoff": cutoff}
 
     profile_filter = ""
