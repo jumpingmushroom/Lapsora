@@ -531,12 +531,12 @@
 						<button onclick={() => { editingProfile = null; }} class="text-xs text-gray-400 hover:text-gray-200">Cancel</button>
 					</div>
 					{#key editingProfile.id}
-						<ProfileForm profile={editingProfile} onsubmit={handleUpdateProfile} />
+						<ProfileForm profile={editingProfile} streamId={id} onsubmit={handleUpdateProfile} />
 					{/key}
 				</div>
 			{:else if showProfileForm}
 				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
-					<ProfileForm onsubmit={handleCreateProfile} />
+					<ProfileForm streamId={id} onsubmit={handleCreateProfile} />
 				</div>
 			{/if}
 
