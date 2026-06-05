@@ -32,6 +32,16 @@
 	let deleteTarget = $state<Timelapse | null>(null);
 	let deleting = $state(false);
 
+	function clearActiveGeneration(id: string | undefined) {
+		// Prefer the explicit id from the event; fall back to clearing a lone
+		// active entry for older events that don't carry one.
+		const key = id && activeGenerations[id] ? id : Object.keys(activeGenerations)[0];
+		if (key && activeGenerations[key]) {
+			delete activeGenerations[key];
+			activeGenerations = { ...activeGenerations };
+		}
+	}
+
 	async function loadTimelapses() {
 		loading = true;
 		error = null;
@@ -79,27 +89,15 @@
 				generating = Math.max(0, generating) + 1;
 			} else if (data.event_type === 'timelapse_complete') {
 				generating = Math.max(0, generating - 1);
-				// Clear one generation from the map (the completed one)
-				const ids = Object.keys(activeGenerations);
-				if (ids.length > 0) {
-					delete activeGenerations[ids[0]];
-					activeGenerations = { ...activeGenerations };
-				}
+				clearActiveGeneration(data.generation_id);
 				loadTimelapses();
 			} else if (data.event_type === 'timelapse_failure') {
 				generating = Math.max(0, generating - 1);
-				const ids = Object.keys(activeGenerations);
-				if (ids.length > 0) {
-					delete activeGenerations[ids[0]];
-					activeGenerations = { ...activeGenerations };
-				}
+				clearActiveGeneration(data.generation_id);
 			} else if (data.event_type === 'timelapse_cancelled') {
 				generating = Math.max(0, generating - 1);
 				queuedGenerations = queuedGenerations.filter(j => j.generation_id !== data.generation_id);
-				if (activeGenerations[data.generation_id]) {
-					delete activeGenerations[data.generation_id];
-					activeGenerations = { ...activeGenerations };
-				}
+				clearActiveGeneration(data.generation_id);
 			}
 		}
 		window.addEventListener('lapsora:notification', handleNotification);

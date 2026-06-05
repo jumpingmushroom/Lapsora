@@ -44,12 +44,9 @@ def complete_generation(generation_id: str) -> None:
 
 
 def fail_generation(generation_id: str, error: str) -> None:
-    """Mark generation as failed (keeps it briefly for the frontend to see)."""
-    gen = _active_generations.get(generation_id)
-    if gen:
-        gen["status"] = "failed"
-        gen["error"] = error
-    # Remove after marking - frontend will get the failure via SSE
+    """Remove a failed generation from tracking. The frontend is notified of the
+    failure via the ``timelapse_failure`` SSE event (which carries the
+    generation_id), so the entry is not retained here."""
     _active_generations.pop(generation_id, None)
 
 

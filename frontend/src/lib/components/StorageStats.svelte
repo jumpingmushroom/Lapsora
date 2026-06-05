@@ -1,18 +1,12 @@
 <script lang="ts">
 	import type { StorageStats } from '$lib/types';
+	import { formatBytes } from '$lib/utils';
 
 	interface Props {
 		stats: StorageStats;
 	}
 
 	let { stats }: Props = $props();
-
-	function formatBytes(bytes: number): string {
-		if (bytes === 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(1024));
-		return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-	}
 
 	let capturesPct = $derived(stats.disk_total_bytes > 0 ? (stats.captures_size_bytes / stats.disk_total_bytes) * 100 : 0);
 	let timelapsesPct = $derived(stats.disk_total_bytes > 0 ? (stats.timelapses_size_bytes / stats.disk_total_bytes) * 100 : 0);

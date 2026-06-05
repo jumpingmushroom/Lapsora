@@ -85,17 +85,23 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db)):
     if not profile:
         raise HTTPException(404, "Profile not found")
 
-    scheduler.remove_capture_job(profile.id)
+    stream_id = profile.stream_id
+
+    # Commit the DB removal first. If the commit fails (e.g. read-only DB), we
+    # must not have already torn down the scheduler job and capture files for a
+    # profile that still exists — that leaves a row pointing at nothing and a
+    # job re-created on next boot.
+    db.delete(profile)
+    db.commit()
+
+    scheduler.remove_capture_job(profile_id)
 
     # Remove capture files
     capture_dir = os.path.join(
-        settings.DATA_DIR, "captures", str(profile.stream_id), str(profile.id)
+        settings.DATA_DIR, "captures", str(stream_id), str(profile_id)
     )
     if os.path.isdir(capture_dir):
         shutil.rmtree(capture_dir, ignore_errors=True)
-
-    db.delete(profile)
-    db.commit()
 
 
 @router.post("/profiles/{profile_id}/enable", response_model=ProfileRead)

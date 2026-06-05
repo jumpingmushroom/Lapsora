@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Timelapse } from '$lib/types';
 	import { api } from '$lib/api';
+	import { formatBytes, formatDuration } from '$lib/utils';
 
 	interface Props {
 		timelapse: Timelapse;
@@ -9,20 +10,6 @@
 	let { timelapse }: Props = $props();
 
 	let videoUrl = $derived(api.getTimelapseVideoUrl(timelapse.id));
-
-	function formatBytes(bytes: number | null): string {
-		if (bytes === null || bytes === 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB'];
-		const i = Math.floor(Math.log(bytes) / Math.log(1024));
-		return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-	}
-
-	function formatDuration(seconds: number | null): string {
-		if (seconds === null) return '--';
-		const m = Math.floor(seconds / 60);
-		const s = Math.round(seconds % 60);
-		return m > 0 ? `${m}m ${s}s` : `${s}s`;
-	}
 </script>
 
 <div class="rounded-lg bg-gray-800 p-4">

@@ -63,6 +63,10 @@
 				}
 
 				queue.push(event.data);
+				// Bound the buffer: if the SourceBuffer never initialized (e.g.
+				// unsupported codec) or stalls, drop the oldest chunks instead of
+				// growing without limit for the life of the socket.
+				if (queue.length > 240) queue.splice(0, queue.length - 240);
 				appendNext();
 
 				if (status !== 'playing' && videoEl) {

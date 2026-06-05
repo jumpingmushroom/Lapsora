@@ -7,6 +7,17 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+async def _kill(proc: asyncio.subprocess.Process) -> None:
+    """Best-effort terminate a subprocess that overran its timeout so it does
+    not linger holding the stream connection."""
+    if proc.returncode is None:
+        try:
+            proc.kill()
+            await proc.wait()
+        except ProcessLookupError:
+            pass
+
+
 async def test_connection(url: str) -> dict:
     """Validate an RTSP URL using ffprobe. Returns status and stream details."""
     try:
@@ -20,7 +31,11 @@ async def test_connection(url: str) -> dict:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
+        except asyncio.TimeoutError:
+            await _kill(proc)
+            raise
 
         if proc.returncode != 0:
             return {
@@ -72,7 +87,11 @@ async def grab_frame(url: str) -> bytes:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    try:
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+    except asyncio.TimeoutError:
+        await _kill(proc)
+        raise RuntimeError("Timed out grabbing frame after 15s")
 
     if proc.returncode != 0 or not stdout:
         raise RuntimeError(

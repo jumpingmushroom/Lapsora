@@ -154,6 +154,16 @@ async def run_profile_cleanup(
         db.close()
 
 
+def get_disk_free_bytes() -> int:
+    """Free bytes on the data volume, or 0 if unavailable. Cheap (no table
+    scans) — prefer this over ``get_storage_stats`` when only free space is
+    needed."""
+    try:
+        return shutil.disk_usage(settings.DATA_DIR).free
+    except OSError:
+        return 0
+
+
 def get_storage_stats() -> dict:
     """Calculate storage usage statistics."""
     db = SessionLocal()

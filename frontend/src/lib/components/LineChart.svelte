@@ -1,6 +1,7 @@
 <script lang="ts">
 	import uPlot from 'uplot';
 	import 'uplot/dist/uPlot.min.css';
+	import { untrack } from 'svelte';
 
 	let {
 		data,
@@ -17,6 +18,9 @@
 	let container: HTMLDivElement;
 	let chart: uPlot | null = null;
 
+	// Build (or rebuild) the chart only when structural options change — height,
+	// series, formatter. Data updates are handled separately via setData so a
+	// simple range/profile change doesn't tear down and recreate the instance.
 	$effect(() => {
 		if (!container) return;
 
@@ -45,7 +49,7 @@
 		};
 
 		chart?.destroy();
-		chart = new uPlot(opts, data, container);
+		chart = new uPlot(opts, untrack(() => data), container);
 
 		const ro = new ResizeObserver(() => {
 			chart?.setSize({ width: container.clientWidth, height });
@@ -57,6 +61,12 @@
 			chart?.destroy();
 			chart = null;
 		};
+	});
+
+	// Push new data into the existing chart without rebuilding it.
+	$effect(() => {
+		const d = data;
+		if (chart) untrack(() => chart!.setData(d));
 	});
 </script>
 

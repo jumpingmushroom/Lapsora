@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 _alerted: dict[int, bool] = {}
 
 
+def _as_utc(dt: datetime) -> datetime:
+    """Treat a DB-read datetime as UTC. SQLite returns naive datetimes even
+    though we store ``datetime.now(UTC)``, so attach UTC before any arithmetic
+    against an aware ``now`` (otherwise subtraction raises TypeError)."""
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
 def clear_alert(profile_id: int) -> None:
     """Reset alert state after a successful capture."""
     _alerted.pop(profile_id, None)
@@ -49,7 +56,7 @@ async def check_capture_gaps() -> None:
                     continue
 
                 # Skip recently created profiles
-                age = (now - profile.created_at).total_seconds()
+                age = (now - _as_utc(profile.created_at)).total_seconds()
                 if age < threshold_seconds:
                     continue
 
@@ -58,7 +65,7 @@ async def check_capture_gaps() -> None:
                 if not _is_within_active_window(profile, db, now):
                     continue
 
-                gap_seconds = (now - last_capture_at).total_seconds()
+                gap_seconds = (now - _as_utc(last_capture_at)).total_seconds()
                 if gap_seconds > threshold_seconds and not _alerted.get(profile.id):
                     gap_minutes = int(gap_seconds / 60)
                     from app.services.events import emit

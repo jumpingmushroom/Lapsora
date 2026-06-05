@@ -172,6 +172,7 @@ export interface Capture {
 export interface Timelapse {
 	id: number;
 	profile_id: number;
+	thumbnail_path: string | null;
 	file_size: number | null;
 	format: string;
 	fps: number;

@@ -63,7 +63,6 @@ async def list_streams(base_url: str) -> list[dict]:
 
 async def grab_frame(base_url: str, name: str, retries: int = 3) -> bytes:
     """Grab a JPEG snapshot from go2rtc with retry on 5xx errors."""
-    last_exc: Exception | None = None
     async with httpx.AsyncClient(timeout=TIMEOUT) as client:
         for attempt in range(1, retries + 1):
             resp = await client.get(f"{base_url}/api/frame.jpeg", params={"src": name})
@@ -78,7 +77,8 @@ async def grab_frame(base_url: str, name: str, retries: int = 3) -> bytes:
             if not resp.content:
                 raise RuntimeError("Empty frame from go2rtc")
             return resp.content
-    raise last_exc or RuntimeError("grab_frame exhausted retries")
+    # Unreachable: the loop always returns or raises on the final attempt.
+    raise RuntimeError("grab_frame exhausted retries")
 
 
 async def test_stream(base_url: str, name: str) -> dict:
