@@ -5,10 +5,11 @@
 	interface Props {
 		profile?: Profile | null;
 		mode?: 'profile' | 'template';
+		streamId?: number | null;
 		onsubmit: (data: ProfileCreate | ProfileUpdate) => void;
 	}
 
-	let { profile = null, mode = 'profile', onsubmit }: Props = $props();
+	let { profile = null, mode = 'profile', streamId = null, onsubmit }: Props = $props();
 
 	let name = $state(profile?.name ?? '');
 	let interval_seconds = $state(profile?.interval_seconds ?? 300);
@@ -55,6 +56,29 @@ let sun_events = $state<string[]>(
 	profile?.sun_events ? profile.sun_events.split(',').filter(Boolean) : ['daylight']
 );
 
+	let ir_only = $state(profile?.ir_only ?? false);
+	let ir_chroma_threshold = $state(profile?.ir_chroma_threshold ?? 10);
+
+	let irTesting = $state(false);
+	let irTestError = $state('');
+	let irTestChroma = $state<number | null>(null);
+	let irTestPreview = $state<string | null>(null);
+
+	async function runIrTest() {
+		if (streamId == null) return;
+		irTesting = true;
+		irTestError = '';
+		try {
+			const res = await api.irTestStream(streamId);
+			irTestChroma = res.chroma;
+			irTestPreview = `data:image/jpeg;base64,${res.preview}`;
+		} catch (err) {
+			irTestError = err instanceof Error ? err.message : 'Test failed';
+		} finally {
+			irTesting = false;
+		}
+	}
+
 	const ICON_KEYS = ['', 'thermometer', 'humidity', 'water', 'wind', 'power', 'light', 'battery', 'gauge'];
 
 	let haSensors = $state<HASensor[]>(
@@ -99,6 +123,8 @@ let sun_events = $state<string[]>(
 			active_end_time: capture_mode === 'manual' ? active_end_time : null,
 			sun_offset_minutes: capture_mode === 'sun' ? sun_offset_minutes : 0,
 		sun_events: capture_mode === 'sun' ? sun_events.join(',') : '',
+		ir_only,
+		ir_chroma_threshold,
 		ha_sensors: haSensors.length ? JSON.stringify(haSensors) : null
 		};
 		onsubmit(data);
@@ -319,6 +345,77 @@ let sun_events = $state<string[]>(
 			<p class="mt-1 text-xs text-gray-500">Select which parts of the day to capture. Multiple selections are combined.</p>
 		</div>
 	{/if}
+
+	<!-- IR-only capture -->
+	<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900/40 p-3">
+		<label class="flex items-center gap-3 text-sm font-medium text-gray-300">
+			<input
+				type="checkbox"
+				bind:checked={ir_only}
+				class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
+			/>
+			IR-only capture <span class="text-gray-500">(keep frames only when greyscale)</span>
+		</label>
+
+		{#if ir_only}
+			<div>
+				<label for="ir-threshold" class="mb-1 block text-sm font-medium text-gray-300">
+					Chroma threshold: {ir_chroma_threshold}
+				</label>
+				<input
+					id="ir-threshold"
+					type="range"
+					min="0"
+					max="100"
+					step="0.5"
+					bind:value={ir_chroma_threshold}
+					class="w-full accent-blue-500"
+				/>
+				<p class="mt-1 text-xs text-gray-500">
+					Frames with mean colour chroma at or below this value are kept; higher (colour) frames are discarded.
+				</p>
+			</div>
+
+			{#if streamId != null}
+				<div class="space-y-2">
+					<button
+						type="button"
+						onclick={runIrTest}
+						disabled={irTesting}
+						class="rounded-lg bg-blue-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+					>
+						{irTesting ? 'Testing…' : 'Test now'}
+					</button>
+
+					{#if irTestError}
+						<p class="text-xs text-red-400">{irTestError}</p>
+					{/if}
+
+					{#if irTestChroma !== null}
+						<div class="flex items-start gap-3">
+							{#if irTestPreview}
+								<img src={irTestPreview} alt="IR test frame" class="h-24 w-auto rounded border border-gray-700" />
+							{/if}
+							<div class="space-y-1 text-sm">
+								<div class="text-gray-300">Measured chroma: <span class="font-semibold">{irTestChroma}</span></div>
+								{#if irTestChroma <= ir_chroma_threshold}
+									<span class="inline-block rounded bg-green-900 px-2 py-0.5 text-xs font-medium text-green-300">
+										would KEEP ({irTestChroma} ≤ {ir_chroma_threshold})
+									</span>
+								{:else}
+									<span class="inline-block rounded bg-red-900 px-2 py-0.5 text-xs font-medium text-red-300">
+										would SKIP ({irTestChroma} &gt; {ir_chroma_threshold})
+									</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				</div>
+			{:else}
+				<p class="text-xs text-gray-500">Save the profile / open it from its stream to use the live test.</p>
+			{/if}
+		{/if}
+	</div>
 
 	<button
 		type="submit"

@@ -107,6 +107,10 @@ class Profile(Base):
     active_end_time: Mapped[str | None] = mapped_column(Text, nullable=True)
     sun_offset_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     sun_events: Mapped[str] = mapped_column(Text, default="", server_default="")
+    ir_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    ir_chroma_threshold: Mapped[float] = mapped_column(
+        Float, default=10.0, server_default="10.0"
+    )
     weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     ha_sensors: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_template_id: Mapped[int | None] = mapped_column(

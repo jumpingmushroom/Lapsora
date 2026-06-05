@@ -360,6 +360,22 @@ async def capture_frame(profile_id: int) -> None:
             img.close()
             file_size = os.path.getsize(abs_path)
 
+        # IR-only filter: keep the frame only if it is greyscale (camera in IR
+        # mode). Non-IR frames are silently discarded — no file, no DB record.
+        if profile.ir_only:
+            from app.services.ir_detect import mean_chroma
+
+            with Image.open(abs_path) as ir_img:
+                chroma = mean_chroma(ir_img)
+            if chroma > profile.ir_chroma_threshold:
+                logger.debug(
+                    "Profile %d non-IR frame (chroma %.1f > %.1f), discarding",
+                    profile_id, chroma, profile.ir_chroma_threshold,
+                )
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+                return
+
         # Fetch weather data if enabled
         weather_temp = None
         weather_code = None

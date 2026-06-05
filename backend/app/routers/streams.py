@@ -129,6 +129,37 @@ async def preview_stream(stream_id: int, db: Session = Depends(get_db)):
     return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
+@router.get("/{stream_id}/ir-test")
+async def ir_test_stream(stream_id: int, db: Session = Depends(get_db)):
+    """Grab a live frame and report its measured chroma + a base64 thumbnail.
+
+    Used by the profile form to dial in the IR-only threshold: sample once in
+    daylight and once at night, then set the threshold between the two values.
+    """
+    import base64
+    import io
+
+    from PIL import Image
+
+    from app.services.ir_detect import mean_chroma
+
+    stream = db.get(Stream, stream_id)
+    if not stream:
+        raise HTTPException(404, "Stream not found")
+    try:
+        jpeg_bytes = await providers.grab_preview(stream, db)
+    except Exception as exc:
+        raise HTTPException(502, f"Could not fetch frame: {exc}")
+
+    with Image.open(io.BytesIO(jpeg_bytes)) as img:
+        chroma = mean_chroma(img)
+
+    return {
+        "chroma": round(chroma, 1),
+        "preview": base64.b64encode(jpeg_bytes).decode("ascii"),
+    }
+
+
 @router.get("/{stream_id}/live-url")
 def get_live_url(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)

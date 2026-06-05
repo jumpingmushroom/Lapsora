@@ -34,6 +34,7 @@ export const api = {
 	getStreamPreviewUrl: (id: number) => `${BASE}/streams/${id}/preview`,
 	discoverGo2rtcStreams: () => request<Go2rtcStreamInfo[]>('/streams/go2rtc/discover'),
 	getStreamLiveUrl: (id: number) => request<{ ws_url: string }>(`/streams/${id}/live-url`),
+	irTestStream: (id: number) => request<{ chroma: number; preview: string }>(`/streams/${id}/ir-test`),
 
 	// Profiles
 	getStreamProfiles: (streamId: number) => request<Profile[]>(`/streams/${streamId}/profiles`),
