@@ -815,7 +815,20 @@ async def generate_timelapse(
             period_end=period_end,
         )
         db.add(timelapse)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            # The video/thumbnail are already on disk; if the row can't be
+            # written there is nothing tracking them, so remove them rather than
+            # leaking a large orphan file.
+            db.rollback()
+            for orphan in (out_path, thumb_path):
+                if orphan and os.path.exists(orphan):
+                    try:
+                        os.unlink(orphan)
+                    except OSError:
+                        logger.exception("Failed to remove orphaned output %s", orphan)
+            raise
         db.refresh(timelapse)
 
         logger.info(
@@ -837,7 +850,7 @@ async def generate_timelapse(
                 data={"generation_id": generation_id},
             )
         except Exception:
-            pass
+            logger.exception("Failed to emit timelapse_complete event for generation %s", generation_id)
 
         return timelapse.id
 
@@ -852,7 +865,7 @@ async def generate_timelapse(
                 f"Timelapse generation cancelled for profile {profile_id} ({period_type}).",
             )
         except Exception:
-            pass
+            logger.exception("Failed to emit timelapse_cancelled event for generation %s", generation_id)
     except Exception as exc:
         logger.exception("Timelapse generation failed for profile %d", profile_id)
         fail_generation(generation_id, str(exc))
@@ -865,7 +878,7 @@ async def generate_timelapse(
                 data={"generation_id": generation_id},
             )
         except Exception:
-            pass
+            logger.exception("Failed to emit timelapse_failure event for generation %s", generation_id)
         raise
     finally:
         db.close()

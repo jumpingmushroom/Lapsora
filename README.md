@@ -11,11 +11,11 @@ Self-hosted RTSP timelapse web application. Capture frames from RTSP cameras on 
 
 | Dashboard | Statistics |
 |:---------:|:----------:|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Statistics](docs/screenshots/statistics.png) |
+| ![Dashboard](assets/screenshots/dashboard.png) | ![Statistics](assets/screenshots/statistics.png) |
 
 | Settings | Streams |
 |:--------:|:-------:|
-| ![Settings](docs/screenshots/settings.png) | ![Streams](docs/screenshots/streams.png) |
+| ![Settings](assets/screenshots/settings.png) | ![Streams](assets/screenshots/streams.png) |
 
 ## Features
 
