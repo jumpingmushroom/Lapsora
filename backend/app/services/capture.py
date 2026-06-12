@@ -86,6 +86,31 @@ def _is_frame_corrupt(path: str) -> bool:
         return False
 
 
+def _resize_and_save(path: str, width: int | None, height: int | None, quality: int) -> tuple[int, int, int]:
+    """Resize (if dimensions given) and re-encode the JPEG at ``path``.
+
+    Returns (width, height, file_size). CPU-bound (LANCZOS + JPEG encode) —
+    call via ``asyncio.to_thread`` so it doesn't block the event loop.
+    """
+    img = Image.open(path)
+    try:
+        if width and height:
+            img = img.resize((width, height), Image.LANCZOS)
+        img.save(path, "JPEG", quality=quality)
+        out_w, out_h = img.size
+    finally:
+        img.close()
+    return out_w, out_h, os.path.getsize(path)
+
+
+def _compute_mean_chroma(path: str) -> float:
+    """Open ``path`` and return its mean chroma. CPU-bound — run off-loop."""
+    from app.services.ir_detect import mean_chroma
+
+    with Image.open(path) as img:
+        return mean_chroma(img)
+
+
 def _is_within_active_window(profile, db, now: datetime) -> bool:
     """Check if the current time falls within the profile's active capture window."""
     if profile.capture_mode == "always":
@@ -230,23 +255,20 @@ async def capture_frame(profile_id: int) -> None:
             with open(abs_path, "wb") as f:
                 f.write(jpeg_bytes)
 
-            if _is_frame_corrupt(abs_path):
+            if await asyncio.to_thread(_is_frame_corrupt, abs_path):
                 logger.warning("%s frame corrupt for profile %d, discarding", stream.source_type, profile_id)
                 if os.path.exists(abs_path):
                     os.remove(abs_path)
                 return
 
-            # Apply resize/quality via PIL
-            img = Image.open(abs_path)
-            if profile.resolution_width and profile.resolution_height:
-                img = img.resize(
-                    (profile.resolution_width, profile.resolution_height),
-                    Image.LANCZOS,
-                )
-            img.save(abs_path, "JPEG", quality=profile.quality)
-            width, height = img.size
-            img.close()
-            file_size = os.path.getsize(abs_path)
+            # Apply resize/quality via PIL (off-loop — CPU-bound)
+            width, height, file_size = await asyncio.to_thread(
+                _resize_and_save,
+                abs_path,
+                profile.resolution_width,
+                profile.resolution_height,
+                profile.quality,
+            )
             is_hdr = False
 
         elif profile.hdr_enabled:
@@ -256,7 +278,7 @@ async def capture_frame(profile_id: int) -> None:
             valid_frame = False
             for attempt in range(1, MAX_CAPTURE_ATTEMPTS + 1):
                 result = await capture_hdr_frame(url, abs_path, quality=profile.quality)
-                if _is_frame_corrupt(abs_path):
+                if await asyncio.to_thread(_is_frame_corrupt, abs_path):
                     logger.warning(
                         "HDR capture attempt %d/%d corrupt for profile %d",
                         attempt, MAX_CAPTURE_ATTEMPTS, profile_id,
@@ -321,7 +343,7 @@ async def capture_frame(profile_id: int) -> None:
                     )
                     return
 
-                if _is_frame_corrupt(abs_path):
+                if await asyncio.to_thread(_is_frame_corrupt, abs_path):
                     logger.warning(
                         "Capture attempt %d/%d corrupt for profile %d",
                         attempt, MAX_CAPTURE_ATTEMPTS, profile_id,
@@ -348,25 +370,19 @@ async def capture_frame(profile_id: int) -> None:
 
             is_hdr = False
 
-            # Resize and/or apply quality
-            img = Image.open(abs_path)
-            if profile.resolution_width and profile.resolution_height:
-                img = img.resize(
-                    (profile.resolution_width, profile.resolution_height),
-                    Image.LANCZOS,
-                )
-            img.save(abs_path, "JPEG", quality=profile.quality)
-            width, height = img.size
-            img.close()
-            file_size = os.path.getsize(abs_path)
+            # Resize and/or apply quality (off-loop — CPU-bound)
+            width, height, file_size = await asyncio.to_thread(
+                _resize_and_save,
+                abs_path,
+                profile.resolution_width,
+                profile.resolution_height,
+                profile.quality,
+            )
 
         # IR-only filter: keep the frame only if it is greyscale (camera in IR
         # mode). Non-IR frames are silently discarded — no file, no DB record.
         if profile.ir_only:
-            from app.services.ir_detect import mean_chroma
-
-            with Image.open(abs_path) as ir_img:
-                chroma = mean_chroma(ir_img)
+            chroma = await asyncio.to_thread(_compute_mean_chroma, abs_path)
             if chroma > profile.ir_chroma_threshold:
                 logger.debug(
                     "Profile %d non-IR frame (chroma %.1f > %.1f), discarding",

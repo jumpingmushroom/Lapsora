@@ -14,6 +14,16 @@ from app.models import Capture, Timelapse
 logger = logging.getLogger(__name__)
 
 
+def _safe_unlink(path: str) -> None:
+    """Remove a file, logging (not raising) on failure so one bad file never
+    aborts a cleanup pass mid-loop and leaves the DB rows un-deleted."""
+    try:
+        if os.path.exists(path):
+            os.unlink(path)
+    except OSError:
+        logger.exception("Failed to remove file %s during cleanup", path)
+
+
 async def run_profile_cleanup(
     profile_id: int,
     capture_retention_days: int,
@@ -42,9 +52,7 @@ async def run_profile_cleanup(
         ).scalars().all()
 
         for cap in old_captures:
-            cap_abs = os.path.join(settings.DATA_DIR, cap.file_path)
-            if os.path.exists(cap_abs):
-                os.unlink(cap_abs)
+            _safe_unlink(os.path.join(settings.DATA_DIR, cap.file_path))
             db.delete(cap)
             summary["captures_deleted"] += 1
 
@@ -59,8 +67,7 @@ async def run_profile_cleanup(
 
         for tl in old_tl:
             tl_abs = tl.file_path if os.path.isabs(tl.file_path) else os.path.join(settings.DATA_DIR, tl.file_path)
-            if os.path.exists(tl_abs):
-                os.unlink(tl_abs)
+            _safe_unlink(tl_abs)
             db.delete(tl)
             summary["timelapses_deleted"] += 1
 
@@ -121,7 +128,7 @@ async def run_profile_cleanup(
                 f"Cleaned {summary['orphan_records_cleaned']} orphan records.",
             )
         except Exception:
-            pass
+            logger.exception("Failed to emit retention summary event for profile %d", profile_id)
 
         # Check low disk space
         try:
@@ -145,7 +152,7 @@ async def run_profile_cleanup(
                     level="warning",
                 )
         except Exception:
-            pass
+            logger.exception("Failed to check/emit low disk space warning")
 
         return summary
 

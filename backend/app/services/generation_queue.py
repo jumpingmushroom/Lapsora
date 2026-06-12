@@ -129,26 +129,16 @@ def cancel_generation(generation_id: str) -> bool:
             _pending_jobs[:] = [j for j in _pending_jobs if j["generation_id"] != generation_id]
 
     if found_pending:
-        # Set cancel event so worker skips it when dequeued
+        # Set the cancel event and leave the job in the asyncio.Queue. The
+        # worker checks the event when it dequeues and skips the job (and pops
+        # the event) then. Draining/re-enqueuing here would race the worker's
+        # get() and double-count task_done() on re-enqueued items, so we don't.
         event = _cancel_events.get(generation_id)
         if event:
             event.set()
 
-        # Drain queue and re-enqueue non-cancelled items
-        items = []
-        while not _queue.empty():
-            try:
-                items.append(_queue.get_nowait())
-                _queue.task_done()
-            except asyncio.QueueEmpty:
-                break
-        for item in items:
-            if item["generation_id"] != generation_id:
-                _queue.put_nowait(item)
-
         _broadcast_cancelled(generation_id)
         _broadcast_queue_updated()
-        _cancel_events.pop(generation_id, None)
         logger.info("Cancelled queued generation %s", generation_id)
         return True
 

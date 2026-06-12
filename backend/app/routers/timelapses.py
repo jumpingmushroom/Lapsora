@@ -1,5 +1,6 @@
 """Timelapse management endpoints."""
 
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,6 +13,8 @@ from app.models import Timelapse
 from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
 from app.services.generation_queue import enqueue_generation
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["timelapses"])
 
 MEDIA_TYPES = {
@@ -19,6 +22,18 @@ MEDIA_TYPES = {
     "webm": "video/webm",
     "gif": "image/gif",
 }
+
+
+def _safe_remove(path: str | None) -> None:
+    """Remove a file, logging (not raising) on failure so a single bad file
+    never aborts a delete that must still purge the DB rows."""
+    if not path:
+        return
+    try:
+        if os.path.isfile(path):
+            os.unlink(path)
+    except OSError:
+        logger.exception("Failed to remove file %s during delete", path)
 
 
 @router.get("/timelapses", response_model=list[TimelapseRead])
@@ -116,10 +131,8 @@ def get_timelapse_thumbnail(timelapse_id: int, db: Session = Depends(get_db)):
 def bulk_delete_timelapses(body: BulkDeleteRequest, db: Session = Depends(get_db)):
     tls = db.query(Timelapse).filter(Timelapse.id.in_(body.ids)).all()
     for tl in tls:
-        if os.path.exists(tl.file_path):
-            os.unlink(tl.file_path)
-        if tl.thumbnail_path and os.path.exists(tl.thumbnail_path):
-            os.unlink(tl.thumbnail_path)
+        _safe_remove(tl.file_path)
+        _safe_remove(tl.thumbnail_path)
         db.delete(tl)
     db.commit()
 
@@ -129,9 +142,7 @@ def delete_timelapse(timelapse_id: int, db: Session = Depends(get_db)):
     tl = db.get(Timelapse, timelapse_id)
     if not tl:
         raise HTTPException(404, "Timelapse not found")
-    if os.path.exists(tl.file_path):
-        os.unlink(tl.file_path)
-    if tl.thumbnail_path and os.path.exists(tl.thumbnail_path):
-        os.unlink(tl.thumbnail_path)
+    _safe_remove(tl.file_path)
+    _safe_remove(tl.thumbnail_path)
     db.delete(tl)
     db.commit()

@@ -1,5 +1,6 @@
 """Capture management endpoints."""
 
+import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,7 +12,19 @@ from app.database import get_db
 from app.models import Capture
 from app.schemas import BulkDeleteRequest, CaptureRead
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["captures"])
+
+
+def _safe_remove(path: str) -> None:
+    """Remove a file, logging (not raising) on failure so a single bad file
+    never aborts a delete that must still purge the DB rows."""
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+    except OSError:
+        logger.exception("Failed to remove file %s during delete", path)
 
 
 @router.get("/profiles/{profile_id}/captures", response_model=list[CaptureRead])
@@ -48,9 +61,7 @@ def get_capture_image(capture_id: int, db: Session = Depends(get_db)):
 def bulk_delete_captures(body: BulkDeleteRequest, db: Session = Depends(get_db)):
     captures = db.query(Capture).filter(Capture.id.in_(body.ids)).all()
     for capture in captures:
-        abs_path = os.path.join(settings.DATA_DIR, capture.file_path)
-        if os.path.isfile(abs_path):
-            os.remove(abs_path)
+        _safe_remove(os.path.join(settings.DATA_DIR, capture.file_path))
         db.delete(capture)
     db.commit()
 
@@ -61,10 +72,6 @@ def delete_capture(capture_id: int, db: Session = Depends(get_db)):
     if not capture:
         raise HTTPException(404, "Capture not found")
 
-    # Remove file
-    abs_path = os.path.join(settings.DATA_DIR, capture.file_path)
-    if os.path.isfile(abs_path):
-        os.remove(abs_path)
-
+    _safe_remove(os.path.join(settings.DATA_DIR, capture.file_path))
     db.delete(capture)
     db.commit()
