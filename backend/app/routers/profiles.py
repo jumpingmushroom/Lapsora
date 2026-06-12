@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["profiles"])
 
 
+@router.get("/profiles", response_model=list[ProfileRead])
+def list_all_profiles(db: Session = Depends(get_db)):
+    """All profiles across every stream, in one query. Lets the frontend avoid
+    a per-stream fetch fan-out (it joins against the streams list it already
+    holds via the stream_id field)."""
+    return db.query(Profile).order_by(Profile.stream_id, Profile.id).all()
+
+
 @router.get("/streams/{stream_id}/profiles", response_model=list[ProfileRead])
 def list_profiles(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
@@ -96,12 +104,16 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db)):
 
     scheduler.remove_capture_job(profile_id)
 
-    # Remove capture files
+    # Remove media files. The DB rows are already gone (cascade), so the orphan
+    # sweep can never reclaim these — delete the directories explicitly.
     capture_dir = os.path.join(
         settings.DATA_DIR, "captures", str(stream_id), str(profile_id)
     )
     if os.path.isdir(capture_dir):
         shutil.rmtree(capture_dir, ignore_errors=True)
+    timelapse_dir = os.path.join(settings.DATA_DIR, "timelapses", str(profile_id))
+    if os.path.isdir(timelapse_dir):
+        shutil.rmtree(timelapse_dir, ignore_errors=True)
 
 
 @router.post("/profiles/{profile_id}/enable", response_model=ProfileRead)

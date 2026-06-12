@@ -1,5 +1,6 @@
 """Data retention and storage cleanup service."""
 
+import asyncio
 import logging
 import os
 import shutil
@@ -29,7 +30,58 @@ async def run_profile_cleanup(
     capture_retention_days: int,
     timelapse_retention_days: int,
 ) -> dict:
-    """Run cleanup for a specific profile with given retention settings."""
+    """Run cleanup for a profile, then emit summary/low-disk notifications.
+
+    The blocking work (DB deletes, file unlinks, the empty-dir os.walk) runs in
+    a worker thread so a large nightly cleanup can't stall the event loop and
+    cause capture jobs to misfire.
+    """
+    summary = await asyncio.to_thread(
+        _run_profile_cleanup_sync,
+        profile_id,
+        capture_retention_days,
+        timelapse_retention_days,
+    )
+
+    # Emit retention summary event
+    try:
+        from app.services.events import emit
+        await emit(
+            "retention_summary",
+            "Cleanup complete",
+            f"Profile {profile_id}: deleted {summary['captures_deleted']} captures, "
+            f"{summary['timelapses_deleted']} timelapses. "
+            f"Cleaned {summary['orphan_records_cleaned']} orphan records.",
+        )
+    except Exception:
+        logger.exception("Failed to emit retention summary event for profile %d", profile_id)
+
+    low = summary.pop("_low_disk", None)
+    if low:
+        free_pct, free_bytes, total_bytes = low
+        try:
+            from app.services.events import emit
+            await emit(
+                "low_disk_space",
+                "Low disk space warning",
+                f"Only {free_pct:.1f}% disk space remaining "
+                f"({free_bytes // (1024**3)} GB free of {total_bytes // (1024**3)} GB).",
+                level="warning",
+            )
+        except Exception:
+            logger.exception("Failed to emit low disk space warning")
+
+    return summary
+
+
+def _run_profile_cleanup_sync(
+    profile_id: int,
+    capture_retention_days: int,
+    timelapse_retention_days: int,
+) -> dict:
+    """Blocking cleanup body. Creates and uses its own session entirely within
+    the calling thread, so it is safe under ``asyncio.to_thread``. Returns the
+    summary plus a private ``_low_disk`` tuple for the async caller to emit on."""
     db = SessionLocal()
     summary = {
         "profile_id": profile_id,
@@ -111,48 +163,31 @@ async def run_profile_cleanup(
             for root, dirs, files in os.walk(base_dir, topdown=False):
                 if root == base_dir:
                     continue
-                if not os.listdir(root):
-                    os.rmdir(root)
-                    summary["empty_dirs_removed"] += 1
+                # A capture landing between listdir and rmdir raises ENOTEMPTY;
+                # skip rather than abort the whole sweep (it self-heals next run).
+                try:
+                    if not os.listdir(root):
+                        os.rmdir(root)
+                        summary["empty_dirs_removed"] += 1
+                except OSError:
+                    logger.debug("Skipping non-empty/locked dir during cleanup: %s", root)
 
         logger.info("Profile cleanup complete: %s", summary)
 
-        # Emit retention summary event
-        try:
-            from app.services.events import emit
-            await emit(
-                "retention_summary",
-                "Cleanup complete",
-                f"Profile {profile_id}: deleted {summary['captures_deleted']} captures, "
-                f"{summary['timelapses_deleted']} timelapses. "
-                f"Cleaned {summary['orphan_records_cleaned']} orphan records.",
-            )
-        except Exception:
-            logger.exception("Failed to emit retention summary event for profile %d", profile_id)
-
-        # Check low disk space
+        # Determine low-disk state here (cheap stat); the async wrapper emits.
+        summary["_low_disk"] = None
         try:
             usage = shutil.disk_usage(settings.DATA_DIR)
             free_pct = usage.free / usage.total * 100 if usage.total > 0 else 100
-            threshold_db = SessionLocal()
-            try:
-                from app.models import Setting
-                row = threshold_db.query(Setting).filter(Setting.key == "health_low_disk_threshold_percent").first()
-                threshold = int(row.value) if row else 10
-            finally:
-                threshold_db.rollback()
-                threshold_db.close()
-
+            from app.models import Setting
+            row = db.query(Setting).filter(
+                Setting.key == "health_low_disk_threshold_percent"
+            ).first()
+            threshold = int(row.value) if row else 10
             if free_pct < threshold:
-                from app.services.events import emit
-                await emit(
-                    "low_disk_space",
-                    "Low disk space warning",
-                    f"Only {free_pct:.1f}% disk space remaining ({usage.free // (1024**3)} GB free of {usage.total // (1024**3)} GB).",
-                    level="warning",
-                )
+                summary["_low_disk"] = (free_pct, usage.free, usage.total)
         except Exception:
-            logger.exception("Failed to check/emit low disk space warning")
+            logger.exception("Failed to check low disk space")
 
         return summary
 

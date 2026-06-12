@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.models import Base, Capture
+from app.models import Base, Capture, Profile, Stream
 
 
 def test_orphan_cleanup_removes_only_missing_files(tmp_path):
@@ -26,6 +26,10 @@ def test_orphan_cleanup_removes_only_missing_files(tmp_path):
     (tmp_path / present_rel).write_bytes(b"x")
 
     seed = TestSession()
+    # FK enforcement requires a real parent profile (id 1 on a fresh DB).
+    seed.add(Stream(id=1, name="S", url="enc"))
+    seed.add(Profile(id=1, stream_id=1, name="P"))
+    seed.commit()
     # Recent timestamps so the age-based deletion step leaves these for the
     # orphan scan to evaluate.
     seed.add(Capture(profile_id=1, file_path=present_rel, captured_at=datetime.now(UTC)))

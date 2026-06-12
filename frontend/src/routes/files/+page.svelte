@@ -100,7 +100,8 @@
 				timelapses = timelapses.filter((t) => !selectedTimelapses[t.id]);
 			}
 			clearSelection();
-		} catch {
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete selected items');
 		} finally {
 			deleting = false;
 			bulkDeleteTarget = null;
@@ -114,10 +115,13 @@
 		}).catch(() => { loading = false; });
 	});
 
+	let mediaError = $state<string | null>(null);
+
 	async function selectStream(id: number) {
 		selectedStreamId = id;
 		selectedProfileId = null;
 		loadingMedia = true;
+		mediaError = null;
 		capturePage = 0;
 		captures = [];
 		timelapses = [];
@@ -126,7 +130,8 @@
 			profiles = await api.getStreamProfiles(id);
 			await loadCaptures();
 			await loadTimelapses();
-		} catch {
+		} catch (err) {
+			mediaError = err instanceof Error ? err.message : 'Failed to load media';
 		} finally {
 			loadingMedia = false;
 		}
@@ -136,48 +141,49 @@
 		selectedProfileId = profileId;
 		capturePage = 0;
 		loadingMedia = true;
+		mediaError = null;
 		clearSelection();
 		try {
 			await loadCaptures();
 			await loadTimelapses();
-		} catch {
+		} catch (err) {
+			mediaError = err instanceof Error ? err.message : 'Failed to load media';
 		} finally {
 			loadingMedia = false;
 		}
 	}
 
 	async function loadCaptures() {
-		const targetProfiles = selectedProfileId !== null
-			? profiles.filter((p) => p.id === selectedProfileId)
-			: profiles;
-		const allCaptures: Capture[] = [];
-		for (const p of targetProfiles) {
-			const c = await api.getProfileCaptures(p.id, capturePageSize + 1, capturePage * capturePageSize);
-			allCaptures.push(...c);
-		}
-		allCaptures.sort((a, b) => new Date(b.captured_at).getTime() - new Date(a.captured_at).getTime());
-		hasMoreCaptures = allCaptures.length > capturePageSize;
-		captures = allCaptures.slice(0, capturePageSize);
+		// One global, ordered, paginated query across the selected scope. Paging
+		// per-profile and merging skipped rows once more than one profile existed.
+		const c = await api.getCaptures({
+			stream_id: selectedProfileId === null ? (selectedStreamId ?? undefined) : undefined,
+			profile_id: selectedProfileId ?? undefined,
+			limit: capturePageSize + 1,
+			offset: capturePage * capturePageSize
+		});
+		hasMoreCaptures = c.length > capturePageSize;
+		captures = c.slice(0, capturePageSize);
 	}
 
 	async function loadTimelapses() {
-		const targetProfiles = selectedProfileId !== null
-			? profiles.filter((p) => p.id === selectedProfileId)
-			: profiles;
-		const allTimelapses: Timelapse[] = [];
-		for (const p of targetProfiles) {
-			const t = await api.getTimelapses({ profile_id: p.id });
-			allTimelapses.push(...t);
-		}
-		allTimelapses.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-		timelapses = allTimelapses;
+		timelapses = await api.getTimelapses(
+			selectedProfileId !== null
+				? { profile_id: selectedProfileId }
+				: { stream_id: selectedStreamId ?? undefined }
+		);
 	}
 
 	async function changePage(delta: number) {
 		capturePage += delta;
 		loadingMedia = true;
-		await loadCaptures();
-		loadingMedia = false;
+		try {
+			await loadCaptures();
+		} catch (err) {
+			mediaError = err instanceof Error ? err.message : 'Failed to load page';
+		} finally {
+			loadingMedia = false;
+		}
 	}
 
 	async function confirmDelete() {
@@ -191,7 +197,8 @@
 				await api.deleteTimelapse(deleteTarget.id);
 				timelapses = timelapses.filter((t) => t.id !== deleteTarget!.id);
 			}
-		} catch {
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to delete item');
 		} finally {
 			deleting = false;
 			deleteTarget = null;
@@ -256,6 +263,11 @@
 		</div>
 	{:else if loadingMedia}
 		<p class="text-gray-400">Loading files...</p>
+	{:else if mediaError}
+		<div class="rounded-xl border border-red-800 bg-red-950/40 p-6 text-center">
+			<p class="font-medium text-red-300">Couldn't load files</p>
+			<p class="mt-1 text-sm text-red-400">{mediaError}</p>
+		</div>
 	{:else}
 		<!-- Snapshots -->
 		<section>

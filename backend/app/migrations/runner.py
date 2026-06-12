@@ -46,10 +46,18 @@ def run_migrations(engine: Engine) -> None:
                     try:
                         conn.execute(text(statement))
                     except Exception as exc:
-                        # SQLite doesn't support IF NOT EXISTS on ALTER TABLE;
-                        # safely skip duplicate column errors
-                        if "duplicate column name" in str(exc):
-                            logger.info("Column already exists, skipping: %s", exc)
+                        # SQLite executes DDL in autocommit under pysqlite, so a
+                        # migration that fails partway (e.g. the data volume goes
+                        # read-only mid-file) leaves earlier statements applied
+                        # but writes no _migrations row. On the next boot the
+                        # migration re-runs from the top; tolerating "already
+                        # exists" (table/index) and "duplicate column name"
+                        # (ALTER lacks IF NOT EXISTS) lets it converge instead of
+                        # boot-looping on the already-applied prefix. DDL here is
+                        # idempotent by object name, so skipping is safe.
+                        msg = str(exc).lower()
+                        if "duplicate column name" in msg or "already exists" in msg:
+                            logger.info("Object already exists, skipping: %s", exc)
                         else:
                             raise
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
+	import { localToUtcNaive } from '$lib/utils';
 
 
 	interface Props {
@@ -82,10 +83,14 @@
 		};
 	}
 
+	// Captures are stored in UTC, and the presets above serialize via
+	// toISOString() (UTC). The custom inputs are local wall-clock, so convert
+	// them to UTC too (localToUtcNaive) — otherwise a non-UTC user's custom
+	// range is shifted by their offset and selects the wrong frames (or none).
 	let period_start = $derived.by(() => {
 		if (selectedPreset === 'custom') {
 			if (!customStartDate) return '';
-			return `${customStartDate}T${customStartTime || '00:00'}:00`;
+			return localToUtcNaive(customStartDate, customStartTime || '00:00');
 		}
 		return computePresetRange(selectedPreset)?.start ?? '';
 	});
@@ -93,7 +98,7 @@
 	let period_end = $derived.by(() => {
 		if (selectedPreset === 'custom') {
 			if (!customEndDate) return '';
-			return `${customEndDate}T${customEndTime || '23:59'}:00`;
+			return localToUtcNaive(customEndDate, customEndTime || '23:59');
 		}
 		return computePresetRange(selectedPreset)?.end ?? '';
 	});

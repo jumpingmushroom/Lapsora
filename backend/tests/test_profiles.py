@@ -24,6 +24,20 @@ def test_create_profile(client):
     assert data["interval_seconds"] == 30
 
 
+def test_list_all_profiles_across_streams(client):
+    s1 = _create_stream(client)
+    s2 = _create_stream(client)
+    _create_profile(client, s1, "P1")
+    _create_profile(client, s2, "P2")
+
+    resp = client.get("/api/profiles")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert {p["name"] for p in data} == {"P1", "P2"}
+    assert {p["stream_id"] for p in data} == {s1, s2}
+
+
 def test_list_profiles(client):
     sid = _create_stream(client)
     _create_profile(client, sid, "P1")

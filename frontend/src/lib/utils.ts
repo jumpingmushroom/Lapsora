@@ -1,6 +1,5 @@
 let _use24h = false;
 export function setUse24h(val: boolean) { _use24h = val; }
-export function getUse24h(): boolean { return _use24h; }
 
 export function formatBytes(bytes: number | null): string {
 	if (!bytes || bytes === 0) return bytes === 0 ? '0 B' : '--';
@@ -17,10 +16,6 @@ export function formatDate(iso: string | null): string {
 
 export function formatDateTime(iso: string): string {
 	return new Date(iso).toLocaleString(undefined, { hour12: !_use24h });
-}
-
-export function formatTime(iso: string): string {
-	return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: !_use24h });
 }
 
 export function formatCronTime(hour: number, minute: number): string {
@@ -60,6 +55,21 @@ export function timeAgo(iso: string | null): string {
 	const hrs = Math.floor(mins / 60);
 	if (hrs < 24) return `${hrs}h ago`;
 	return `${Math.floor(hrs / 24)}d ago`;
+}
+
+/**
+ * Convert a local wall-clock date + time (as typed in the UI) to a naive
+ * UTC datetime string (YYYY-MM-DDTHH:MM:SS). Captures are stored in UTC, so
+ * custom timelapse ranges must be converted from the user's local zone or they
+ * select the wrong frames on non-UTC hosts. Returns '' for invalid input.
+ */
+export function localToUtcNaive(date: string, time: string): string {
+	// Validate shape first — the Date parser is lenient and would turn garbage
+	// into a plausible-but-wrong instant.
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return '';
+	const local = new Date(`${date}T${time}:00`);
+	if (isNaN(local.getTime())) return '';
+	return local.toISOString().slice(0, 19);
 }
 
 export function healthDotClass(status: string): string {

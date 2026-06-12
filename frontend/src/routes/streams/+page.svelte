@@ -46,19 +46,13 @@
 
 	async function loadStreams() {
 		try {
-			const data = await api.getStreams();
+			// One streams call + one profiles call, counted client-side, instead
+			// of a per-stream profile fetch fan-out.
+			const [data, allProfiles] = await Promise.all([api.getStreams(), api.getAllProfiles()]);
 			streams = data;
 			const counts: Record<number, number> = {};
-			await Promise.all(
-				data.map(async (s) => {
-					try {
-						const profiles = await api.getStreamProfiles(s.id);
-						counts[s.id] = profiles.length;
-					} catch {
-						counts[s.id] = 0;
-					}
-				})
-			);
+			for (const s of data) counts[s.id] = 0;
+			for (const p of allProfiles) counts[p.stream_id] = (counts[p.stream_id] ?? 0) + 1;
 			profileCounts = counts;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';

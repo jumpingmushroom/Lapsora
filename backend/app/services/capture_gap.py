@@ -42,16 +42,20 @@ async def check_capture_gaps() -> None:
         )
         now = datetime.now(UTC)
 
+        # One grouped query for every profile's last capture instead of a
+        # per-profile MAX() round trip.
+        last_by_profile = dict(
+            db.query(Capture.profile_id, func.max(Capture.captured_at))
+            .group_by(Capture.profile_id)
+            .all()
+        )
+
         for profile in profiles:
             try:
                 threshold_seconds = profile.interval_seconds * 3
 
                 # Skip profiles with zero captures
-                last_capture_at = (
-                    db.query(func.max(Capture.captured_at))
-                    .filter(Capture.profile_id == profile.id)
-                    .scalar()
-                )
+                last_capture_at = last_by_profile.get(profile.id)
                 if last_capture_at is None:
                     continue
 

@@ -19,21 +19,32 @@ def init_scheduler() -> None:
 
 
 def _compute_start_date(profile: Profile):
-    """Compute start_date so captures align to predictable clock times."""
+    """Compute start_date so captures align to predictable clock times.
+
+    Times are interpreted in the scheduler's local timezone (container TZ),
+    which matches how the capture gate reads manual active windows.
+    """
     from datetime import datetime, timedelta
 
     now = datetime.now()
+    interval = profile.interval_seconds
 
     if profile.capture_mode == "manual" and profile.active_start_time:
+        # Anchor ticks to today's window-open time. If that anchor is still in
+        # the future, start exactly at window open. If it has already passed
+        # (e.g. the app restarts or the profile is re-enabled mid-window),
+        # advance to the next interval tick from the anchor rather than
+        # deferring the whole day — otherwise captures stop until tomorrow.
         h, m = map(int, profile.active_start_time.split(":"))
-        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-        if target <= now:
-            target += timedelta(days=1)
-        return target
+        anchor = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if anchor > now:
+            return anchor
+        elapsed = (now - anchor).total_seconds()
+        next_tick = (int(elapsed // interval) + 1) * interval
+        return anchor + timedelta(seconds=next_tick)
 
     # Align to clock boundary from top of hour
     base = now.replace(minute=0, second=0, microsecond=0)
-    interval = profile.interval_seconds
     elapsed = (now - base).total_seconds()
     next_tick = (int(elapsed // interval) + 1) * interval
     return base + timedelta(seconds=next_tick)

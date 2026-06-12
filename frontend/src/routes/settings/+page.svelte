@@ -61,6 +61,7 @@
 	let prusaTestResult = $state<string | null>(null);
 
 	let loading = $state(true);
+	let loadError = $state<string | null>(null);
 	let logoInfo = $state<{ exists: boolean; uploaded_at: string | null }>({ exists: false, uploaded_at: null });
 	let logoCacheBust = $state(0);
 	let uploadingLogo = $state(false);
@@ -111,6 +112,13 @@
 				haConfig = haCfg;
 				prusaConfig = prusaCfg;
 				logoInfo = logoCfg;
+				loadError = null;
+			})
+			.catch((err) => {
+				// Without this, a failed load silently leaves the hardcoded
+				// default $state values in place; saving any section would then
+				// overwrite the real stored config with those defaults.
+				loadError = err instanceof Error ? err.message : 'Failed to load settings';
 			})
 			.finally(() => {
 				loading = false;
@@ -120,9 +128,12 @@
 
 	async function loadPrusaProfiles() {
 		try {
-			const streams = await api.getStreams();
-			const lists = await Promise.all(streams.map((s) => api.getStreamProfiles(s.id)));
-			prusaProfiles = streams.flatMap((s, i) => lists[i].map((p) => ({ id: p.id, label: `${s.name} / ${p.name}` })));
+			const [streams, profiles] = await Promise.all([api.getStreams(), api.getAllProfiles()]);
+			const streamName = new Map(streams.map((s) => [s.id, s.name]));
+			prusaProfiles = profiles.map((p) => ({
+				id: p.id,
+				label: `${streamName.get(p.stream_id) ?? '?'} / ${p.name}`
+			}));
 		} catch {
 			prusaProfiles = [];
 		}
@@ -130,20 +141,32 @@
 
 	async function addUrl() {
 		if (!newLabel.trim() || !newUrl.trim()) return;
-		const nu = await api.addNotificationURL({ label: newLabel.trim(), url: newUrl.trim() });
-		urls = [...urls, nu];
-		newLabel = '';
-		newUrl = '';
+		try {
+			const nu = await api.addNotificationURL({ label: newLabel.trim(), url: newUrl.trim() });
+			urls = [...urls, nu];
+			newLabel = '';
+			newUrl = '';
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to add notification URL');
+		}
 	}
 
 	async function removeUrl(id: number) {
-		await api.deleteNotificationURL(id);
-		urls = urls.filter((u) => u.id !== id);
+		try {
+			await api.deleteNotificationURL(id);
+			urls = urls.filter((u) => u.id !== id);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to remove notification URL');
+		}
 	}
 
 	async function toggleUrl(nu: NotificationURL) {
-		const updated = await api.updateNotificationURL(nu.id, { enabled: !nu.enabled });
-		urls = urls.map((u) => (u.id === updated.id ? updated : u));
+		try {
+			const updated = await api.updateNotificationURL(nu.id, { enabled: !nu.enabled });
+			urls = urls.map((u) => (u.id === updated.id ? updated : u));
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to update notification URL');
+		}
 	}
 
 	async function testUrl(id: number) {
@@ -345,6 +368,14 @@
 
 	{#if loading}
 		<p class="text-gray-400">Loading settings...</p>
+	{:else if loadError}
+		<div class="rounded-xl border border-red-800 bg-red-950/40 p-6">
+			<p class="font-medium text-red-300">Couldn't load settings</p>
+			<p class="mt-1 text-sm text-red-400">{loadError}</p>
+			<p class="mt-2 text-sm text-gray-400">
+				The form is hidden to avoid overwriting your saved configuration with defaults. Reload the page to try again.
+			</p>
+		</div>
 	{:else}
 		{#if activeTab === 'general'}
 			<!-- Display -->

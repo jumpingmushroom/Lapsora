@@ -4,8 +4,10 @@ const BASE = '/api';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
 	const res = await fetch(`${BASE}${path}`, {
-		headers: { 'Content-Type': 'application/json', ...options?.headers },
-		...options
+		// Spread options first, then headers, so a caller-supplied options.headers
+		// can't overwrite the merged object and drop Content-Type.
+		...options,
+		headers: { 'Content-Type': 'application/json', ...options?.headers }
 	});
 	if (!res.ok) {
 		const text = await res.text().catch(() => '');
@@ -37,6 +39,7 @@ export const api = {
 	irTestStream: (id: number) => request<{ chroma: number; preview: string }>(`/streams/${id}/ir-test`),
 
 	// Profiles
+	getAllProfiles: () => request<Profile[]>('/profiles'),
 	getStreamProfiles: (streamId: number) => request<Profile[]>(`/streams/${streamId}/profiles`),
 	getProfile: (id: number) => request<Profile>(`/profiles/${id}`),
 	createProfile: (streamId: number, data: ProfileCreate) => request<Profile>(`/streams/${streamId}/profiles`, { method: 'POST', body: JSON.stringify(data) }),
@@ -58,14 +61,24 @@ export const api = {
 
 	// Captures
 	getProfileCaptures: (profileId: number, limit = 50, offset = 0) => request<Capture[]>(`/profiles/${profileId}/captures?limit=${limit}&offset=${offset}`),
+	getCaptures: (params?: { stream_id?: number; profile_id?: number; limit?: number; offset?: number }) => {
+		const sp = new URLSearchParams();
+		if (params?.stream_id !== undefined) sp.set('stream_id', String(params.stream_id));
+		if (params?.profile_id !== undefined) sp.set('profile_id', String(params.profile_id));
+		if (params?.limit !== undefined) sp.set('limit', String(params.limit));
+		if (params?.offset !== undefined) sp.set('offset', String(params.offset));
+		const qs = sp.toString();
+		return request<Capture[]>(`/captures${qs ? '?' + qs : ''}`);
+	},
 	getCaptureImageUrl: (id: number) => `${BASE}/captures/${id}/image`,
 	deleteCapture: (id: number) => request<void>(`/captures/${id}`, { method: 'DELETE' }),
 	bulkDeleteCaptures: (ids: number[]) => request<void>('/captures/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 
 	// Timelapses
-	getTimelapses: (params?: { profile_id?: number; period_type?: string; limit?: number; offset?: number }) => {
+	getTimelapses: (params?: { profile_id?: number; stream_id?: number; period_type?: string; limit?: number; offset?: number }) => {
 		const searchParams = new URLSearchParams();
 		if (params?.profile_id) searchParams.set('profile_id', String(params.profile_id));
+		if (params?.stream_id) searchParams.set('stream_id', String(params.stream_id));
 		if (params?.period_type) searchParams.set('period_type', params.period_type);
 		if (params?.limit) searchParams.set('limit', String(params.limit));
 		if (params?.offset) searchParams.set('offset', String(params.offset));

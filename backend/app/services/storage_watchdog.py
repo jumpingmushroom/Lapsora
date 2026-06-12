@@ -19,6 +19,7 @@ Worst case becomes ~one escalation window of downtime followed by automatic
 recovery, instead of an indefinite silent stall.
 """
 
+import asyncio
 import logging
 import os
 import tempfile
@@ -93,7 +94,9 @@ async def check_storage_writable() -> None:
     """Watchdog job: probe write-ability and escalate on persistent failure."""
     global _consecutive_failures
 
-    ok, reason = probe_storage_writable()
+    # The probe does blocking disk + DB I/O with no timeout; run it off the loop
+    # so a hung mount can't freeze the whole event loop.
+    ok, reason = await asyncio.to_thread(probe_storage_writable)
     if ok:
         if _consecutive_failures:
             logger.info("Storage write recovered after %d failure(s)", _consecutive_failures)

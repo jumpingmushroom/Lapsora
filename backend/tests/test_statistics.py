@@ -1,6 +1,24 @@
 from datetime import UTC, datetime, timedelta
 
-from app.models import Capture
+from app.models import Capture, Profile, Stream
+
+
+def _ensure_profiles(db, count):
+    """Seed a stream + ``count`` profiles. On a fresh in-memory DB their ids are
+    1..count, matching the profile_ids the tests reference. Required now that
+    FOREIGN KEY enforcement rejects captures with no parent profile."""
+    s = Stream(name="S", url="enc")
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    ids = []
+    for i in range(count):
+        p = Profile(stream_id=s.id, name=f"p{i}")
+        db.add(p)
+        db.commit()
+        db.refresh(p)
+        ids.append(p.id)
+    return ids
 
 
 def _seed(db, profile_id, when, size=100):
@@ -20,6 +38,7 @@ def test_capture_activity_respects_cutoff_boundary(client, db):
     Guards the switch from `date(captured_at) >= :cutoff` to the sargable
     `captured_at >= :cutoff`, which must stay behaviourally identical.
     """
+    _ensure_profiles(db, 1)
     now = datetime.now(UTC)
     _seed(db, 1, now)
     _seed(db, 1, now - timedelta(days=5))
@@ -38,6 +57,7 @@ def test_capture_activity_respects_cutoff_boundary(client, db):
 
 
 def test_profile_storage_filters_by_profile(client, db):
+    _ensure_profiles(db, 2)
     now = datetime.now(UTC)
     _seed(db, 1, now, size=500)
     _seed(db, 2, now, size=999)

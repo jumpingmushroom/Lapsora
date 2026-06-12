@@ -274,7 +274,11 @@
 					fps: formFps,
 					format: formFormat,
 					deflicker: formDeflicker,
-					lookback_hours: formLookbackHours ?? undefined,
+					// Send the value (incl. explicit null) so clearing the field
+					// actually clears it; `?? undefined` would be dropped by
+					// JSON.stringify and the backend's exclude_unset, silently
+					// keeping the old value.
+					lookback_hours: formLookbackHours,
 					...overlayFields
 				});
 			} else {

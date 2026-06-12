@@ -18,6 +18,7 @@ from app.database import SessionLocal
 from app.models import Capture, Timelapse
 from app.services.deflicker import deflicker_frames
 from app.services.gpu import is_nvenc_available, get_nvenc_encoders, is_cupy_available
+from app.services.rtsp import _kill
 
 import cv2
 import numpy as np
@@ -291,13 +292,6 @@ NVENC_QUALITY_CQ = {
     "h265": {"low": 36, "medium": 30, "high": 24},
 }
 
-RESOLUTION_PRESETS = {
-    "720p":  (1280, 720),
-    "1080p": (1920, 1080),
-    "4k":    (3840, 2160),
-    "8k":    (7680, 4320),
-}
-
 FFMPEG_TIMEOUT = 300  # 5 minutes
 
 
@@ -337,6 +331,87 @@ def get_period_range(
         raise ValueError(f"Unknown period_type: {period_type}")
 
     return start, end
+
+
+def _remove_partial_output(*paths) -> None:
+    """Unlink partial timelapse output left behind when generation fails or is
+    cancelled before the DB row is committed — nothing tracks these files, so
+    they would otherwise leak (the orphan sweep only works DB→disk)."""
+    for path in paths:
+        if path and os.path.exists(path):
+            try:
+                os.unlink(path)
+            except OSError:
+                logger.exception("Failed to remove partial output %s", path)
+
+
+def _apply_weather_overlay_frames(
+    frame_paths, frame_captures, weather_style, weather_position,
+    weather_unit, weather_font_size, layout, cancel_check=None,
+):
+    """Composite the weather overlay onto each frame. CPU/IO-bound (PIL open +
+    re-encode per frame) — run via ``asyncio.to_thread`` so it never blocks the
+    event loop (a long job otherwise starves capture jobs and the API)."""
+    from PIL import Image
+    from app.services.weather_overlay import render_frame
+
+    for i, path in enumerate(frame_paths):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
+        cap = frame_captures[i]
+        if cap.weather_temp is None:
+            continue
+        try:
+            img = Image.open(path)
+            render_frame(
+                img, cap, weather_style, weather_position,
+                weather_unit, weather_font_size, layout,
+            )
+            img.save(path, "JPEG", quality=95)
+            img.close()
+        except Exception:
+            logger.warning("Failed to apply weather overlay to frame %d", i)
+
+
+def _apply_sensor_overlay_frames(
+    frame_paths, frame_captures, ha_overlay_position, sensor_layout, cancel_check=None,
+):
+    """Composite the Home Assistant sensor overlay onto each frame. Run via
+    ``asyncio.to_thread`` (see ``_apply_weather_overlay_frames``)."""
+    from PIL import Image
+    from app.services.sensor_overlay import render_frame as sensor_render_frame
+
+    for i, path in enumerate(frame_paths):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
+        cap = frame_captures[i]
+        if not getattr(cap, "sensor_data", None):
+            continue
+        try:
+            img = Image.open(path)
+            sensor_render_frame(img, cap, ha_overlay_position, sensor_layout)
+            img.save(path, "JPEG", quality=95)
+            img.close()
+        except Exception:
+            logger.warning("Failed to apply sensor overlay to frame %d", i)
+
+
+def _apply_logo_overlay_frames(frame_paths, logo_layout, cancel_check=None):
+    """Composite the logo/watermark onto each frame. Run via
+    ``asyncio.to_thread`` (see ``_apply_weather_overlay_frames``)."""
+    from PIL import Image
+    from app.services.logo_overlay import render_frame as logo_render_frame
+
+    for i, path in enumerate(frame_paths):
+        if cancel_check and i % 10 == 0:
+            cancel_check()
+        try:
+            img = Image.open(path)
+            logo_render_frame(img, logo_layout)
+            img.save(path, "JPEG", quality=95)
+            img.close()
+        except Exception:
+            logger.warning("Failed to apply logo overlay to frame %d", i)
 
 
 async def generate_timelapse(
@@ -385,6 +460,8 @@ async def generate_timelapse(
     db: Session = SessionLocal()
     tmp_filelist = None
     deflicker_dir = None
+    out_path = None
+    thumb_path = None
 
     def _check_cancel():
         if cancel_event and cancel_event.is_set():
@@ -524,8 +601,7 @@ async def generate_timelapse(
         if weather_overlay:
             _check_cancel()
             await _progress("weather_overlay", "in_progress")
-            from PIL import Image
-            from app.services.weather_overlay import compute_layout, render_frame
+            from app.services.weather_overlay import compute_layout
 
             valid_caps = [c for c in frame_captures if c.weather_temp is not None]
             layout = (
@@ -534,62 +610,40 @@ async def generate_timelapse(
                 else None
             )
 
-            for i, path in enumerate(frame_paths):
-                if cancel_event and i % 10 == 0:
-                    _check_cancel()
-                cap = frame_captures[i]
-                if cap.weather_temp is None:
-                    continue
-                try:
-                    img = Image.open(path)
-                    render_frame(
-                        img, cap, weather_style, weather_position,
-                        weather_unit, weather_font_size, layout,
-                    )
-                    img.save(path, "JPEG", quality=95)
-                    img.close()
-                except Exception:
-                    logger.warning("Failed to apply weather overlay to frame %d", i)
+            await asyncio.to_thread(
+                _apply_weather_overlay_frames,
+                frame_paths, frame_captures, weather_style, weather_position,
+                weather_unit, weather_font_size, layout,
+                cancel_check=_check_cancel,
+            )
             await _progress("weather_overlay", "completed")
 
         # Step: Home Assistant sensor overlay
         if ha_overlay:
             _check_cancel()
             await _progress("sensor_overlay", "in_progress")
-            from PIL import Image
             from app.services.sensor_overlay import (
                 compute_layout as sensor_compute_layout,
-                render_frame as sensor_render_frame,
             )
 
             sensor_caps = [c for c in frame_captures if getattr(c, "sensor_data", None)]
             sensor_layout = sensor_compute_layout(sensor_caps) if sensor_caps else None
 
             if sensor_layout is not None:
-                for i, path in enumerate(frame_paths):
-                    if cancel_event and i % 10 == 0:
-                        _check_cancel()
-                    cap = frame_captures[i]
-                    if not getattr(cap, "sensor_data", None):
-                        continue
-                    try:
-                        img = Image.open(path)
-                        sensor_render_frame(img, cap, ha_overlay_position, sensor_layout)
-                        img.save(path, "JPEG", quality=95)
-                        img.close()
-                    except Exception:
-                        logger.warning("Failed to apply sensor overlay to frame %d", i)
+                await asyncio.to_thread(
+                    _apply_sensor_overlay_frames,
+                    frame_paths, frame_captures, ha_overlay_position, sensor_layout,
+                    cancel_check=_check_cancel,
+                )
             await _progress("sensor_overlay", "completed")
 
         # Step: logo / watermark overlay (applied last so it sits on top)
         if logo_overlay:
             _check_cancel()
             await _progress("logo_overlay", "in_progress")
-            from PIL import Image
             from app.models import Setting
             from app.services.logo_overlay import (
                 compute_layout as logo_compute_layout,
-                render_frame as logo_render_frame,
             )
 
             row = db.query(Setting).filter(Setting.key == "logo_file_path").first()
@@ -612,16 +666,10 @@ async def generate_timelapse(
             if logo_layout is None:
                 logger.warning("Logo overlay enabled but no logo uploaded; skipping")
             else:
-                for i, path in enumerate(frame_paths):
-                    if cancel_event and i % 10 == 0:
-                        _check_cancel()
-                    try:
-                        img = Image.open(path)
-                        logo_render_frame(img, logo_layout)
-                        img.save(path, "JPEG", quality=95)
-                        img.close()
-                    except Exception:
-                        logger.warning("Failed to apply logo overlay to frame %d", i)
+                await asyncio.to_thread(
+                    _apply_logo_overlay_frames,
+                    frame_paths, logo_layout, cancel_check=_check_cancel,
+                )
             await _progress("logo_overlay", "completed")
 
         # Step: encoding
@@ -745,10 +793,20 @@ async def generate_timelapse(
         set_active_ffmpeg_proc(proc)
         try:
             _, stderr = await asyncio.wait_for(proc.communicate(), timeout=FFMPEG_TIMEOUT)
+        except asyncio.TimeoutError:
+            # Kill the overran encoder so it stops burning CPU/NVENC and growing
+            # the partial output while the next job starts — wait_for only
+            # cancels the await, not the process.
+            await _kill(proc)
+            raise RuntimeError(f"ffmpeg encode timed out after {FFMPEG_TIMEOUT}s")
         finally:
             set_active_ffmpeg_proc(None)
 
         if proc.returncode != 0:
+            # A non-zero return code right after a cancel request means the
+            # cancel path killed ffmpeg — surface it as a cancellation, not a
+            # failure (otherwise the user sees a spurious "failed" notification).
+            _check_cancel()
             error_msg = stderr.decode().strip() if stderr else "unknown error"
             raise RuntimeError(f"ffmpeg failed (rc={proc.returncode}): {error_msg}")
 
@@ -856,6 +914,7 @@ async def generate_timelapse(
 
     except GenerationCancelled:
         logger.info("Timelapse generation cancelled for profile %d", profile_id)
+        _remove_partial_output(out_path, thumb_path)
         from app.services.generation_progress import cancel_generation as cancel_progress
         cancel_progress(generation_id)
         try:
@@ -868,6 +927,7 @@ async def generate_timelapse(
             logger.exception("Failed to emit timelapse_cancelled event for generation %s", generation_id)
     except Exception as exc:
         logger.exception("Timelapse generation failed for profile %d", profile_id)
+        _remove_partial_output(out_path, thumb_path)
         fail_generation(generation_id, str(exc))
         try:
             await emit(

@@ -21,20 +21,14 @@
 			.then((data) => { storage = data; })
 			.catch(() => {});
 
-		api.getStreams()
-			.then(async (data) => {
+		// One streams call + one profiles call, counted client-side, instead of a
+		// per-stream profile fetch fan-out.
+		Promise.all([api.getStreams(), api.getAllProfiles()])
+			.then(([data, allProfiles]) => {
 				streams = data;
 				const counts: Record<number, number> = {};
-				await Promise.all(
-					data.map(async (s) => {
-						try {
-							const profiles = await api.getStreamProfiles(s.id);
-							counts[s.id] = profiles.length;
-						} catch {
-							counts[s.id] = 0;
-						}
-					})
-				);
+				for (const s of data) counts[s.id] = 0;
+				for (const p of allProfiles) counts[p.stream_id] = (counts[p.stream_id] ?? 0) + 1;
 				profileCounts = counts;
 			})
 			.catch(() => {});
