@@ -33,11 +33,6 @@ def get_active_ffmpeg_proc() -> asyncio.subprocess.Process | None:
         return _active_ffmpeg_proc
 
 
-def get_cancel_event(generation_id: str) -> threading.Event | None:
-    """Get the cancel event for a generation."""
-    return _cancel_events.get(generation_id)
-
-
 async def enqueue_generation(**kwargs) -> dict:
     """Enqueue a timelapse generation job. Returns dict with generation_id and position."""
     generation_id = uuid.uuid4().hex[:12]
@@ -168,39 +163,61 @@ async def _worker() -> None:
     logger.info("Queue worker started")
     while True:
         job = await _queue.get()
-        generation_id = job["generation_id"]
+        # The whole iteration body is guarded: a failure in dequeue bookkeeping
+        # or SSE broadcast must not kill the worker loop (which would silently
+        # hang every future generation). task_done() runs exactly once per get().
+        try:
+            generation_id = job["generation_id"]
 
-        # Check if already cancelled before starting
-        event = _cancel_events.get(generation_id)
-        if event and event.is_set():
-            _cancel_events.pop(generation_id, None)
+            # Check if already cancelled before starting
+            event = _cancel_events.get(generation_id)
+            if event and event.is_set():
+                with _pending_lock:
+                    _pending_jobs[:] = [j for j in _pending_jobs if j["generation_id"] != generation_id]
+                _broadcast_queue_updated()
+                continue
+
+            _current_job = job
+
+            # Remove from pending list and broadcast position updates
             with _pending_lock:
                 _pending_jobs[:] = [j for j in _pending_jobs if j["generation_id"] != generation_id]
             _broadcast_queue_updated()
-            _queue.task_done()
-            continue
 
-        _current_job = job
-
-        # Remove from pending list and broadcast position updates
-        with _pending_lock:
-            _pending_jobs[:] = [j for j in _pending_jobs if j["generation_id"] != generation_id]
-        _broadcast_queue_updated()
-
-        try:
-            job_kwargs = {k: v for k, v in job.items() if k != "generation_id"}
-            await generate_timelapse(**job_kwargs, cancel_event=event, generation_id=generation_id)
+            try:
+                job_kwargs = {k: v for k, v in job.items() if k != "generation_id"}
+                await generate_timelapse(**job_kwargs, cancel_event=event, generation_id=generation_id)
+            except Exception:
+                logger.exception("Queued generation %s failed", generation_id)
         except Exception:
-            logger.exception("Queued generation %s failed", generation_id)
+            logger.exception("Queue worker iteration crashed; continuing")
         finally:
             _current_job = None
-            _cancel_events.pop(generation_id, None)
+            gid = job.get("generation_id") if isinstance(job, dict) else None
+            if gid:
+                _cancel_events.pop(gid, None)
             set_active_ffmpeg_proc(None)
             _queue.task_done()
+
+
+def _on_worker_done(task: asyncio.Task) -> None:
+    """Surface an unexpected worker exit. Previously the task had no callback, so
+    if the loop ever died every future generation hung silently. We log loudly
+    rather than auto-restart: a restart that immediately re-fails would spin."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error(
+            "Generation queue worker exited unexpectedly; queued generations "
+            "will not run until the app restarts",
+            exc_info=exc,
+        )
 
 
 def start_worker() -> None:
     """Start the queue worker coroutine. Call from app lifespan."""
     global _worker_task
-    _worker_task = asyncio.get_event_loop().create_task(_worker())
+    _worker_task = asyncio.get_running_loop().create_task(_worker())
+    _worker_task.add_done_callback(_on_worker_done)
     logger.info("Generation queue worker launched")

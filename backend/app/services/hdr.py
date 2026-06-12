@@ -9,6 +9,8 @@ import tempfile
 import cv2
 import numpy as np
 
+from app.services.rtsp import _kill
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,7 +100,11 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        try:
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        except asyncio.TimeoutError:
+            await _kill(proc)
+            raise RuntimeError("Timed out grabbing HDR frames after 15s")
         if proc.returncode != 0:
             raise RuntimeError(f"ffmpeg frame grab failed: {stderr.decode().strip()}")
 

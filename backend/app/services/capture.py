@@ -11,6 +11,7 @@ from PIL import Image
 from app.config import decrypt, settings
 from app.database import SessionLocal
 from app.models import Capture, Profile, Setting
+from app.services.rtsp import _kill
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +186,15 @@ def _is_within_active_window(profile, db, now: datetime) -> bool:
     else:  # manual
         if not profile.active_start_time or not profile.active_end_time:
             return True
+        # active_start_time/active_end_time are wall-clock times in the
+        # container's local timezone (TZ env). `now` arrives as UTC-aware, so
+        # convert to local before comparing; naive datetimes (tests) pass
+        # through unchanged. The sun branch above stays in UTC deliberately —
+        # astral returns UTC times for a UTC observer.
+        local_now = now.astimezone() if now.tzinfo is not None else now
         start = datetime.strptime(profile.active_start_time, "%H:%M").time()
         end = datetime.strptime(profile.active_end_time, "%H:%M").time()
-        current = now.time()
+        current = local_now.time()
         if start <= end:
             return start <= current <= end
         else:
@@ -326,7 +333,13 @@ async def capture_frame(profile_id: int) -> None:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+                try:
+                    _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+                except asyncio.TimeoutError:
+                    # Kill the overran ffmpeg so it does not linger holding the
+                    # RTSP connection — one leaks per interval otherwise.
+                    await _kill(proc)
+                    raise
                 if proc.returncode != 0:
                     err_msg = stderr.decode().strip()
                     logger.error(
