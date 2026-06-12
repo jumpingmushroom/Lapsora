@@ -229,7 +229,7 @@ export interface TimelapseScheduleCreate {
 	fps?: number;
 	format?: string;
 	deflicker?: string;
-	lookback_hours?: number;
+	lookback_hours?: number | null;
 	timestamp_overlay?: boolean;
 	weather_overlay?: boolean;
 	weather_position?: string;
@@ -261,7 +261,7 @@ export interface TimelapseScheduleUpdate {
 	fps?: number;
 	format?: string;
 	deflicker?: string;
-	lookback_hours?: number;
+	lookback_hours?: number | null;
 	timestamp_overlay?: boolean;
 	weather_overlay?: boolean;
 	weather_position?: string;

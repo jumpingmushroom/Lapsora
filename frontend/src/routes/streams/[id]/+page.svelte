@@ -90,6 +90,9 @@
 
 	$effect(() => {
 		const currentId = id;
+		// Guard against a slow response for a previous stream resolving after the
+		// user navigated away and clobbering the new stream's data.
+		let cancelled = false;
 		loading = true;
 		error = null;
 		previewOpen = false;
@@ -104,6 +107,7 @@
 			api.getStreamProfiles(currentId)
 		])
 			.then(([s, p]) => {
+				if (cancelled) return;
 				stream = s;
 				editName = s.name;
 				editEnabled = s.enabled;
@@ -112,19 +116,25 @@
 					capturesProfileId = p[0].id;
 					api.getProfileCaptures(p[0].id, CAPTURES_PAGE)
 						.then((c) => {
+							if (cancelled) return;
 							captures = c;
 							allCapturesLoaded = c.length < CAPTURES_PAGE;
 						})
 						.catch(() => {});
 				}
 			})
-			.catch((err) => { error = err instanceof Error ? err.message : 'Failed to load'; })
-			.finally(() => { loading = false; });
+			.catch((err) => { if (!cancelled) error = err instanceof Error ? err.message : 'Failed to load'; })
+			.finally(() => { if (!cancelled) loading = false; });
+
+		return () => { cancelled = true; };
 	});
 
-	// Auto-refresh preview every 5 seconds
+	// Auto-refresh preview. Each refresh triggers a live server-side frame grab,
+	// so keep it gentle and skip it while the tab is hidden.
 	$effect(() => {
-		const interval = setInterval(() => { previewKey++; }, 5000);
+		const interval = setInterval(() => {
+			if (!document.hidden) previewKey++;
+		}, 15000);
 		return () => clearInterval(interval);
 	});
 
@@ -359,6 +369,7 @@
 							alt="{stream.name} live preview"
 							class="h-full w-full object-contain"
 							onerror={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '0.3'; }}
+							onload={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '1'; }}
 						/>
 					</div>
 					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 5 seconds</p>

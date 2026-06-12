@@ -37,14 +37,13 @@
 
 	async function loadProfiles() {
 		try {
-			const fetchedStreams = await api.getStreams();
+			// One streams call + one profiles call instead of a per-stream fan-out.
+			const [fetchedStreams, allProfiles] = await Promise.all([
+				api.getStreams(),
+				api.getAllProfiles()
+			]);
 			streams = fetchedStreams;
-			const all: Profile[] = [];
-			for (const s of fetchedStreams) {
-				const ps = await api.getStreamProfiles(s.id);
-				all.push(...ps);
-			}
-			profiles = all;
+			profiles = allProfiles;
 		} catch {}
 	}
 

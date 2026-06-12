@@ -15,13 +15,21 @@
 	let readCount = $derived(notifications.filter((n) => n.read).length);
 
 	async function markRead(id: number) {
-		await api.markNotificationRead(id);
-		onRefresh();
+		try {
+			await api.markNotificationRead(id);
+			onRefresh();
+		} catch {
+			// silently ignore
+		}
 	}
 
 	async function markAllRead() {
-		await api.markAllNotificationsRead();
-		onRefresh();
+		try {
+			await api.markAllNotificationsRead();
+			onRefresh();
+		} catch {
+			// silently ignore
+		}
 	}
 
 	async function handleClearRead() {

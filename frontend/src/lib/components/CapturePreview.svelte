@@ -33,8 +33,11 @@
 		else if (e.key === 'Escape') onClose();
 	}
 
-	// Show the spinner again whenever the displayed capture changes.
+	// Show the spinner again whenever the displayed capture changes. Guard
+	// against `current` being undefined if `captures` shrinks (e.g. a deletion
+	// while the viewer is open) — reading `.id` unguarded would throw.
 	$effect(() => {
+		if (!current) return;
 		current.id;
 		imgLoading = true;
 	});

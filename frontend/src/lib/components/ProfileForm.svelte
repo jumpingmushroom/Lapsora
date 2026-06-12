@@ -316,6 +316,8 @@ let sun_events = $state<string[]>(
 			<input
 				id="sun-offset"
 				type="number"
+				min="-180"
+				max="180"
 				bind:value={sun_offset_minutes}
 				class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 			/>
