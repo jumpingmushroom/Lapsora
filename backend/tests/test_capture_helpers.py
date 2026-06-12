@@ -3,10 +3,13 @@
 These are core to every capture but were previously untested.
 """
 
-from datetime import datetime
+import os
+import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from app.services import capture
@@ -69,3 +72,37 @@ def test_active_window_manual_overnight_span():
     # 02:00 is inside the overnight window, 12:00 is outside.
     assert capture._is_within_active_window(profile, None, datetime(2026, 6, 12, 2, 0)) is True
     assert capture._is_within_active_window(profile, None, datetime(2026, 6, 12, 12, 0)) is False
+
+
+@pytest.fixture
+def _ny_timezone():
+    """Pin the process timezone to America/New_York (UTC-5 in January)."""
+    prev = os.environ.get("TZ")
+    os.environ["TZ"] = "America/New_York"
+    time.tzset()
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = prev
+        time.tzset()
+
+
+def test_active_window_manual_uses_local_not_utc(_ny_timezone):
+    """A UTC-aware `now` must be compared in local time, not UTC.
+
+    With TZ=America/New_York (UTC-5), the manual window 08:00–20:00 is local.
+    These two instants are discriminators: each lands on the opposite side of
+    the window in UTC vs local, so the old UTC-based check gave wrong answers.
+    """
+    profile = SimpleNamespace(
+        capture_mode="manual", active_start_time="08:00", active_end_time="20:00"
+    )
+    # 00:00 UTC == 19:00 local (Jan 16 -> Jan 15 local): inside the window.
+    inside = datetime(2026, 1, 16, 0, 0, tzinfo=UTC)
+    assert capture._is_within_active_window(profile, None, inside) is True
+    # 11:00 UTC == 06:00 local: before the window opens.
+    outside = datetime(2026, 1, 15, 11, 0, tzinfo=UTC)
+    assert capture._is_within_active_window(profile, None, outside) is False

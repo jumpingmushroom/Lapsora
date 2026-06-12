@@ -82,6 +82,10 @@ def test_cleanup_old_capture_missing_file_still_deletes_row(tmp_path):
 
     old = datetime.now(UTC) - timedelta(days=40)
     seed = TestSession()
+    # FK enforcement requires a real parent profile (id 1 on a fresh DB).
+    seed.add(Stream(id=1, name="S", url="enc"))
+    seed.add(Profile(id=1, stream_id=1, name="P"))
+    seed.commit()
     seed.add(Capture(profile_id=1, file_path="captures/old_missing.jpg", captured_at=old))
     seed.commit()
     seed.close()
