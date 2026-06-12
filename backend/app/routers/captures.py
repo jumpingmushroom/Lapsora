@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.models import Capture
+from app.models import Capture, Profile
 from app.schemas import BulkDeleteRequest, CaptureRead
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,32 @@ def _safe_remove(path: str) -> None:
             os.remove(path)
     except OSError:
         logger.exception("Failed to remove file %s during delete", path)
+
+
+@router.get("/captures", response_model=list[CaptureRead])
+def list_captures_across_profiles(
+    stream_id: int | None = None,
+    profile_id: int | None = None,
+    limit: int = Query(default=50, le=1000),
+    offset: int = 0,
+    db: Session = Depends(get_db),
+):
+    """Captures across one or more profiles with a single global ordering and
+    pagination. The files page uses this so paging through "all profiles" walks
+    one merged timeline; paginating each profile separately skipped rows."""
+    q = db.query(Capture)
+    if profile_id is not None:
+        q = q.filter(Capture.profile_id == profile_id)
+    elif stream_id is not None:
+        q = q.join(Profile, Capture.profile_id == Profile.id).filter(
+            Profile.stream_id == stream_id
+        )
+    return (
+        q.order_by(Capture.captured_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
 
 
 @router.get("/profiles/{profile_id}/captures", response_model=list[CaptureRead])

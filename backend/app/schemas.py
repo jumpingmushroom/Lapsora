@@ -91,11 +91,6 @@ class PrusaLinkRead(BaseModel):
     connected: bool  # live reachability probe (cached); drives the status badge
 
 
-class Go2rtcStreamInfo(BaseModel):
-    name: str
-    producers: list
-
-
 # --- Profiles ---
 
 
@@ -109,7 +104,9 @@ class ProfileCreate(BaseModel):
     capture_mode: Literal["always", "manual", "sun"] = "always"
     active_start_time: str | None = None
     active_end_time: str | None = None
-    sun_offset_minutes: int = Field(default=0, ge=0, le=180)
+    # Negative offsets shrink the sun window (as the UI documents); positive
+    # expand it. Allow both, bounded to +/-3h.
+    sun_offset_minutes: int = Field(default=0, ge=-180, le=180)
     sun_events: str = ""
     ir_only: bool = False
     ir_chroma_threshold: float = Field(default=10.0, ge=0, le=100)
@@ -119,16 +116,16 @@ class ProfileCreate(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: str | None = None
-    interval_seconds: int | None = None
+    interval_seconds: int | None = Field(default=None, ge=1)
     resolution_width: int | None = None
     resolution_height: int | None = None
-    quality: int | None = None
+    quality: int | None = Field(default=None, ge=1, le=100)
     hdr_enabled: bool | None = None
     enabled: bool | None = None
     capture_mode: Literal["always", "manual", "sun"] | None = None
     active_start_time: str | None = None
     active_end_time: str | None = None
-    sun_offset_minutes: int | None = None
+    sun_offset_minutes: int | None = Field(default=None, ge=-180, le=180)
     sun_events: str | None = None
     ir_only: bool | None = None
     ir_chroma_threshold: float | None = Field(default=None, ge=0, le=100)
@@ -170,10 +167,13 @@ class ProfileTemplateCreate(BaseModel):
     name: str
     category: str
     description: str = ""
-    interval_seconds: int = 60
+    # Mirror ProfileCreate's bounds: apply_template copies these straight into a
+    # Profile, so an unvalidated 0 here would produce a profile whose capture
+    # job raises (interval) or divides by zero downstream.
+    interval_seconds: int = Field(default=60, ge=1)
     resolution_width: int | None = None
     resolution_height: int | None = None
-    quality: int = 85
+    quality: int = Field(default=85, ge=1, le=100)
     hdr_enabled: bool = False
 
 
@@ -181,10 +181,10 @@ class ProfileTemplateUpdate(BaseModel):
     name: str | None = None
     category: str | None = None
     description: str | None = None
-    interval_seconds: int | None = None
+    interval_seconds: int | None = Field(default=None, ge=1)
     resolution_width: int | None = None
     resolution_height: int | None = None
-    quality: int | None = None
+    quality: int | None = Field(default=None, ge=1, le=100)
     hdr_enabled: bool | None = None
 
 
@@ -286,7 +286,9 @@ class TimelapseScheduleCreate(BaseModel):
     name: str = ""
     preset: str | None = None
     cron_expression: str | None = None
-    fps: int = 24
+    # fps feeds 1.0/fps during encoding; 0 would raise ZeroDivisionError on
+    # every scheduled run. Mirror TimelapseGenerate's bounds.
+    fps: int = Field(default=24, ge=1, le=120)
     format: str = "mp4"
     deflicker: str = "medium"
     lookback_hours: int | None = None
@@ -318,7 +320,7 @@ class TimelapseScheduleUpdate(BaseModel):
     name: str | None = None
     preset: str | None = None
     cron_expression: str | None = None
-    fps: int | None = None
+    fps: int | None = Field(default=None, ge=1, le=120)
     format: str | None = None
     deflicker: str | None = None
     lookback_hours: int | None = None

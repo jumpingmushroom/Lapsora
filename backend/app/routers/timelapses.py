@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Timelapse
+from app.models import Profile, Timelapse
 from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
 from app.services.generation_queue import enqueue_generation
 
@@ -39,6 +39,7 @@ def _safe_remove(path: str | None) -> None:
 @router.get("/timelapses", response_model=list[TimelapseRead])
 def list_timelapses(
     profile_id: int | None = None,
+    stream_id: int | None = None,
     period_type: str | None = None,
     limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -47,6 +48,12 @@ def list_timelapses(
     stmt = select(Timelapse).order_by(Timelapse.created_at.desc())
     if profile_id is not None:
         stmt = stmt.where(Timelapse.profile_id == profile_id)
+    elif stream_id is not None:
+        # All timelapses for a stream in one query (one merged timeline) instead
+        # of a per-profile fetch fan-out from the frontend.
+        stmt = stmt.join(Profile, Timelapse.profile_id == Profile.id).where(
+            Profile.stream_id == stream_id
+        )
     if period_type is not None:
         stmt = stmt.where(Timelapse.period_type == period_type)
     stmt = stmt.offset(offset).limit(limit)

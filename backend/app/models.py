@@ -35,7 +35,7 @@ class Stream(Base):
     )
 
     profiles: Mapped[list["Profile"]] = relationship(
-        back_populates="stream", cascade="all, delete-orphan"
+        back_populates="stream", cascade="all, delete-orphan", passive_deletes=True
     )
 
     @property
@@ -124,16 +124,16 @@ class Profile(Base):
     stream: Mapped["Stream"] = relationship(back_populates="profiles")
     source_template: Mapped["ProfileTemplate | None"] = relationship()
     captures: Mapped[list["Capture"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", passive_deletes=True
     )
     timelapses: Mapped[list["Timelapse"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", passive_deletes=True
     )
     timelapse_schedules: Mapped[list["TimelapseSchedule"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", passive_deletes=True
     )
     cleanup_schedules: Mapped[list["CleanupSchedule"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan", passive_deletes=True
     )
 
 

@@ -1,10 +1,13 @@
 """Stream management endpoints."""
 
+import os
+import shutil
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.config import encrypt
+from app.config import encrypt, settings
 from app.database import get_db
 from app.models import Stream
 from app.schemas import StreamCreate, StreamRead, StreamUpdate
@@ -111,6 +114,17 @@ def delete_stream(stream_id: int, db: Session = Depends(get_db)):
     from app.services.scheduler import remove_capture_job
     for pid in profile_ids:
         remove_capture_job(pid)
+
+    # Remove media files. The DB cascade already dropped the capture/timelapse
+    # rows, so the orphan sweep can't reclaim these — delete the directories by
+    # their deterministic paths (captures/<stream_id>/ covers all profiles).
+    capture_dir = os.path.join(settings.DATA_DIR, "captures", str(stream_id))
+    if os.path.isdir(capture_dir):
+        shutil.rmtree(capture_dir, ignore_errors=True)
+    for pid in profile_ids:
+        timelapse_dir = os.path.join(settings.DATA_DIR, "timelapses", str(pid))
+        if os.path.isdir(timelapse_dir):
+            shutil.rmtree(timelapse_dir, ignore_errors=True)
 
 
 @router.post("/{stream_id}/test")
