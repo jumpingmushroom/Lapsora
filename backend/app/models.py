@@ -83,6 +83,10 @@ class ProfileTemplate(Base):
     quality: Mapped[int] = mapped_column(Integer, default=85)
     hdr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    fps_mode: Mapped[str] = mapped_column(Text, default="fixed", server_default="fixed")
+    render_target_seconds: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
+    render_fps: Mapped[int] = mapped_column(Integer, default=24, server_default="24")
+    render_format: Mapped[str] = mapped_column(Text, default="mp4", server_default="mp4")
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
@@ -111,6 +115,10 @@ class Profile(Base):
     ir_chroma_threshold: Mapped[float] = mapped_column(
         Float, default=10.0, server_default="10.0"
     )
+    fps_mode: Mapped[str] = mapped_column(Text, default="fixed", server_default="fixed")
+    render_target_seconds: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
+    render_fps: Mapped[int] = mapped_column(Integer, default=24, server_default="24")
+    render_format: Mapped[str] = mapped_column(Text, default="mp4", server_default="mp4")
     weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     ha_sensors: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_template_id: Mapped[int | None] = mapped_column(
