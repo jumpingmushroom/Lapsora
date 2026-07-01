@@ -72,6 +72,10 @@ export interface Profile {
 	ir_only: boolean;
 	ir_chroma_threshold: number;
 	source_template_id: number | null;
+	fps_mode: string;
+	render_target_seconds: number;
+	render_fps: number;
+	render_format: string;
 	created_at: string;
 	updated_at: string;
 }
@@ -86,12 +90,10 @@ export interface ProfileTemplate {
 	resolution_height: number | null;
 	quality: number;
 	hdr_enabled: boolean;
-	weather_enabled: boolean;
-	capture_mode: string;
-	active_start_time: string | null;
-	active_end_time: string | null;
-	sun_offset_minutes: number;
-	sun_events: string;
+	fps_mode: string;
+	render_target_seconds: number;
+	render_fps: number;
+	render_format: string;
 	is_system: boolean;
 	created_at: string;
 	updated_at: string;
@@ -106,12 +108,10 @@ export interface ProfileTemplateCreate {
 	resolution_height?: number | null;
 	quality?: number;
 	hdr_enabled?: boolean;
-	weather_enabled?: boolean;
-	capture_mode?: string;
-	active_start_time?: string | null;
-	active_end_time?: string | null;
-	sun_offset_minutes?: number;
-	sun_events?: string;
+	fps_mode?: string;
+	render_target_seconds?: number;
+	render_fps?: number;
+	render_format?: string;
 }
 
 export interface ProfileCreate {

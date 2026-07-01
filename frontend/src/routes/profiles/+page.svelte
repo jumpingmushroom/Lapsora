@@ -18,6 +18,10 @@
 	let newHeight = $state<number | null>(1080);
 	let newQuality = $state(85);
 	let newHdr = $state(false);
+	let newFpsMode = $state('fixed');
+	let newRenderTarget = $state(20);
+	let newRenderFps = $state(24);
+	let newRenderFormat = $state('mp4');
 	let creating = $state(false);
 
 	// Edit form
@@ -30,6 +34,10 @@
 	let editHeight = $state<number | null>(1080);
 	let editQuality = $state(85);
 	let editHdr = $state(false);
+	let editFpsMode = $state('fixed');
+	let editRenderTarget = $state(20);
+	let editRenderFps = $state(24);
+	let editRenderFormat = $state('mp4');
 	let updating = $state(false);
 
 	let categories = $derived([...new Set(templates.map((t) => t.category))].sort());
@@ -72,7 +80,11 @@
 				resolution_width: newWidth || null,
 				resolution_height: newHeight || null,
 				quality: newQuality,
-				hdr_enabled: newHdr
+				hdr_enabled: newHdr,
+				fps_mode: newFpsMode,
+				render_target_seconds: newRenderTarget,
+				render_fps: newRenderFps,
+				render_format: newRenderFormat
 			};
 			await api.createProfileTemplate(data);
 			showCreateForm = false;
@@ -84,6 +96,10 @@
 			newHeight = 1080;
 			newQuality = 85;
 			newHdr = false;
+			newFpsMode = 'fixed';
+			newRenderTarget = 20;
+			newRenderFps = 24;
+			newRenderFormat = 'mp4';
 			await load();
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to create template');
@@ -102,6 +118,10 @@
 		editHeight = t.resolution_height;
 		editQuality = t.quality;
 		editHdr = t.hdr_enabled;
+		editFpsMode = t.fps_mode;
+		editRenderTarget = t.render_target_seconds;
+		editRenderFps = t.render_fps;
+		editRenderFormat = t.render_format;
 		showCreateForm = false;
 	}
 
@@ -118,7 +138,11 @@
 				resolution_width: editWidth || null,
 				resolution_height: editHeight || null,
 				quality: editQuality,
-				hdr_enabled: editHdr
+				hdr_enabled: editHdr,
+				fps_mode: editFpsMode,
+				render_target_seconds: editRenderTarget,
+				render_fps: editRenderFps,
+				render_format: editRenderFormat
 			});
 			editingTemplate = null;
 			await load();
@@ -192,6 +216,26 @@
 						<input id="edit-tpl-q" type="range" bind:value={editQuality} min="1" max="100" class="mt-2 w-full accent-blue-500" />
 					</div>
 				</div>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="edit-tpl-fpsmode" class="mb-1 block text-sm font-medium text-gray-300">Render mode</label>
+						<select id="edit-tpl-fpsmode" bind:value={editFpsMode} class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none">
+							<option value="fixed">Fixed fps</option>
+							<option value="target_duration">Target duration</option>
+						</select>
+					</div>
+					{#if editFpsMode === 'target_duration'}
+						<div>
+							<label for="edit-tpl-target" class="mb-1 block text-sm font-medium text-gray-300">Target length (s)</label>
+							<input id="edit-tpl-target" type="number" bind:value={editRenderTarget} min="1" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+						</div>
+					{:else}
+						<div>
+							<label for="edit-tpl-fps" class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
+							<input id="edit-tpl-fps" type="number" bind:value={editRenderFps} min="1" max="120" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+						</div>
+					{/if}
+				</div>
 				<label class="flex items-center gap-2">
 					<input type="checkbox" bind:checked={editHdr} class="rounded border-gray-600 bg-gray-900 text-blue-500" />
 					<span class="text-sm text-gray-300">HDR enabled</span>
@@ -236,6 +280,26 @@
 						<label for="tpl-q" class="mb-1 block text-sm font-medium text-gray-300">Quality: {newQuality}</label>
 						<input id="tpl-q" type="range" bind:value={newQuality} min="1" max="100" class="mt-2 w-full accent-blue-500" />
 					</div>
+				</div>
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label for="tpl-fpsmode" class="mb-1 block text-sm font-medium text-gray-300">Render mode</label>
+						<select id="tpl-fpsmode" bind:value={newFpsMode} class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none">
+							<option value="fixed">Fixed fps</option>
+							<option value="target_duration">Target duration</option>
+						</select>
+					</div>
+					{#if newFpsMode === 'target_duration'}
+						<div>
+							<label for="tpl-target" class="mb-1 block text-sm font-medium text-gray-300">Target length (s)</label>
+							<input id="tpl-target" type="number" bind:value={newRenderTarget} min="1" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+						</div>
+					{:else}
+						<div>
+							<label for="tpl-fps" class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
+							<input id="tpl-fps" type="number" bind:value={newRenderFps} min="1" max="120" class="w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none" />
+						</div>
+					{/if}
 				</div>
 				<label class="flex items-center gap-2">
 					<input type="checkbox" bind:checked={newHdr} class="rounded border-gray-600 bg-gray-900 text-blue-500" />
