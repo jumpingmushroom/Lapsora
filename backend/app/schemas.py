@@ -155,6 +155,10 @@ class ProfileRead(BaseModel):
     ir_chroma_threshold: float
     weather_enabled: bool
     ha_sensors: str | None = None
+    fps_mode: str
+    render_target_seconds: int
+    render_fps: int
+    render_format: str
     source_template_id: int | None = None
     created_at: datetime
     updated_at: datetime
@@ -175,6 +179,10 @@ class ProfileTemplateCreate(BaseModel):
     resolution_height: int | None = None
     quality: int = Field(default=85, ge=1, le=100)
     hdr_enabled: bool = False
+    fps_mode: Literal["fixed", "target_duration"] = "fixed"
+    render_target_seconds: int = Field(default=20, ge=1)
+    render_fps: int = Field(default=24, ge=1, le=120)
+    render_format: str = "mp4"
 
 
 class ProfileTemplateUpdate(BaseModel):
@@ -186,6 +194,10 @@ class ProfileTemplateUpdate(BaseModel):
     resolution_height: int | None = None
     quality: int | None = Field(default=None, ge=1, le=100)
     hdr_enabled: bool | None = None
+    fps_mode: Literal["fixed", "target_duration"] | None = None
+    render_target_seconds: int | None = Field(default=None, ge=1)
+    render_fps: int | None = Field(default=None, ge=1, le=120)
+    render_format: str | None = None
 
 
 class ProfileTemplateRead(BaseModel):
@@ -200,6 +212,10 @@ class ProfileTemplateRead(BaseModel):
     resolution_height: int | None
     quality: int
     hdr_enabled: bool
+    fps_mode: str
+    render_target_seconds: int
+    render_fps: int
+    render_format: str
     is_system: bool
     created_at: datetime
     updated_at: datetime
