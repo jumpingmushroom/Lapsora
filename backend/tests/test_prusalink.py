@@ -182,6 +182,9 @@ async def test_reconcile_finish_removes_job_and_enqueues_generation(client, db, 
     from app.models import Profile, Setting
     pid = _seed_printer_profile(client)
     # Simulate an in-progress print: active=true with a recorded start.
+    # Render config now comes from the bound profile, not cfg; seed render_fps=30
+    # so the test's intent (a chosen fps flows through to enqueue) is preserved.
+    db.get(Profile, pid).render_fps = 30
     db.add(Setting(key="prusalink_active", value="true"))
     db.add(Setting(key="prusalink_print_started_at", value="2026-06-04 10:00:00"))
     db.commit()
@@ -209,6 +212,42 @@ async def test_reconcile_finish_removes_job_and_enqueues_generation(client, db, 
     assert calls["event"] == "print_finished"
     # active flag cleared
     assert db.query(Setting).filter(Setting.key == "prusalink_active").first().value == "false"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_finish_uses_profile_render_config(client, db, monkeypatch):
+    from app.models import Profile, Setting
+    pid = _seed_printer_profile(client)
+    # Give the bound profile a target-duration render config.
+    prof = db.get(Profile, pid)
+    prof.fps_mode = "target_duration"
+    prof.render_target_seconds = 15
+    prof.render_fps = 30
+    prof.render_format = "mp4"
+    db.add(Setting(key="prusalink_active", value="true"))
+    db.add(Setting(key="prusalink_print_started_at", value="2026-06-04 10:00:00"))
+    db.commit()
+
+    calls = {}
+    monkeypatch.setattr(pl.scheduler, "remove_capture_job", lambda profile_id: None)
+
+    async def fake_enqueue(**kwargs):
+        calls["gen"] = kwargs
+        return {"generation_id": "x", "position": 1}
+    monkeypatch.setattr(pl.generation_queue, "enqueue_generation", fake_enqueue)
+
+    async def fake_emit(*a, **k):
+        pass
+    monkeypatch.setattr(pl.events, "emit", fake_emit)
+
+    # cfg still carries legacy fps/format; the profile config must win.
+    cfg = {"profile_id": pid, "generate_on_cancel": False, "generate_on_finish": True, "fps": 24, "format": "mp4"}
+    await pl._reconcile(db, cfg, "FINISHED")
+
+    assert calls["gen"]["fps_mode"] == "target_duration"
+    assert calls["gen"]["render_target_seconds"] == 15
+    assert calls["gen"]["fps"] == 30
+    assert calls["gen"]["format"] == "mp4"
 
 
 @pytest.mark.asyncio

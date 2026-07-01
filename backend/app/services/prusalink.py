@@ -211,6 +211,21 @@ def _parse_started_at(value: str | None) -> datetime | None:
 # --- reconcile + poll ------------------------------------------------------
 
 
+def _profile_render_config(profile, cfg: dict) -> dict:
+    """Render settings for the auto-generated timelapse.
+
+    Prefer the bound profile's own render config (set from a template); fall back
+    to the legacy prusalink_config blob for fps/format on profiles that predate
+    the render columns.
+    """
+    return {
+        "fps_mode": getattr(profile, "fps_mode", None) or "fixed",
+        "fps": getattr(profile, "render_fps", None) or cfg.get("fps", 24),
+        "render_target_seconds": getattr(profile, "render_target_seconds", None) or 20,
+        "format": getattr(profile, "render_format", None) or cfg.get("format", "mp4"),
+    }
+
+
 async def _reconcile(db, cfg: dict, raw_state: str | None) -> PrintDecision:
     """Apply the side effects implied by a single polled state."""
     active = _get_setting(db, "prusalink_active") == "true"
@@ -239,13 +254,16 @@ async def _reconcile(db, cfg: dict, raw_state: str | None) -> PrintDecision:
         start = _parse_started_at(_get_setting(db, "prusalink_print_started_at")) or (
             datetime.now(UTC) - timedelta(hours=24)
         )
+        render = _profile_render_config(profile, cfg)
         await generation_queue.enqueue_generation(
             profile_id=profile.id,
             period_type="custom",
             period_start=start,
             period_end=datetime.now(UTC),
-            fps=cfg.get("fps", 24),
-            format=cfg.get("format", "mp4"),
+            fps_mode=render["fps_mode"],
+            fps=render["fps"],
+            render_target_seconds=render["render_target_seconds"],
+            format=render["format"],
             timestamp_overlay=True,
         )
 
