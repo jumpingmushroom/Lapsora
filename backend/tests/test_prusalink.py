@@ -141,141 +141,6 @@ def test_prusalink_update_without_password_keeps_existing(client):
     assert got["connected"] is True
 
 
-# --- _reconcile (wiring of a decision to side effects) ---------------------
-
-def _seed_printer_profile(client):
-    sid = client.post("/api/streams/", json={"name": "Printer", "url": "rtsp://x"}).json()["id"]
-    from unittest.mock import patch
-    with patch("app.routers.profiles.scheduler"):
-        pid = client.post(f"/api/streams/{sid}/profiles", json={"name": "PrintCam"}).json()["id"]
-    return pid
-
-
-@pytest.mark.asyncio
-async def test_reconcile_start_enables_profile_and_adds_job(client, db, monkeypatch):
-    from app.models import Profile
-    pid = _seed_printer_profile(client)
-    db.query(Profile).filter(Profile.id == pid).update({"enabled": False})
-    db.commit()
-
-    calls = {}
-    monkeypatch.setattr(pl.scheduler, "add_capture_job", lambda profile: calls.setdefault("add", profile.id))
-
-    async def fake_emit(*a, **k):
-        calls["event"] = a[0]
-    monkeypatch.setattr(pl.events, "emit", fake_emit)
-
-    cfg = {"profile_id": pid, "generate_on_cancel": False, "generate_on_finish": True, "fps": 24, "format": "mp4"}
-    d = await pl._reconcile(db, cfg, "PRINTING")
-
-    assert d.start_capture is True
-    assert calls["add"] == pid
-    assert calls["event"] == "print_started"
-    assert db.get(Profile, pid).enabled is True
-    # active flag persisted
-    from app.models import Setting
-    assert db.query(Setting).filter(Setting.key == "prusalink_active").first().value == "true"
-
-
-@pytest.mark.asyncio
-async def test_reconcile_finish_removes_job_and_enqueues_generation(client, db, monkeypatch):
-    from app.models import Profile, Setting
-    pid = _seed_printer_profile(client)
-    # Simulate an in-progress print: active=true with a recorded start.
-    # Render config now comes from the bound profile, not cfg; seed render_fps=30
-    # so the test's intent (a chosen fps flows through to enqueue) is preserved.
-    db.get(Profile, pid).render_fps = 30
-    db.add(Setting(key="prusalink_active", value="true"))
-    db.add(Setting(key="prusalink_print_started_at", value="2026-06-04 10:00:00"))
-    db.commit()
-
-    calls = {}
-    monkeypatch.setattr(pl.scheduler, "remove_capture_job", lambda profile_id: calls.setdefault("remove", profile_id))
-
-    async def fake_enqueue(**kwargs):
-        calls["gen"] = kwargs
-        return {"generation_id": "x", "position": 1}
-    monkeypatch.setattr(pl.generation_queue, "enqueue_generation", fake_enqueue)
-
-    async def fake_emit(*a, **k):
-        calls["event"] = a[0]
-    monkeypatch.setattr(pl.events, "emit", fake_emit)
-
-    cfg = {"profile_id": pid, "generate_on_cancel": False, "generate_on_finish": True, "fps": 30, "format": "mp4"}
-    d = await pl._reconcile(db, cfg, "FINISHED")
-
-    assert d.generate is True
-    assert calls["remove"] == pid
-    assert calls["gen"]["profile_id"] == pid
-    assert calls["gen"]["period_type"] == "custom"
-    assert calls["gen"]["fps"] == 30
-    assert calls["event"] == "print_finished"
-    # active flag cleared
-    assert db.query(Setting).filter(Setting.key == "prusalink_active").first().value == "false"
-
-
-@pytest.mark.asyncio
-async def test_reconcile_finish_uses_profile_render_config(client, db, monkeypatch):
-    from app.models import Profile, Setting
-    pid = _seed_printer_profile(client)
-    # Give the bound profile a target-duration render config.
-    prof = db.get(Profile, pid)
-    prof.fps_mode = "target_duration"
-    prof.render_target_seconds = 15
-    prof.render_fps = 30
-    prof.render_format = "mp4"
-    db.add(Setting(key="prusalink_active", value="true"))
-    db.add(Setting(key="prusalink_print_started_at", value="2026-06-04 10:00:00"))
-    db.commit()
-
-    calls = {}
-    monkeypatch.setattr(pl.scheduler, "remove_capture_job", lambda profile_id: None)
-
-    async def fake_enqueue(**kwargs):
-        calls["gen"] = kwargs
-        return {"generation_id": "x", "position": 1}
-    monkeypatch.setattr(pl.generation_queue, "enqueue_generation", fake_enqueue)
-
-    async def fake_emit(*a, **k):
-        pass
-    monkeypatch.setattr(pl.events, "emit", fake_emit)
-
-    # cfg still carries legacy fps/format; the profile config must win.
-    cfg = {"profile_id": pid, "generate_on_cancel": False, "generate_on_finish": True, "fps": 24, "format": "mp4"}
-    await pl._reconcile(db, cfg, "FINISHED")
-
-    assert calls["gen"]["fps_mode"] == "target_duration"
-    assert calls["gen"]["render_target_seconds"] == 15
-    assert calls["gen"]["fps"] == 30
-    assert calls["gen"]["format"] == "mp4"
-
-
-@pytest.mark.asyncio
-async def test_reconcile_cancel_stops_without_generation(client, db, monkeypatch):
-    from app.models import Setting
-    pid = _seed_printer_profile(client)
-    db.add(Setting(key="prusalink_active", value="true"))
-    db.commit()
-
-    calls = {}
-    monkeypatch.setattr(pl.scheduler, "remove_capture_job", lambda profile_id: calls.setdefault("remove", profile_id))
-
-    async def fake_enqueue(**kwargs):
-        calls["gen"] = kwargs
-    monkeypatch.setattr(pl.generation_queue, "enqueue_generation", fake_enqueue)
-
-    async def fake_emit(*a, **k):
-        calls["event"] = a[0]
-    monkeypatch.setattr(pl.events, "emit", fake_emit)
-
-    cfg = {"profile_id": pid, "generate_on_cancel": False, "generate_on_finish": True, "fps": 24, "format": "mp4"}
-    d = await pl._reconcile(db, cfg, "STOPPED")
-
-    assert calls["remove"] == pid
-    assert "gen" not in calls
-    assert calls["event"] == "print_failed"
-
-
 # --- compute_interval -------------------------------------------------------
 
 def test_interval_scales_with_estimate():
@@ -358,3 +223,117 @@ def test_ensure_managed_profile_creates_once_and_repoints(db):
 
 def test_ensure_managed_profile_none_without_stream(db):
     assert pl.ensure_managed_profile(db, _cfg(stream_id=None)) is None
+
+
+# --- _reconcile lifecycle -----------------------------------------------------
+
+from app.models import PrintJob
+
+
+@pytest.fixture
+def fakes(monkeypatch):
+    """Stub the scheduler + generation queue; capture calls."""
+    calls = {"add": [], "remove": [], "resched": [], "enqueue": [], "events": []}
+    monkeypatch.setattr(pl.scheduler, "add_capture_job", lambda p: calls["add"].append(p.id))
+    monkeypatch.setattr(pl.scheduler, "remove_capture_job", lambda pid: calls["remove"].append(pid))
+    monkeypatch.setattr(pl.scheduler, "reschedule_capture_job", lambda p: calls["resched"].append((p.id, p.interval_seconds)))
+
+    async def _enqueue(**kw):
+        calls["enqueue"].append(kw)
+        return {"generation_id": "t", "position": 1}
+
+    async def _emit(*a, **kw):
+        calls["events"].append(a)
+
+    monkeypatch.setattr(pl.generation_queue, "enqueue_generation", _enqueue)
+    monkeypatch.setattr(pl.events, "emit", _emit)
+    return calls
+
+
+def _status(state, *, job_id=1, name="benchy.gcode", est=None):
+    return {"state": state, "job_id": job_id, "progress": 0,
+            "gcode_name": name,
+            "estimated_seconds": est}
+
+
+async def _run(db, cfg, status):
+    return await pl._reconcile(db, cfg, status)
+
+
+@pytest.mark.asyncio
+async def test_start_creates_print_job_with_computed_interval(db, fakes):
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", est=36000))
+    pj = db.query(PrintJob).one()
+    assert pj.status == "printing"
+    assert pj.gcode_name == "benchy.gcode"
+    assert pj.interval_seconds == 72  # 36000 / (20*25)
+    profile = db.query(Profile).filter(Profile.managed_by == "prusalink").one()
+    assert profile.enabled is True
+    assert profile.interval_seconds == 72
+    assert fakes["add"] == [profile.id]
+
+
+@pytest.mark.asyncio
+async def test_start_without_estimate_uses_default_then_recomputes_once(db, fakes):
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", est=None))
+    pj = db.query(PrintJob).one()
+    assert pj.interval_seconds == 10  # default
+    assert pj.estimated_seconds is None
+    # estimate appears on a later poll -> recompute exactly once
+    await _run(db, cfg, _status("PRINTING", est=36000))
+    db.refresh(pj)
+    assert pj.interval_seconds == 72
+    assert fakes["resched"] == [(db.query(Profile).one().id, 72)]
+    # further polls with a different estimate do NOT recompute again
+    await _run(db, cfg, _status("PRINTING", est=50000))
+    db.refresh(pj)
+    assert pj.interval_seconds == 72
+
+
+@pytest.mark.asyncio
+async def test_finish_closes_job_and_enqueues_named_render(db, fakes):
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", est=1500))
+    await _run(db, cfg, _status("FINISHED"))
+    pj = db.query(PrintJob).one()
+    assert pj.status == "finished"
+    assert pj.finished_at is not None
+    profile = db.query(Profile).one()
+    assert profile.enabled is False
+    assert fakes["remove"] == [profile.id]
+    (kw,) = fakes["enqueue"]
+    assert kw["name"] == "benchy.gcode"
+    assert kw["print_job_id"] == pj.id
+    assert kw["fps_mode"] == "target_duration"
+    assert kw["render_target_seconds"] == 20
+    assert kw["timestamp_overlay"] is True
+    assert kw["logo_overlay"] is False
+    assert kw["deflicker"] == "medium"
+    assert kw["period_start"] == pj.started_at
+
+
+@pytest.mark.asyncio
+async def test_cancel_respects_generate_on_cancel(db, fakes):
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id, generate_on_cancel=False)
+    await _run(db, cfg, _status("PRINTING", est=1500))
+    await _run(db, cfg, _status("IDLE"))
+    pj = db.query(PrintJob).one()
+    assert pj.status == "cancelled"
+    assert fakes["enqueue"] == []
+
+
+@pytest.mark.asyncio
+async def test_active_state_survives_restart_via_open_row(db, fakes):
+    """Active = open print_jobs row; no in-memory/settings flag involved."""
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", est=1500))
+    # simulate restart: nothing reset, next poll sees FINISHED
+    await _run(db, cfg, _status("FINISHED"))
+    assert db.query(PrintJob).one().status == "finished"

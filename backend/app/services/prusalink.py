@@ -9,13 +9,13 @@ print-lifecycle behaviour is testable without a printer, the scheduler, or the D
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 
 from app.config import decrypt
 from app.database import SessionLocal
-from app.models import Profile, Setting
+from app.models import PrintJob, Profile, Setting
 from app.services import events, generation_queue, scheduler
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ TIMEOUT = httpx.Timeout(10.0)
 # Status polls run on a short interval; keep them well under the poll period so an
 # offline/slow printer can't make polls overlap (a powered-off printer is normal here).
 STATUS_TIMEOUT = httpx.Timeout(5.0)
-_DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 DEFAULT_CONFIG = {
     "stream_id": None,
@@ -203,14 +202,6 @@ def _get_setting(db, key: str) -> str | None:
     return row.value if row else None
 
 
-def _set_setting(db, key: str, value: str) -> None:
-    row = db.query(Setting).filter(Setting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(Setting(key=key, value=value))
-
-
 def get_config(db) -> dict | None:
     """Return the merged PrusaLink config (incl. decrypted password), or None if unset."""
     base = _get_setting(db, "prusalink_base_url")
@@ -266,82 +257,105 @@ def ensure_managed_profile(db, cfg: dict):
     return profile
 
 
-def _parse_started_at(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, _DT_FMT).replace(tzinfo=UTC)
-    except (ValueError, TypeError):
-        return None
-
-
 # --- reconcile + poll ------------------------------------------------------
 
 
-def _profile_render_config(profile, cfg: dict) -> dict:
-    """Render settings for the auto-generated timelapse.
-
-    Prefer the bound profile's own render config (set from a template); fall back
-    to the legacy prusalink_config blob for fps/format on profiles that predate
-    the render columns.
-    """
-    return {
-        "fps_mode": getattr(profile, "fps_mode", None) or "fixed",
-        "fps": getattr(profile, "render_fps", None) or cfg.get("fps", 24),
-        "render_target_seconds": getattr(profile, "render_target_seconds", None) or 20,
-        "format": getattr(profile, "render_format", None) or cfg.get("format", "mp4"),
-    }
+def _open_print_job(db):
+    return (
+        db.query(PrintJob)
+        .filter(PrintJob.status == "printing")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
 
 
-async def _reconcile(db, cfg: dict, raw_state: str | None) -> PrintDecision:
-    """Apply the side effects implied by a single polled state."""
-    active = _get_setting(db, "prusalink_active") == "true"
-    state = normalize_state(raw_state)
-    d = decide_transition(active, state, cfg.get("generate_on_cancel", False))
-    profile = db.get(Profile, cfg["profile_id"]) if cfg.get("profile_id") else None
+def _apply_interval(db, profile, pj, interval: int, *, reschedule: bool) -> None:
+    pj.interval_seconds = interval
+    profile.interval_seconds = interval
+    db.commit()
+    if reschedule:
+        scheduler.reschedule_capture_job(profile)
+
+
+async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
+    """Apply the side effects implied by a single polled status."""
+    pj = _open_print_job(db)
+    state = normalize_state(status.get("state"))
+    d = decide_transition(pj is not None, state, cfg.get("generate_on_cancel", False))
+
+    profile = None
+    if d.start_capture or pj is not None:
+        profile = ensure_managed_profile(db, cfg)
 
     if d.start_capture and profile:
+        interval = compute_interval(
+            status.get("estimated_seconds"),
+            cfg["clip_seconds"], cfg["clip_fps"],
+            cfg["default_interval_seconds"],
+            cfg["min_interval_seconds"], cfg["max_interval_seconds"],
+        )
+        pj = PrintJob(
+            prusalink_job_id=status.get("job_id"),
+            gcode_name=status.get("gcode_name") or "",
+            stream_id=profile.stream_id,
+            status="printing",
+            started_at=datetime.now(UTC),
+            estimated_seconds=status.get("estimated_seconds"),
+            interval_seconds=interval,
+        )
+        db.add(pj)
         profile.enabled = True
+        profile.interval_seconds = interval
         db.commit()
         scheduler.add_capture_job(profile)
-        _set_setting(db, "prusalink_active", "true")
-        _set_setting(db, "prusalink_print_started_at", datetime.now(UTC).strftime(_DT_FMT))
+
+    elif pj and state == "printing" and profile:
+        # Recompute once: the print started before PrusaLink knew its length.
+        if pj.estimated_seconds is None and status.get("estimated_seconds"):
+            pj.estimated_seconds = status["estimated_seconds"]
+            interval = compute_interval(
+                pj.estimated_seconds,
+                cfg["clip_seconds"], cfg["clip_fps"],
+                cfg["default_interval_seconds"],
+                cfg["min_interval_seconds"], cfg["max_interval_seconds"],
+            )
+            _apply_interval(db, profile, pj, interval, reschedule=True)
+        if not pj.gcode_name and status.get("gcode_name"):
+            pj.gcode_name = status["gcode_name"]
+            db.commit()
+
+    if d.stop_capture and pj:
+        if profile:
+            scheduler.remove_capture_job(profile.id)
+            profile.enabled = False
+        pj.status = "finished" if d.event == "print_finished" else "cancelled"
+        pj.finished_at = datetime.now(UTC)
         db.commit()
 
-    if d.stop_capture and profile:
-        scheduler.remove_capture_job(profile.id)
-        profile.enabled = False
-        db.commit()
-
-    # Honour the generate_on_finish toggle (cancel is already gated inside decide_transition).
     should_generate = d.generate
     if d.event == "print_finished" and not cfg.get("generate_on_finish", True):
         should_generate = False
-    if should_generate and profile:
-        start = _parse_started_at(_get_setting(db, "prusalink_print_started_at")) or (
-            datetime.now(UTC) - timedelta(hours=24)
-        )
-        render = _profile_render_config(profile, cfg)
+    if should_generate and pj and profile:
         await generation_queue.enqueue_generation(
             profile_id=profile.id,
             period_type="custom",
-            period_start=start,
+            period_start=pj.started_at,
             period_end=datetime.now(UTC),
-            fps_mode=render["fps_mode"],
-            fps=render["fps"],
-            render_target_seconds=render["render_target_seconds"],
-            format=render["format"],
-            timestamp_overlay=True,
+            fps_mode="target_duration",
+            fps=cfg["clip_fps"],
+            render_target_seconds=cfg["clip_seconds"],
+            format="mp4",
+            timestamp_overlay=cfg.get("timestamp_overlay", True),
+            logo_overlay=cfg.get("logo_overlay", False),
+            deflicker=cfg.get("deflicker", "medium"),
+            ha_overlay=bool(profile.ha_sensors),
+            name=pj.gcode_name or None,
+            print_job_id=pj.id,
         )
-
-    if d.stop_capture:
-        _set_setting(db, "prusalink_active", "false")
-        _set_setting(db, "prusalink_print_started_at", "")
-        db.commit()
 
     if d.event:
         title, level = _EVENT_META.get(d.event, (d.event, "info"))
-        name = profile.name if profile else "print"
+        name = (pj.gcode_name if pj and pj.gcode_name else None) or "print"
         await events.emit(d.event, title, f"{title}: {name}", level=level)
 
     return d
@@ -352,12 +366,12 @@ async def poll_printer() -> None:
     db = SessionLocal()
     try:
         cfg = get_config(db)
-        if not cfg or not cfg.get("enabled", True) or not cfg.get("profile_id"):
+        if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
         status = await get_status(cfg["base_url"], cfg["username"], cfg["password"])
         if not status or not status.get("state"):
             return
-        await _reconcile(db, cfg, status["state"])
+        await _reconcile(db, cfg, status)
     except Exception:
         logger.exception("PrusaLink poll failed")
     finally:
