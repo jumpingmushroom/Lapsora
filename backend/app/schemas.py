@@ -253,6 +253,7 @@ class TimelapseRead(BaseModel):
 
     id: int
     profile_id: int
+    name: str | None = None
     file_size: int | None
     format: str
     fps: int
