@@ -36,6 +36,29 @@ COLORMAP_MAP = {
     "turbo": cv2.COLORMAP_TURBO,
 }
 
+# Output-fps bounds for target-duration rendering. A 3D print's frame count
+# varies wildly (short prints -> a few frames, tall prints -> thousands), so
+# target_duration mode picks an fps that renders to a consistent length,
+# clamped so we never emit a 1-frame-per-second slideshow or a 5000fps blur.
+FPS_MIN = 5
+FPS_MAX = 60
+
+
+def _resolve_fps(fps_mode: str, fps: int, render_target_seconds: int, frame_count: int) -> int:
+    """Resolve the effective output fps.
+
+    In 'target_duration' mode, compute an fps that renders `frame_count` frames
+    to ~`render_target_seconds` seconds, clamped to [FPS_MIN, FPS_MAX]. Any other
+    mode (default 'fixed') returns `fps` unchanged. Guards against zero target or
+    zero frames by falling back to the provided fps.
+    """
+    if fps_mode != "target_duration":
+        return fps
+    if render_target_seconds <= 0 or frame_count <= 0:
+        return fps
+    computed = round(frame_count / render_target_seconds)
+    return max(FPS_MIN, min(FPS_MAX, computed))
+
 
 def compute_cumulative_heatmap(frame_paths: list[str], threshold: int = 10) -> np.ndarray | None:
     """Compute a single cumulative heatmap from consecutive frame diffs."""
@@ -420,6 +443,8 @@ async def generate_timelapse(
     period_start: datetime | None = None,
     period_end: datetime | None = None,
     fps: int = 24,
+    fps_mode: str = "fixed",
+    render_target_seconds: int = 20,
     format: str = "mp4",
     timestamp_overlay: bool = False,
     weather_overlay: bool = False,
@@ -574,6 +599,10 @@ async def generate_timelapse(
 
         frame_count = len(frame_paths)
         set_frame_count(generation_id, frame_count)
+        # Resolve target-duration mode now that the true post-deflicker frame
+        # count is known; downstream (concat duration, stored Timelapse.fps)
+        # all read `fps`.
+        fps = _resolve_fps(fps_mode, fps, render_target_seconds, frame_count)
         await _progress("deflickering", "completed")
 
         # Step: motion blur

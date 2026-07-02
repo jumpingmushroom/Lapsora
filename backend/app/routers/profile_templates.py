@@ -99,6 +99,10 @@ def apply_template(
         resolution_height=template.resolution_height,
         quality=template.quality,
         hdr_enabled=template.hdr_enabled,
+        fps_mode=template.fps_mode,
+        render_target_seconds=template.render_target_seconds,
+        render_fps=template.render_fps,
+        render_format=template.render_format,
         source_template_id=template.id,
     )
     db.add(profile)
