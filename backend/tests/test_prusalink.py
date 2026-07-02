@@ -319,3 +319,42 @@ def test_parse_status_no_estimate_when_remaining_missing_or_bogus():
     assert pl.parse_status({"job": {"time_remaining": -1}})["estimated_seconds"] is None
     assert pl.parse_status({})["estimated_seconds"] is None
     assert pl.parse_status({})["gcode_name"] is None
+
+
+# --- ensure_managed_profile --------------------------------------------------
+
+from app.models import Profile, Stream
+
+
+def _stream(db):
+    s = Stream(name="printer-cam", url="rtsp://x")
+    db.add(s)
+    db.commit()
+    return s
+
+
+def _cfg(**over):
+    cfg = pl.DEFAULT_CONFIG.copy()
+    cfg.update(over)
+    return cfg
+
+
+def test_ensure_managed_profile_creates_once_and_repoints(db):
+    s1, s2 = _stream(db), _stream(db)
+    p = pl.ensure_managed_profile(db, _cfg(stream_id=s1.id, quality=85, clip_seconds=30, clip_fps=30))
+    assert p.managed_by == "prusalink"
+    assert p.name == pl.MANAGED_PROFILE_NAME
+    assert p.enabled is False
+    assert p.quality == 85
+    assert p.fps_mode == "target_duration"
+    assert p.render_target_seconds == 30
+    assert p.render_fps == 30
+    # second call: same row, re-pointed to the other stream
+    p2 = pl.ensure_managed_profile(db, _cfg(stream_id=s2.id))
+    assert p2.id == p.id
+    assert p2.stream_id == s2.id
+    assert db.query(Profile).filter(Profile.managed_by == "prusalink").count() == 1
+
+
+def test_ensure_managed_profile_none_without_stream(db):
+    assert pl.ensure_managed_profile(db, _cfg(stream_id=None)) is None

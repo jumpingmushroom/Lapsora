@@ -236,6 +236,36 @@ def get_config(db) -> dict | None:
     return cfg
 
 
+MANAGED_PROFILE_NAME = "3D Print (auto)"
+
+
+def ensure_managed_profile(db, cfg: dict):
+    """Find-or-create the integration-owned capture profile and sync it to the
+    current settings. There is at most one; it is hidden from the profiles UI
+    and its interval is rewritten per print."""
+    stream_id = cfg.get("stream_id")
+    if not stream_id:
+        return None
+    profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
+    if profile is None:
+        profile = Profile(
+            stream_id=stream_id,
+            name=MANAGED_PROFILE_NAME,
+            managed_by="prusalink",
+            enabled=False,
+            interval_seconds=cfg.get("default_interval_seconds", 10),
+        )
+        db.add(profile)
+    profile.stream_id = stream_id
+    profile.quality = cfg.get("quality", 90)
+    profile.ha_sensors = cfg.get("ha_sensors") or None
+    profile.fps_mode = "target_duration"
+    profile.render_target_seconds = cfg.get("clip_seconds", 20)
+    profile.render_fps = cfg.get("clip_fps", 25)
+    db.commit()
+    return profile
+
+
 def _parse_started_at(value: str | None) -> datetime | None:
     if not value:
         return None
