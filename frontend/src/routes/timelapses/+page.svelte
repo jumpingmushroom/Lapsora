@@ -67,9 +67,19 @@
 		}
 	}
 
-	function playPrintJob(pj: PrintJob) {
+	async function playPrintJob(pj: PrintJob) {
+		if (!pj.timelapse_id) return;
 		const tl = timelapses.find((t) => t.id === pj.timelapse_id);
-		if (tl) selectedTimelapse = tl;
+		if (tl) {
+			selectedTimelapse = tl;
+			return;
+		}
+		// Not in the loaded (capped/filtered) list — fetch it directly.
+		try {
+			selectedTimelapse = await api.getTimelapse(pj.timelapse_id);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to load timelapse');
+		}
 	}
 
 	function printDuration(pj: PrintJob): string {
@@ -307,7 +317,7 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each printJobs as pj}
+						{#each printJobs as pj (pj.id)}
 							<tr class="border-b border-gray-800/50 text-gray-200">
 								<td class="py-2 pr-4">{pj.gcode_name || 'Untitled print'}</td>
 								<td class="py-2 pr-4">
@@ -322,10 +332,8 @@
 								<td class="py-2 pr-4">{formatDate(pj.started_at)}</td>
 								<td class="py-2 pr-4">{printDuration(pj)}</td>
 								<td class="py-2">
-									{#if pj.timelapse_id && timelapses.some((t) => t.id === pj.timelapse_id)}
+									{#if pj.timelapse_id}
 										<button onclick={() => playPrintJob(pj)} class="text-blue-400 hover:text-blue-300">Play</button>
-									{:else if pj.timelapse_id}
-										<span class="text-gray-500">Filtered out</span>
 									{:else}
 										<span class="text-gray-500">—</span>
 									{/if}

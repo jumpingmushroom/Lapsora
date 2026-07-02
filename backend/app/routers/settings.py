@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import decrypt, encrypt
 from app.config import settings as app_settings
 from app.database import get_db
-from app.models import NotificationURL, Setting
+from app.models import NotificationURL, PrintJob, Profile, Setting
 from app.schemas import (
     CaptureGapUpdate,
     Go2rtcConfig,
@@ -378,7 +378,7 @@ async def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends
     db.commit()
 
     from app.services import health_status, prusalink
-    from app.services.scheduler import add_prusalink_poll_job, remove_prusalink_poll_job
+    from app.services.scheduler import add_prusalink_poll_job, remove_capture_job, remove_prusalink_poll_job
 
     cfg = prusalink.get_config(db)
     if cfg:
@@ -387,6 +387,19 @@ async def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends
         add_prusalink_poll_job(data.poll_interval_seconds)
     else:
         remove_prusalink_poll_job()
+        # The poll job is gone, so no further reconcile will ever close out an
+        # in-flight print. Close it here to avoid an orphaned 'printing' row
+        # and a managed profile stuck enabled with no way to disable it via
+        # the (hidden) profiles UI.
+        open_pj = db.query(PrintJob).filter(PrintJob.status == "printing").first()
+        if open_pj:
+            managed_profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
+            if managed_profile:
+                remove_capture_job(managed_profile.id)
+                managed_profile.enabled = False
+            open_pj.status = "cancelled"
+            open_pj.finished_at = datetime.now(UTC)
+            db.commit()
 
     health_status.invalidate("prusalink")
     return await _read_prusalink_live(db)

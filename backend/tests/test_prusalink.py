@@ -290,6 +290,7 @@ async def test_start_creates_print_job_with_computed_interval(db, fakes):
     assert profile.enabled is True
     assert profile.interval_seconds == 72
     assert fakes["add"] == [profile.id]
+    assert fakes["events"][0][0] == "print_started"
 
 
 @pytest.mark.asyncio
@@ -332,6 +333,7 @@ async def test_finish_closes_job_and_enqueues_named_render(db, fakes):
     assert kw["logo_overlay"] is False
     assert kw["deflicker"] == "medium"
     assert kw["period_start"] == pj.started_at
+    assert fakes["events"][-1][0] == "print_finished"
 
 
 @pytest.mark.asyncio

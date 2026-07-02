@@ -237,23 +237,32 @@ def ensure_managed_profile(db, cfg: dict):
     stream_id = cfg.get("stream_id")
     if not stream_id:
         return None
+    is_new = False
     profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
     if profile is None:
+        is_new = True
         profile = Profile(
-            stream_id=stream_id,
             name=MANAGED_PROFILE_NAME,
             managed_by="prusalink",
             enabled=False,
             interval_seconds=cfg.get("default_interval_seconds", 10),
         )
         db.add(profile)
-    profile.stream_id = stream_id
-    profile.quality = cfg.get("quality", 90)
-    profile.ha_sensors = cfg.get("ha_sensors") or None
-    profile.fps_mode = "target_duration"
-    profile.render_target_seconds = cfg.get("clip_seconds", 20)
-    profile.render_fps = cfg.get("clip_fps", 25)
-    db.commit()
+
+    # Called on every poll (~10s) while a print is active; only write when a
+    # target field actually changed to avoid a needless DB write each poll.
+    targets = {
+        "stream_id": stream_id,
+        "quality": cfg.get("quality", 90),
+        "ha_sensors": cfg.get("ha_sensors") or None,
+        "fps_mode": "target_duration",
+        "render_target_seconds": cfg.get("clip_seconds", 20),
+        "render_fps": cfg.get("clip_fps", 25),
+    }
+    if is_new or any(getattr(profile, field) != value for field, value in targets.items()):
+        for field, value in targets.items():
+            setattr(profile, field, value)
+        db.commit()
     return profile
 
 

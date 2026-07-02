@@ -42,7 +42,7 @@ timing, status, and a link to the generated timelapse.
 | Column | Notes |
 |---|---|
 | `id` | PK |
-| `prusalink_job_id` | job id from PrusaLink status; dedupe guard |
+| `prusalink_job_id` | job id from PrusaLink status |
 | `gcode_name` | from `job.file.display_name` (fallback `name`) |
 | `stream_id` | FK → streams |
 | `status` | `printing` / `finished` / `cancelled` |
@@ -85,7 +85,7 @@ auto-creates and owns one profile on the bound camera:
 state/job-id/progress.
 
 **Print start (rising edge to PRINTING):**
-1. Create `print_jobs` row (dedupe on `prusalink_job_id`).
+1. Create `print_jobs` row.
 2. Estimate = `time_printing + time_remaining` when available. Compute and
    clamp interval; write it to the managed profile; start the capture job.
 3. No estimate yet → start at `default_interval_seconds` and recompute
@@ -152,8 +152,10 @@ status, print duration, and thumbnail/link to the generated timelapse.
 - Estimate never arrives → whole print runs at `default_interval_seconds`;
   render still normalizes clip length.
 - Estimate absurd (0 or negative) → treat as missing.
-- Camera unbound or managed profile missing at print start → skip capture,
-  emit warning notification (mirrors current early-return behavior).
+- Camera unbound or managed profile missing at print start → skip capture.
+  (Implementation note: no warning notification is emitted — the poll job is
+  only scheduled while a camera is bound, so the warning path is unreachable
+  in practice and would spam once per poll if it weren't.)
 
 ## Testing
 
