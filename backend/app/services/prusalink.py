@@ -27,13 +27,21 @@ STATUS_TIMEOUT = httpx.Timeout(5.0)
 _DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 DEFAULT_CONFIG = {
-    "profile_id": None,
+    "stream_id": None,
     "poll_interval_seconds": 10,
     "generate_on_finish": True,
     "generate_on_cancel": False,
-    "fps": 24,
-    "format": "mp4",
     "enabled": True,
+    "clip_seconds": 20,
+    "clip_fps": 25,
+    "default_interval_seconds": 10,
+    "min_interval_seconds": 2,
+    "max_interval_seconds": 120,
+    "timestamp_overlay": True,
+    "logo_overlay": False,
+    "deflicker": "medium",
+    "quality": 90,
+    "ha_sensors": None,
 }
 
 _EVENT_META = {
@@ -96,6 +104,25 @@ def decide_transition(active: bool, state: str, generate_on_cancel: bool = False
     return PrintDecision(False, start_capture=False, stop_capture=False, generate=False, event=None)
 
 
+def compute_interval(
+    estimated_seconds: float | None,
+    clip_seconds: int,
+    clip_fps: int,
+    default_interval: int,
+    min_interval: int,
+    max_interval: int,
+) -> int:
+    """Capture interval so a print of the estimated length yields roughly
+    clip_seconds x clip_fps frames. Missing/bogus estimate -> default. Always
+    clamped to [min_interval, max_interval]."""
+    if not estimated_seconds or estimated_seconds <= 0:
+        interval = default_interval
+    else:
+        target_frames = max(1, clip_seconds * clip_fps)
+        interval = round(estimated_seconds / target_frames)
+    return int(max(min_interval, min(max_interval, interval)))
+
+
 # --- status parsing + HTTP -------------------------------------------------
 
 
@@ -103,10 +130,20 @@ def parse_status(data: dict) -> dict:
     """Extract the bits we care about from a PrusaLink /api/v1/status response."""
     printer = (data or {}).get("printer") or {}
     job = (data or {}).get("job") or {}
+    file_info = job.get("file") or {}
+    remaining = job.get("time_remaining")
+    printing = job.get("time_printing")
+    estimated = None
+    if isinstance(remaining, (int, float)) and remaining > 0:
+        estimated = float(remaining)
+        if isinstance(printing, (int, float)) and printing > 0:
+            estimated += float(printing)
     return {
         "state": printer.get("state"),
         "job_id": job.get("id"),
         "progress": job.get("progress"),
+        "gcode_name": file_info.get("display_name") or file_info.get("name"),
+        "estimated_seconds": estimated,
     }
 
 

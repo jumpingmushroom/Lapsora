@@ -274,3 +274,48 @@ async def test_reconcile_cancel_stops_without_generation(client, db, monkeypatch
     assert calls["remove"] == pid
     assert "gen" not in calls
     assert calls["event"] == "print_failed"
+
+
+# --- compute_interval -------------------------------------------------------
+
+def test_interval_scales_with_estimate():
+    # 10h print, 20s x 25fps = 500 frames -> 72s
+    assert pl.compute_interval(36000, 20, 25, 10, 2, 120) == 72
+    # 25min print -> 3s
+    assert pl.compute_interval(1500, 20, 25, 10, 2, 120) == 3
+
+def test_interval_clamps_to_bounds():
+    assert pl.compute_interval(60, 20, 25, 10, 2, 120) == 2      # tiny print -> min
+    assert pl.compute_interval(1_000_000, 20, 25, 10, 2, 120) == 120  # huge -> max
+
+def test_interval_missing_or_bogus_estimate_uses_default():
+    for est in (None, 0, -5):
+        assert pl.compute_interval(est, 20, 25, 10, 2, 120) == 10
+
+def test_interval_default_is_also_clamped():
+    assert pl.compute_interval(None, 20, 25, 300, 2, 120) == 120
+
+
+# --- parse_status: job metadata ---------------------------------------------
+
+def test_parse_status_extracts_gcode_name_and_estimate():
+    got = pl.parse_status({
+        "printer": {"state": "PRINTING"},
+        "job": {
+            "id": 7, "progress": 12.5,
+            "time_printing": 300, "time_remaining": 3300,
+            "file": {"name": "benchy~1.gco", "display_name": "benchy.gcode"},
+        },
+    })
+    assert got["gcode_name"] == "benchy.gcode"
+    assert got["estimated_seconds"] == 3600.0
+
+def test_parse_status_falls_back_to_file_name():
+    got = pl.parse_status({"printer": {}, "job": {"file": {"name": "x.gco"}}})
+    assert got["gcode_name"] == "x.gco"
+
+def test_parse_status_no_estimate_when_remaining_missing_or_bogus():
+    assert pl.parse_status({"job": {"time_printing": 300}})["estimated_seconds"] is None
+    assert pl.parse_status({"job": {"time_remaining": -1}})["estimated_seconds"] is None
+    assert pl.parse_status({})["estimated_seconds"] is None
+    assert pl.parse_status({})["gcode_name"] is None
