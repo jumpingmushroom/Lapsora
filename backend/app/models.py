@@ -121,6 +121,7 @@ class Profile(Base):
     render_format: Mapped[str] = mapped_column(Text, default="mp4", server_default="mp4")
     weather_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     ha_sensors: Mapped[str | None] = mapped_column(Text, nullable=True)
+    managed_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_template_id: Mapped[int | None] = mapped_column(
         ForeignKey("profile_templates.id", ondelete="SET NULL"), nullable=True
     )
@@ -239,6 +240,7 @@ class Timelapse(Base):
     )
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     thumbnail_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     format: Mapped[str] = mapped_column(String, default="mp4")
     fps: Mapped[int] = mapped_column(Integer, default=24)
@@ -250,6 +252,29 @@ class Timelapse(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
 
     profile: Mapped["Profile"] = relationship(back_populates="timelapses")
+
+
+class PrintJob(Base):
+    """One 3D print detected via PrusaLink. An open row (status='printing') is
+    the source of truth for an in-flight print and survives app restarts."""
+
+    __tablename__ = "print_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prusalink_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gcode_name: Mapped[str] = mapped_column(Text, default="")
+    stream_id: Mapped[int] = mapped_column(ForeignKey("streams.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(Text, default="printing")  # printing|finished|cancelled
+    started_at: Mapped[datetime] = mapped_column(nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    estimated_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timelapse_id: Mapped[int | None] = mapped_column(
+        ForeignKey("timelapses.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+    timelapse: Mapped["Timelapse | None"] = relationship()
 
 
 class Setting(Base):
