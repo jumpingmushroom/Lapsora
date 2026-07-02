@@ -1,6 +1,6 @@
 -- PrusaLink dynamic per-print capture: print_jobs table, managed profiles,
--- timelapse names; convert config from profile binding to stream binding;
--- drop the now-obsolete seeded 3D-printing templates and legacy state rows.
+-- timelapse names. Converts config from profile to stream binding and drops
+-- the obsolete seeded 3D-printing templates and legacy state rows.
 
 CREATE TABLE IF NOT EXISTS print_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
