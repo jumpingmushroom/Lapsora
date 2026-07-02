@@ -18,12 +18,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["profiles"])
 
 
+def _reject_managed(profile: Profile) -> None:
+    if profile.managed_by:
+        raise HTTPException(409, "Profile is managed by an integration; edit it in Settings")
+
+
 @router.get("/profiles", response_model=list[ProfileRead])
 def list_all_profiles(db: Session = Depends(get_db)):
     """All profiles across every stream, in one query. Lets the frontend avoid
     a per-stream fetch fan-out (it joins against the streams list it already
     holds via the stream_id field)."""
-    return db.query(Profile).order_by(Profile.stream_id, Profile.id).all()
+    return db.query(Profile).filter(Profile.managed_by.is_(None)).order_by(Profile.stream_id, Profile.id).all()
 
 
 @router.get("/streams/{stream_id}/profiles", response_model=list[ProfileRead])
@@ -31,7 +36,7 @@ def list_profiles(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-    return db.query(Profile).filter(Profile.stream_id == stream_id).all()
+    return db.query(Profile).filter(Profile.stream_id == stream_id).filter(Profile.managed_by.is_(None)).all()
 
 
 @router.post("/streams/{stream_id}/profiles", response_model=ProfileRead, status_code=201)
@@ -64,6 +69,7 @@ def update_profile(profile_id: int, body: ProfileUpdate, db: Session = Depends(g
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(404, "Profile not found")
+    _reject_managed(profile)
 
     update_data = body.model_dump(exclude_unset=True)
     needs_reschedule = any(
@@ -92,6 +98,7 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db)):
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(404, "Profile not found")
+    _reject_managed(profile)
 
     stream_id = profile.stream_id
 
@@ -121,6 +128,7 @@ def enable_profile(profile_id: int, db: Session = Depends(get_db)):
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(404, "Profile not found")
+    _reject_managed(profile)
 
     profile.enabled = True
     db.commit()
@@ -135,6 +143,7 @@ def disable_profile(profile_id: int, db: Session = Depends(get_db)):
     profile = db.get(Profile, profile_id)
     if not profile:
         raise HTTPException(404, "Profile not found")
+    _reject_managed(profile)
 
     profile.enabled = False
     db.commit()

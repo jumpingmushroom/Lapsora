@@ -86,3 +86,18 @@ def test_create_profile_nonexistent_stream(client):
             json={"name": "X", "interval_seconds": 60},
         )
     assert resp.status_code == 404
+
+
+def test_managed_profiles_hidden_and_guarded(client, db):
+    from app.models import Profile, Stream
+    s = Stream(name="printer-cam", url="rtsp://x", source_type="rtsp")
+    db.add(s)
+    db.commit()
+    mp = Profile(stream_id=s.id, name="3D Print (auto)", managed_by="prusalink", enabled=False)
+    db.add(mp)
+    db.commit()
+    assert all(p["id"] != mp.id for p in client.get("/api/profiles").json())
+    assert all(p["id"] != mp.id for p in client.get(f"/api/streams/{s.id}/profiles").json())
+    assert client.put(f"/api/profiles/{mp.id}", json={"name": "hijack"}).status_code == 409
+    assert client.delete(f"/api/profiles/{mp.id}").status_code == 409
+    assert client.post(f"/api/profiles/{mp.id}/disable").status_code == 409

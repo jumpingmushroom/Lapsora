@@ -57,3 +57,14 @@ def test_link_print_job_sets_timelapse_id(db):
     assert db.get(PrintJob, pj.id).timelapse_id == tl.id
     # unknown print_job_id is a no-op, not an error
     _link_print_job(db, 99999, tl.id)
+
+
+def test_list_print_jobs_newest_first(client, db):
+    s = _mk_stream(db)
+    for n in ("a.gcode", "b.gcode"):
+        db.add(PrintJob(stream_id=s.id, gcode_name=n, status="finished",
+                        started_at=datetime.now(UTC)))
+    db.commit()
+    got = client.get("/api/print-jobs").json()
+    assert [j["gcode_name"] for j in got] == ["b.gcode", "a.gcode"]
+    assert {"id", "status", "started_at", "timelapse_id"} <= set(got[0])

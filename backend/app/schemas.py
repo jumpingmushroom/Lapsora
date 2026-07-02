@@ -176,6 +176,7 @@ class ProfileRead(BaseModel):
     render_fps: int
     render_format: str
     source_template_id: int | None = None
+    managed_by: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -525,6 +526,23 @@ class NotificationEventsConfig(BaseModel):
     print_started: bool = False
     print_finished: bool = True
     print_failed: bool = True
+
+
+# --- Print Jobs ---
+
+
+class PrintJobRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    gcode_name: str
+    stream_id: int
+    status: str
+    started_at: datetime
+    finished_at: datetime | None
+    estimated_seconds: float | None
+    interval_seconds: int | None
+    timelapse_id: int | None
 
 
 # --- Statistics ---
