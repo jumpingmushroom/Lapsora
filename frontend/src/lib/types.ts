@@ -172,6 +172,7 @@ export interface Capture {
 export interface Timelapse {
 	id: number;
 	profile_id: number;
+	name: string | null;
 	thumbnail_path: string | null;
 	file_size: number | null;
 	format: string;
@@ -459,15 +460,35 @@ export interface PrusaLinkConfig {
 	base_url: string;
 	username: string;
 	password?: string;
-	profile_id: number | null;
+	stream_id: number | null;
 	poll_interval_seconds: number;
 	generate_on_finish: boolean;
 	generate_on_cancel: boolean;
-	fps: number;
-	format: string;
 	enabled: boolean;
-	configured?: boolean;
-	connected?: boolean;
+	clip_seconds: number;
+	clip_fps: number;
+	default_interval_seconds: number;
+	min_interval_seconds: number;
+	max_interval_seconds: number;
+	timestamp_overlay: boolean;
+	logo_overlay: boolean;
+	deflicker: string;
+	quality: number;
+	ha_sensors: string | null;
+	configured: boolean;
+	connected: boolean;
+}
+
+export interface PrintJob {
+	id: number;
+	gcode_name: string;
+	stream_id: number;
+	status: 'printing' | 'finished' | 'cancelled';
+	started_at: string;
+	finished_at: string | null;
+	estimated_seconds: number | null;
+	interval_seconds: number | null;
+	timelapse_id: number | null;
 }
 
 export interface HAEntity {

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import decrypt, encrypt
 from app.config import settings as app_settings
 from app.database import get_db
-from app.models import NotificationURL, Setting
+from app.models import NotificationURL, PrintJob, Profile, Setting
 from app.schemas import (
     CaptureGapUpdate,
     Go2rtcConfig,
@@ -322,8 +322,10 @@ async def get_ha_entities(db: Session = Depends(get_db)):
 # --- PrusaLink (3D-print timelapse trigger) ---
 
 _PRUSALINK_BLOB_FIELDS = (
-    "profile_id", "poll_interval_seconds", "generate_on_finish",
-    "generate_on_cancel", "fps", "format", "enabled",
+    "stream_id", "poll_interval_seconds", "generate_on_finish", "generate_on_cancel",
+    "enabled", "clip_seconds", "clip_fps", "default_interval_seconds",
+    "min_interval_seconds", "max_interval_seconds",
+    "timestamp_overlay", "logo_overlay", "deflicker", "quality", "ha_sensors",
 )
 
 
@@ -375,12 +377,29 @@ async def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends
     _upsert_setting(db, "prusalink_config", json.dumps(blob))
     db.commit()
 
-    from app.services import health_status
-    from app.services.scheduler import add_prusalink_poll_job, remove_prusalink_poll_job
-    if data.enabled and url and data.profile_id:
+    from app.services import health_status, prusalink
+    from app.services.scheduler import add_prusalink_poll_job, remove_capture_job, remove_prusalink_poll_job
+
+    cfg = prusalink.get_config(db)
+    if cfg:
+        prusalink.ensure_managed_profile(db, cfg)
+    if data.enabled and url and data.stream_id:
         add_prusalink_poll_job(data.poll_interval_seconds)
     else:
         remove_prusalink_poll_job()
+        # The poll job is gone, so no further reconcile will ever close out an
+        # in-flight print. Close it here to avoid an orphaned 'printing' row
+        # and a managed profile stuck enabled with no way to disable it via
+        # the (hidden) profiles UI.
+        open_pj = db.query(PrintJob).filter(PrintJob.status == "printing").first()
+        if open_pj:
+            managed_profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
+            if managed_profile:
+                remove_capture_job(managed_profile.id)
+                managed_profile.enabled = False
+            open_pj.status = "cancelled"
+            open_pj.finished_at = datetime.now(UTC)
+            db.commit()
 
     health_status.invalidate("prusalink")
     return await _read_prusalink_live(db)

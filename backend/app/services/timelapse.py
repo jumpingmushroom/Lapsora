@@ -368,6 +368,15 @@ def _remove_partial_output(*paths) -> None:
                 logger.exception("Failed to remove partial output %s", path)
 
 
+def _link_print_job(db, print_job_id: int, timelapse_id: int) -> None:
+    """Point a print_jobs row at its generated timelapse (no-op if gone)."""
+    from app.models import PrintJob
+    pj = db.get(PrintJob, print_job_id)
+    if pj:
+        pj.timelapse_id = timelapse_id
+        db.commit()
+
+
 def _apply_weather_overlay_frames(
     frame_paths, frame_captures, weather_style, weather_position,
     weather_unit, weather_font_size, layout, cancel_check=None,
@@ -468,6 +477,8 @@ async def generate_timelapse(
     output_width: int | None = None,
     output_height: int | None = None,
     quality_preset: str = "medium",
+    name: str | None = None,
+    print_job_id: int | None = None,
     cancel_event: "threading.Event | None" = None,
     generation_id: str | None = None,
 ) -> int:
@@ -892,6 +903,7 @@ async def generate_timelapse(
             profile_id=profile_id,
             file_path=out_path,
             thumbnail_path=thumb_path,
+            name=name,
             file_size=file_size,
             format=format,
             fps=fps,
@@ -917,6 +929,9 @@ async def generate_timelapse(
                         logger.exception("Failed to remove orphaned output %s", orphan)
             raise
         db.refresh(timelapse)
+
+        if print_job_id is not None:
+            _link_print_job(db, print_job_id, timelapse.id)
 
         logger.info(
             "Timelapse %d created: %s (%d bytes, %.1fs)",

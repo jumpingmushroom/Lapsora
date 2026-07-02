@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { setUse24h } from '$lib/utils';
-	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig, HomeAssistantConfig, PrusaLinkConfig } from '$lib/types';
+	import type { NotificationURL, NotificationEventsConfig, HealthConfig, LocationConfig, CaptureGapConfig, Go2rtcConfig, TimeFormatConfig, HomeAssistantConfig, PrusaLinkConfig, HAEntity, HASensor } from '$lib/types';
 	import CleanupScheduleManager from '$lib/components/CleanupScheduleManager.svelte';
 
 	let activeTab = $state<'general' | 'notifications' | 'maintenance' | 'integrations'>('general');
@@ -50,12 +50,16 @@
 	let haTestResult = $state<string | null>(null);
 
 	let prusaConfig = $state<PrusaLinkConfig>({
-		base_url: '', username: 'maker', profile_id: null, poll_interval_seconds: 10,
-		generate_on_finish: true, generate_on_cancel: false, fps: 24, format: 'mp4',
-		enabled: true, connected: false
+		base_url: '', username: 'maker', stream_id: null, poll_interval_seconds: 10,
+		generate_on_finish: true, generate_on_cancel: false, enabled: true,
+		clip_seconds: 20, clip_fps: 25, default_interval_seconds: 10,
+		min_interval_seconds: 2, max_interval_seconds: 120,
+		timestamp_overlay: true, logo_overlay: false, deflicker: 'medium', quality: 90,
+		ha_sensors: null, configured: false, connected: false
 	});
 	let prusaPassword = $state('');
-	let prusaProfiles = $state<{ id: number; label: string }[]>([]);
+	let prusaStreams = $state<{ id: number; name: string }[]>([]);
+	let haEntities = $state<HAEntity[]>([]);
 	let savingPrusa = $state(false);
 	let testingPrusa = $state(false);
 	let prusaTestResult = $state<string | null>(null);
@@ -123,20 +127,46 @@
 			.finally(() => {
 				loading = false;
 			});
-		loadPrusaProfiles();
+		loadPrusaStreams();
 	});
 
-	async function loadPrusaProfiles() {
+	async function loadPrusaStreams() {
 		try {
-			const [streams, profiles] = await Promise.all([api.getStreams(), api.getAllProfiles()]);
-			const streamName = new Map(streams.map((s) => [s.id, s.name]));
-			prusaProfiles = profiles.map((p) => ({
-				id: p.id,
-				label: `${streamName.get(p.stream_id) ?? '?'} / ${p.name}`
-			}));
+			const streams = await api.getStreams();
+			prusaStreams = streams.map((s) => ({ id: s.id, name: s.name }));
 		} catch {
-			prusaProfiles = [];
+			prusaStreams = [];
 		}
+		// Sensor list for the overlay picker; absent/unconfigured HA is fine.
+		try {
+			haEntities = await api.getHAEntities();
+		} catch {
+			haEntities = [];
+		}
+	}
+
+	function prusaSensorIds(): string[] {
+		try {
+			return (prusaConfig.ha_sensors ? (JSON.parse(prusaConfig.ha_sensors) as HASensor[]) : []).map((s) => s.entity_id);
+		} catch {
+			return [];
+		}
+	}
+
+	function togglePrusaSensor(e: HAEntity) {
+		const ids = prusaSensorIds();
+		let list: HASensor[];
+		try {
+			list = prusaConfig.ha_sensors ? (JSON.parse(prusaConfig.ha_sensors) as HASensor[]) : [];
+		} catch {
+			list = [];
+		}
+		if (ids.includes(e.entity_id)) {
+			list = list.filter((s) => s.entity_id !== e.entity_id);
+		} else {
+			list = [...list, { entity_id: e.entity_id, label: e.friendly_name, unit: e.unit, icon: '' }];
+		}
+		prusaConfig.ha_sensors = list.length ? JSON.stringify(list) : null;
 	}
 
 	async function addUrl() {
@@ -761,7 +791,7 @@
 					{/if}
 				</div>
 				<p class="mb-4 text-sm text-gray-400">
-					Poll a Prusa printer's local PrusaLink API and capture a timelapse for the duration of each print. Point a capture profile's camera at the printer, then select it below. Create a password/API access in the printer's PrusaLink settings.
+					Poll a Prusa printer's local PrusaLink API and capture a timelapse for each print. Pick the camera pointed at the printer — capture interval is computed per print from the printer's time estimate, so short and overnight prints both render to the clip length below.
 				</p>
 
 				<div class="mb-4 grid grid-cols-2 gap-4">
@@ -785,12 +815,12 @@
 
 				<div class="mb-4 grid grid-cols-2 gap-4">
 					<div>
-						<label for="prusa-profile" class="mb-1 block text-sm text-gray-400">Capture profile</label>
-						<select id="prusa-profile" bind:value={prusaConfig.profile_id}
+						<label for="prusa-stream" class="mb-1 block text-sm text-gray-400">Camera</label>
+						<select id="prusa-stream" bind:value={prusaConfig.stream_id}
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none">
-							<option value={null}>— Select a profile —</option>
-							{#each prusaProfiles as p}
-								<option value={p.id}>{p.label}</option>
+							<option value={null}>— Select a camera —</option>
+							{#each prusaStreams as s}
+								<option value={s.id}>{s.name}</option>
 							{/each}
 						</select>
 					</div>
@@ -801,22 +831,88 @@
 					</div>
 				</div>
 
-				<div class="mb-4 grid grid-cols-2 gap-4">
+				<div class="mb-4 grid grid-cols-3 gap-4">
 					<div>
-						<label for="prusa-fps" class="mb-1 block text-sm text-gray-400">Timelapse FPS</label>
-						<input id="prusa-fps" type="number" min="1" bind:value={prusaConfig.fps}
+						<label for="prusa-clip-len" class="mb-1 block text-sm text-gray-400">Clip length (seconds)</label>
+						<input id="prusa-clip-len" type="number" min="1" max="300" bind:value={prusaConfig.clip_seconds}
 							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
 					</div>
 					<div>
-						<label for="prusa-format" class="mb-1 block text-sm text-gray-400">Format</label>
-						<select id="prusa-format" bind:value={prusaConfig.format}
-							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none">
-							<option value="mp4">MP4</option>
-							<option value="webm">WebM</option>
-							<option value="gif">GIF</option>
-						</select>
+						<label for="prusa-clip-fps" class="mb-1 block text-sm text-gray-400">Clip FPS</label>
+						<input id="prusa-clip-fps" type="number" min="1" max="120" bind:value={prusaConfig.clip_fps}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
+					</div>
+					<div>
+						<label for="prusa-default-int" class="mb-1 block text-sm text-gray-400">Fallback interval (s)</label>
+						<input id="prusa-default-int" type="number" min="1" bind:value={prusaConfig.default_interval_seconds}
+							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
 					</div>
 				</div>
+
+				<details class="mb-4 rounded-lg border border-gray-800 p-3">
+					<summary class="cursor-pointer text-sm text-gray-400">Advanced: interval clamp</summary>
+					<div class="mt-3 grid grid-cols-2 gap-4">
+						<div>
+							<label for="prusa-min-int" class="mb-1 block text-sm text-gray-400">Min interval (s)</label>
+							<input id="prusa-min-int" type="number" min="1" bind:value={prusaConfig.min_interval_seconds}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
+						</div>
+						<div>
+							<label for="prusa-max-int" class="mb-1 block text-sm text-gray-400">Max interval (s)</label>
+							<input id="prusa-max-int" type="number" min="1" bind:value={prusaConfig.max_interval_seconds}
+								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none" />
+						</div>
+					</div>
+				</details>
+
+				<details class="mb-4 rounded-lg border border-gray-800 p-3">
+					<summary class="cursor-pointer text-sm text-gray-400">Overlays &amp; render</summary>
+					<div class="mt-3 space-y-3">
+						<div class="grid grid-cols-2 gap-4">
+							<div>
+								<label for="prusa-quality" class="mb-1 block text-sm text-gray-400">Capture quality ({prusaConfig.quality})</label>
+								<input id="prusa-quality" type="range" min="1" max="100" bind:value={prusaConfig.quality} class="w-full" />
+							</div>
+							<div>
+								<label for="prusa-deflicker" class="mb-1 block text-sm text-gray-400">Deflicker</label>
+								<select id="prusa-deflicker" bind:value={prusaConfig.deflicker}
+									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 focus:border-blue-600 focus:outline-none">
+									<option value="off">Off</option>
+									<option value="light">Light</option>
+									<option value="medium">Medium</option>
+									<option value="heavy">Heavy</option>
+								</select>
+							</div>
+						</div>
+						<label class="flex items-center gap-3">
+							<input type="checkbox" bind:checked={prusaConfig.timestamp_overlay}
+								class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+							<span class="text-sm text-gray-200">Timestamp overlay</span>
+						</label>
+						<label class="flex items-center gap-3">
+							<input type="checkbox" bind:checked={prusaConfig.logo_overlay}
+								class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+							<span class="text-sm text-gray-200">Logo overlay</span>
+						</label>
+						{#if haEntities.length}
+							<div>
+								<span class="mb-1 block text-sm text-gray-400">Home Assistant sensor overlay</span>
+								<div class="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-800 p-2">
+									{#each haEntities as e}
+										<label class="flex items-center gap-3">
+											<input type="checkbox" checked={prusaSensorIds().includes(e.entity_id)}
+												onchange={() => togglePrusaSensor(e)}
+												class="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-600" />
+											<span class="text-sm text-gray-200">{e.friendly_name ?? e.entity_id}</span>
+										</label>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<p class="text-xs text-gray-500">Configure Home Assistant above to add sensor overlays.</p>
+						{/if}
+					</div>
+				</details>
 
 				<div class="mb-4 space-y-2">
 					<label class="flex items-center gap-3">

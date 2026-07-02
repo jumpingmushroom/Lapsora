@@ -9,13 +9,13 @@ print-lifecycle behaviour is testable without a printer, the scheduler, or the D
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 
 from app.config import decrypt
 from app.database import SessionLocal
-from app.models import Profile, Setting
+from app.models import PrintJob, Profile, Setting
 from app.services import events, generation_queue, scheduler
 
 logger = logging.getLogger(__name__)
@@ -24,16 +24,23 @@ TIMEOUT = httpx.Timeout(10.0)
 # Status polls run on a short interval; keep them well under the poll period so an
 # offline/slow printer can't make polls overlap (a powered-off printer is normal here).
 STATUS_TIMEOUT = httpx.Timeout(5.0)
-_DT_FMT = "%Y-%m-%d %H:%M:%S"
 
 DEFAULT_CONFIG = {
-    "profile_id": None,
+    "stream_id": None,
     "poll_interval_seconds": 10,
     "generate_on_finish": True,
     "generate_on_cancel": False,
-    "fps": 24,
-    "format": "mp4",
     "enabled": True,
+    "clip_seconds": 20,
+    "clip_fps": 25,
+    "default_interval_seconds": 10,
+    "min_interval_seconds": 2,
+    "max_interval_seconds": 120,
+    "timestamp_overlay": True,
+    "logo_overlay": False,
+    "deflicker": "medium",
+    "quality": 90,
+    "ha_sensors": None,
 }
 
 _EVENT_META = {
@@ -96,6 +103,25 @@ def decide_transition(active: bool, state: str, generate_on_cancel: bool = False
     return PrintDecision(False, start_capture=False, stop_capture=False, generate=False, event=None)
 
 
+def compute_interval(
+    estimated_seconds: float | None,
+    clip_seconds: int,
+    clip_fps: int,
+    default_interval: int,
+    min_interval: int,
+    max_interval: int,
+) -> int:
+    """Capture interval so a print of the estimated length yields roughly
+    clip_seconds x clip_fps frames. Missing/bogus estimate -> default. Always
+    clamped to [min_interval, max_interval]."""
+    if not estimated_seconds or estimated_seconds <= 0:
+        interval = default_interval
+    else:
+        target_frames = max(1, clip_seconds * clip_fps)
+        interval = round(estimated_seconds / target_frames)
+    return int(max(min_interval, min(max_interval, interval)))
+
+
 # --- status parsing + HTTP -------------------------------------------------
 
 
@@ -103,10 +129,20 @@ def parse_status(data: dict) -> dict:
     """Extract the bits we care about from a PrusaLink /api/v1/status response."""
     printer = (data or {}).get("printer") or {}
     job = (data or {}).get("job") or {}
+    file_info = job.get("file") or {}
+    remaining = job.get("time_remaining")
+    printing = job.get("time_printing")
+    estimated = None
+    if isinstance(remaining, (int, float)) and remaining > 0:
+        estimated = float(remaining)
+        if isinstance(printing, (int, float)) and printing > 0:
+            estimated += float(printing)
     return {
         "state": printer.get("state"),
         "job_id": job.get("id"),
         "progress": job.get("progress"),
+        "gcode_name": file_info.get("display_name") or file_info.get("name"),
+        "estimated_seconds": estimated,
     }
 
 
@@ -166,14 +202,6 @@ def _get_setting(db, key: str) -> str | None:
     return row.value if row else None
 
 
-def _set_setting(db, key: str, value: str) -> None:
-    row = db.query(Setting).filter(Setting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(Setting(key=key, value=value))
-
-
 def get_config(db) -> dict | None:
     """Return the merged PrusaLink config (incl. decrypted password), or None if unset."""
     base = _get_setting(db, "prusalink_base_url")
@@ -199,82 +227,144 @@ def get_config(db) -> dict | None:
     return cfg
 
 
-def _parse_started_at(value: str | None) -> datetime | None:
-    if not value:
+MANAGED_PROFILE_NAME = "3D Print (auto)"
+
+
+def ensure_managed_profile(db, cfg: dict):
+    """Find-or-create the integration-owned capture profile and sync it to the
+    current settings. There is at most one; it is hidden from the profiles UI
+    and its interval is rewritten per print."""
+    stream_id = cfg.get("stream_id")
+    if not stream_id:
         return None
-    try:
-        return datetime.strptime(value, _DT_FMT).replace(tzinfo=UTC)
-    except (ValueError, TypeError):
-        return None
+    is_new = False
+    profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
+    if profile is None:
+        is_new = True
+        profile = Profile(
+            name=MANAGED_PROFILE_NAME,
+            managed_by="prusalink",
+            enabled=False,
+            interval_seconds=cfg.get("default_interval_seconds", 10),
+        )
+        db.add(profile)
+
+    # Called on every poll (~10s) while a print is active; only write when a
+    # target field actually changed to avoid a needless DB write each poll.
+    targets = {
+        "stream_id": stream_id,
+        "quality": cfg.get("quality", 90),
+        "ha_sensors": cfg.get("ha_sensors") or None,
+        "fps_mode": "target_duration",
+        "render_target_seconds": cfg.get("clip_seconds", 20),
+        "render_fps": cfg.get("clip_fps", 25),
+    }
+    if is_new or any(getattr(profile, field) != value for field, value in targets.items()):
+        for field, value in targets.items():
+            setattr(profile, field, value)
+        db.commit()
+    return profile
 
 
 # --- reconcile + poll ------------------------------------------------------
 
 
-def _profile_render_config(profile, cfg: dict) -> dict:
-    """Render settings for the auto-generated timelapse.
-
-    Prefer the bound profile's own render config (set from a template); fall back
-    to the legacy prusalink_config blob for fps/format on profiles that predate
-    the render columns.
-    """
-    return {
-        "fps_mode": getattr(profile, "fps_mode", None) or "fixed",
-        "fps": getattr(profile, "render_fps", None) or cfg.get("fps", 24),
-        "render_target_seconds": getattr(profile, "render_target_seconds", None) or 20,
-        "format": getattr(profile, "render_format", None) or cfg.get("format", "mp4"),
-    }
+def _open_print_job(db):
+    return (
+        db.query(PrintJob)
+        .filter(PrintJob.status == "printing")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
 
 
-async def _reconcile(db, cfg: dict, raw_state: str | None) -> PrintDecision:
-    """Apply the side effects implied by a single polled state."""
-    active = _get_setting(db, "prusalink_active") == "true"
-    state = normalize_state(raw_state)
-    d = decide_transition(active, state, cfg.get("generate_on_cancel", False))
-    profile = db.get(Profile, cfg["profile_id"]) if cfg.get("profile_id") else None
+def _apply_interval(db, profile, pj, interval: int, *, reschedule: bool) -> None:
+    pj.interval_seconds = interval
+    profile.interval_seconds = interval
+    db.commit()
+    if reschedule:
+        scheduler.reschedule_capture_job(profile)
+
+
+async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
+    """Apply the side effects implied by a single polled status."""
+    pj = _open_print_job(db)
+    state = normalize_state(status.get("state"))
+    d = decide_transition(pj is not None, state, cfg.get("generate_on_cancel", False))
+
+    profile = None
+    if d.start_capture or pj is not None:
+        profile = ensure_managed_profile(db, cfg)
 
     if d.start_capture and profile:
+        interval = compute_interval(
+            status.get("estimated_seconds"),
+            cfg["clip_seconds"], cfg["clip_fps"],
+            cfg["default_interval_seconds"],
+            cfg["min_interval_seconds"], cfg["max_interval_seconds"],
+        )
+        pj = PrintJob(
+            prusalink_job_id=status.get("job_id"),
+            gcode_name=status.get("gcode_name") or "",
+            stream_id=profile.stream_id,
+            status="printing",
+            started_at=datetime.now(UTC),
+            estimated_seconds=status.get("estimated_seconds"),
+            interval_seconds=interval,
+        )
+        db.add(pj)
         profile.enabled = True
+        profile.interval_seconds = interval
         db.commit()
         scheduler.add_capture_job(profile)
-        _set_setting(db, "prusalink_active", "true")
-        _set_setting(db, "prusalink_print_started_at", datetime.now(UTC).strftime(_DT_FMT))
+
+    elif pj and state == "printing" and profile:
+        # Recompute once: the print started before PrusaLink knew its length.
+        if pj.estimated_seconds is None and status.get("estimated_seconds"):
+            pj.estimated_seconds = status["estimated_seconds"]
+            interval = compute_interval(
+                pj.estimated_seconds,
+                cfg["clip_seconds"], cfg["clip_fps"],
+                cfg["default_interval_seconds"],
+                cfg["min_interval_seconds"], cfg["max_interval_seconds"],
+            )
+            _apply_interval(db, profile, pj, interval, reschedule=True)
+        if not pj.gcode_name and status.get("gcode_name"):
+            pj.gcode_name = status["gcode_name"]
+            db.commit()
+
+    if d.stop_capture and pj:
+        if profile:
+            scheduler.remove_capture_job(profile.id)
+            profile.enabled = False
+        pj.status = "finished" if d.event == "print_finished" else "cancelled"
+        pj.finished_at = datetime.now(UTC)
         db.commit()
 
-    if d.stop_capture and profile:
-        scheduler.remove_capture_job(profile.id)
-        profile.enabled = False
-        db.commit()
-
-    # Honour the generate_on_finish toggle (cancel is already gated inside decide_transition).
     should_generate = d.generate
     if d.event == "print_finished" and not cfg.get("generate_on_finish", True):
         should_generate = False
-    if should_generate and profile:
-        start = _parse_started_at(_get_setting(db, "prusalink_print_started_at")) or (
-            datetime.now(UTC) - timedelta(hours=24)
-        )
-        render = _profile_render_config(profile, cfg)
+    if should_generate and pj and profile:
         await generation_queue.enqueue_generation(
             profile_id=profile.id,
             period_type="custom",
-            period_start=start,
+            period_start=pj.started_at,
             period_end=datetime.now(UTC),
-            fps_mode=render["fps_mode"],
-            fps=render["fps"],
-            render_target_seconds=render["render_target_seconds"],
-            format=render["format"],
-            timestamp_overlay=True,
+            fps_mode="target_duration",
+            fps=cfg["clip_fps"],
+            render_target_seconds=cfg["clip_seconds"],
+            format="mp4",
+            timestamp_overlay=cfg.get("timestamp_overlay", True),
+            logo_overlay=cfg.get("logo_overlay", False),
+            deflicker=cfg.get("deflicker", "medium"),
+            ha_overlay=bool(profile.ha_sensors),
+            name=pj.gcode_name or None,
+            print_job_id=pj.id,
         )
-
-    if d.stop_capture:
-        _set_setting(db, "prusalink_active", "false")
-        _set_setting(db, "prusalink_print_started_at", "")
-        db.commit()
 
     if d.event:
         title, level = _EVENT_META.get(d.event, (d.event, "info"))
-        name = profile.name if profile else "print"
+        name = (pj.gcode_name if pj and pj.gcode_name else None) or "print"
         await events.emit(d.event, title, f"{title}: {name}", level=level)
 
     return d
@@ -285,12 +375,12 @@ async def poll_printer() -> None:
     db = SessionLocal()
     try:
         cfg = get_config(db)
-        if not cfg or not cfg.get("enabled", True) or not cfg.get("profile_id"):
+        if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
         status = await get_status(cfg["base_url"], cfg["username"], cfg["password"])
         if not status or not status.get("state"):
             return
-        await _reconcile(db, cfg, status["state"])
+        await _reconcile(db, cfg, status)
     except Exception:
         logger.exception("PrusaLink poll failed")
     finally:

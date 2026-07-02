@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { Timelapse } from '$lib/types';
+	import type { Timelapse, PrintJob } from '$lib/types';
 	import { formatDate, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
@@ -9,6 +9,9 @@
 	let timelapses = $state<Timelapse[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	// Print history
+	let printJobs = $state<PrintJob[]>([]);
 
 	// Filters
 	let filterPeriod = $state('');
@@ -56,10 +59,40 @@
 		}
 	}
 
+	async function loadPrintJobs() {
+		try {
+			printJobs = await api.getPrintJobs();
+		} catch {
+			printJobs = [];
+		}
+	}
+
+	async function playPrintJob(pj: PrintJob) {
+		if (!pj.timelapse_id) return;
+		const tl = timelapses.find((t) => t.id === pj.timelapse_id);
+		if (tl) {
+			selectedTimelapse = tl;
+			return;
+		}
+		// Not in the loaded (capped/filtered) list — fetch it directly.
+		try {
+			selectedTimelapse = await api.getTimelapse(pj.timelapse_id);
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Failed to load timelapse');
+		}
+	}
+
+	function printDuration(pj: PrintJob): string {
+		if (!pj.finished_at) return '—';
+		const secs = (new Date(pj.finished_at).getTime() - new Date(pj.started_at).getTime()) / 1000;
+		return formatDuration(secs);
+	}
+
 	// Load on mount and reload when filters change
 	$effect(() => {
 		filterPeriod;
 		loadTimelapses();
+		loadPrintJobs();
 	});
 
 	// Fetch active generations and queue on mount (survives page navigation)
@@ -91,6 +124,7 @@
 				generating = Math.max(0, generating - 1);
 				clearActiveGeneration(data.generation_id);
 				loadTimelapses();
+				loadPrintJobs();
 			} else if (data.event_type === 'timelapse_failure') {
 				generating = Math.max(0, generating - 1);
 				clearActiveGeneration(data.generation_id);
@@ -268,6 +302,50 @@
 		</select>
 	</div>
 
+	{#if printJobs.length}
+		<section class="mb-8 rounded-xl border border-gray-800 bg-gray-900 p-4">
+			<h2 class="mb-3 text-lg font-semibold text-white">3D Prints</h2>
+			<div class="overflow-x-auto">
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="border-b border-gray-800 text-gray-400">
+							<th class="py-2 pr-4 font-medium">Print</th>
+							<th class="py-2 pr-4 font-medium">Status</th>
+							<th class="py-2 pr-4 font-medium">Started</th>
+							<th class="py-2 pr-4 font-medium">Duration</th>
+							<th class="py-2 font-medium">Timelapse</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each printJobs as pj (pj.id)}
+							<tr class="border-b border-gray-800/50 text-gray-200">
+								<td class="py-2 pr-4">{pj.gcode_name || 'Untitled print'}</td>
+								<td class="py-2 pr-4">
+									{#if pj.status === 'printing'}
+										<span class="rounded-full bg-blue-900 px-2 py-0.5 text-xs text-blue-300">Printing</span>
+									{:else if pj.status === 'finished'}
+										<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Finished</span>
+									{:else}
+										<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Cancelled</span>
+									{/if}
+								</td>
+								<td class="py-2 pr-4">{formatDate(pj.started_at)}</td>
+								<td class="py-2 pr-4">{printDuration(pj)}</td>
+								<td class="py-2">
+									{#if pj.timelapse_id}
+										<button onclick={() => playPrintJob(pj)} class="text-blue-400 hover:text-blue-300">Play</button>
+									{:else}
+										<span class="text-gray-500">—</span>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		</section>
+	{/if}
+
 	{#if loading}
 		<p class="text-gray-400">Loading timelapses...</p>
 	{:else if error}
@@ -300,7 +378,9 @@
 
 					<div class="mb-2 flex items-center gap-2">
 						<span class="rounded bg-purple-900 px-2 py-0.5 text-xs font-medium text-purple-300">{tl.format.toUpperCase()}</span>
-						{#if tl.period_type}
+						{#if tl.name}
+							<span class="text-xs text-gray-400">{tl.name}</span>
+						{:else if tl.period_type}
 							<span class="text-xs text-gray-400">{tl.period_type}</span>
 						{/if}
 					</div>
