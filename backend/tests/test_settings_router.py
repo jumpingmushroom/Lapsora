@@ -65,3 +65,41 @@ def test_notification_event_toggles_persist(client):
     events = client.get("/api/settings/notifications").json()["events"]
     assert events["timelapse_complete"] is False
     assert events["timelapse_failure"] is True
+
+
+def test_prusalink_roundtrip_and_managed_profile(client, db, monkeypatch):
+    from app.models import Profile, Stream
+    from app.services import health_status
+
+    async def _unreachable(*a, **kw):
+        return False
+
+    monkeypatch.setattr(health_status, "reachable", _unreachable)
+
+    s = Stream(name="printer-cam", url="rtsp://x")
+    db.add(s)
+    db.commit()
+    payload = {
+        "base_url": "http://prusa.local", "username": "maker", "password": "pw",
+        "stream_id": s.id, "poll_interval_seconds": 10,
+        "generate_on_finish": True, "generate_on_cancel": False, "enabled": False,
+        "clip_seconds": 30, "clip_fps": 30, "default_interval_seconds": 5,
+        "min_interval_seconds": 2, "max_interval_seconds": 60,
+        "timestamp_overlay": False, "logo_overlay": True, "deflicker": "high",
+        "quality": 80, "ha_sensors": None,
+    }
+    resp = client.put("/api/settings/prusalink", json=payload)
+    assert resp.status_code == 200, resp.text
+    got = client.get("/api/settings/prusalink").json()
+    assert got["stream_id"] == s.id
+    assert got["clip_seconds"] == 30
+    assert got["logo_overlay"] is True
+    assert "password" not in got
+    assert "profile_id" not in got
+    # managed profile created + synced
+    mp = db.query(Profile).filter(Profile.managed_by == "prusalink").one()
+    assert mp.stream_id == s.id
+    assert mp.quality == 80
+    assert mp.render_target_seconds == 30
+    assert mp.render_fps == 30
+    assert mp.fps_mode == "target_duration"

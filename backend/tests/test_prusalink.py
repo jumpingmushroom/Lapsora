@@ -117,25 +117,42 @@ def test_parse_status_tolerates_empty():
 
 # --- settings roundtrip ----------------------------------------------------
 
-def test_prusalink_settings_roundtrip_masks_password(client):
+def test_prusalink_settings_roundtrip_masks_password(client, db, monkeypatch):
+    from app.services import health_status
+
+    async def _reachable(*a, **kw):
+        return True
+
+    monkeypatch.setattr(health_status, "reachable", _reachable)
+
+    s = _stream(db)
     resp = client.put("/api/settings/prusalink", json={
         "base_url": "http://prusa.local/", "username": "maker", "password": "pw",
-        "profile_id": 7, "poll_interval_seconds": 15, "generate_on_cancel": True,
+        "stream_id": s.id, "poll_interval_seconds": 15, "generate_on_cancel": True,
+        "enabled": False,
     })
     assert resp.status_code == 200, resp.text
     got = client.get("/api/settings/prusalink").json()
     assert got["base_url"] == "http://prusa.local"  # trailing slash stripped
     assert got["username"] == "maker"
-    assert got["profile_id"] == 7
+    assert got["stream_id"] == s.id
     assert got["poll_interval_seconds"] == 15
     assert got["generate_on_cancel"] is True
     assert got["connected"] is True
     assert "password" not in got
 
 
-def test_prusalink_update_without_password_keeps_existing(client):
-    client.put("/api/settings/prusalink", json={"base_url": "http://a", "password": "pw1", "profile_id": 1})
-    client.put("/api/settings/prusalink", json={"base_url": "http://b", "profile_id": 1})  # no password
+def test_prusalink_update_without_password_keeps_existing(client, db, monkeypatch):
+    from app.services import health_status
+
+    async def _reachable(*a, **kw):
+        return True
+
+    monkeypatch.setattr(health_status, "reachable", _reachable)
+
+    s = _stream(db)
+    client.put("/api/settings/prusalink", json={"base_url": "http://a", "password": "pw1", "stream_id": s.id, "enabled": False})
+    client.put("/api/settings/prusalink", json={"base_url": "http://b", "stream_id": s.id, "enabled": False})  # no password
     got = client.get("/api/settings/prusalink").json()
     assert got["base_url"] == "http://b"
     assert got["connected"] is True

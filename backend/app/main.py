@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
     if gap_enabled:
         add_capture_gap_job()
     add_storage_watchdog_job()
-    if prusalink_cfg and prusalink_cfg.get("enabled", True) and prusalink_cfg.get("profile_id"):
+    if prusalink_cfg and prusalink_cfg.get("enabled", True) and prusalink_cfg.get("stream_id"):
         add_prusalink_poll_job(prusalink_cfg.get("poll_interval_seconds", 10))
 
     from app.services.generation_queue import start_worker

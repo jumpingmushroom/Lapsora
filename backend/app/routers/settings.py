@@ -322,8 +322,10 @@ async def get_ha_entities(db: Session = Depends(get_db)):
 # --- PrusaLink (3D-print timelapse trigger) ---
 
 _PRUSALINK_BLOB_FIELDS = (
-    "profile_id", "poll_interval_seconds", "generate_on_finish",
-    "generate_on_cancel", "fps", "format", "enabled",
+    "stream_id", "poll_interval_seconds", "generate_on_finish", "generate_on_cancel",
+    "enabled", "clip_seconds", "clip_fps", "default_interval_seconds",
+    "min_interval_seconds", "max_interval_seconds",
+    "timestamp_overlay", "logo_overlay", "deflicker", "quality", "ha_sensors",
 )
 
 
@@ -375,9 +377,13 @@ async def update_prusalink_settings(data: PrusaLinkConfig, db: Session = Depends
     _upsert_setting(db, "prusalink_config", json.dumps(blob))
     db.commit()
 
-    from app.services import health_status
+    from app.services import health_status, prusalink
     from app.services.scheduler import add_prusalink_poll_job, remove_prusalink_poll_job
-    if data.enabled and url and data.profile_id:
+
+    cfg = prusalink.get_config(db)
+    if cfg:
+        prusalink.ensure_managed_profile(db, cfg)
+    if data.enabled and url and data.stream_id:
         add_prusalink_poll_job(data.poll_interval_seconds)
     else:
         remove_prusalink_poll_job()

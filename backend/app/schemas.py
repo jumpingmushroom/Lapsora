@@ -68,25 +68,41 @@ class PrusaLinkConfig(BaseModel):
     base_url: str
     username: str = "maker"
     password: str | None = None  # write-only; omitted on read
-    profile_id: int | None = None
+    stream_id: int | None = None
     poll_interval_seconds: int = Field(default=10, ge=5)
     generate_on_finish: bool = True
     generate_on_cancel: bool = False
-    fps: int = 24
-    format: str = "mp4"
     enabled: bool = True
+    clip_seconds: int = Field(default=20, ge=1, le=300)
+    clip_fps: int = Field(default=25, ge=1, le=120)
+    default_interval_seconds: int = Field(default=10, ge=1)
+    min_interval_seconds: int = Field(default=2, ge=1)
+    max_interval_seconds: int = Field(default=120, ge=1)
+    timestamp_overlay: bool = True
+    logo_overlay: bool = False
+    deflicker: str = "medium"
+    quality: int = Field(default=90, ge=1, le=100)
+    ha_sensors: str | None = None  # JSON string: [{entity_id,label,unit,icon}]
 
 
 class PrusaLinkRead(BaseModel):
     base_url: str
     username: str
-    profile_id: int | None
+    stream_id: int | None
     poll_interval_seconds: int
     generate_on_finish: bool
     generate_on_cancel: bool
-    fps: int
-    format: str
     enabled: bool
+    clip_seconds: int
+    clip_fps: int
+    default_interval_seconds: int
+    min_interval_seconds: int
+    max_interval_seconds: int
+    timestamp_overlay: bool
+    logo_overlay: bool
+    deflicker: str
+    quality: int
+    ha_sensors: str | None
     configured: bool  # credentials present (drives the password placeholder)
     connected: bool  # live reachability probe (cached); drives the status badge
 
