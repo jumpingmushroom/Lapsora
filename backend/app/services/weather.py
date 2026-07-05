@@ -9,8 +9,12 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx.Timeout(10.0)
 CACHE_TTL = 600  # 10 minutes
+# Brief negative cache so a down Open-Meteo (or expired positive cache during an
+# outage) isn't re-probed on every capture, blocking up to TIMEOUT each time.
+NEG_CACHE_TTL = 60
 
 _cache: dict[str, tuple[float, float, int, bool]] = {}  # key -> (timestamp, temp, code, is_day)
+_neg_cache: dict[str, float] = {}  # key -> last failure timestamp
 
 WMO_CODES: dict[int, str] = {
     0: "Clear",
@@ -57,6 +61,10 @@ async def get_current_weather(lat: float, lon: float) -> tuple[float, int, bool]
     if cached and (now - cached[0]) < CACHE_TTL:
         return cached[1], cached[2], cached[3]
 
+    neg = _neg_cache.get(cache_key)
+    if neg and (now - neg) < NEG_CACHE_TTL:
+        return None
+
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.get(
@@ -74,9 +82,11 @@ async def get_current_weather(lat: float, lon: float) -> tuple[float, int, bool]
             code = int(current["weather_code"])
             is_day = bool(current.get("is_day", 1))
             _cache[cache_key] = (now, temp, code, is_day)
+            _neg_cache.pop(cache_key, None)
             return temp, code, is_day
-    except Exception:
-        logger.warning("Failed to fetch weather for %s,%s", lat, lon, exc_info=True)
+    except Exception as exc:
+        logger.warning("Failed to fetch weather for %s,%s: %s", lat, lon, exc)
+        _neg_cache[cache_key] = now
         return None
 
 

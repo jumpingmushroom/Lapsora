@@ -61,9 +61,10 @@ async def grab_snapshot(
         for attempt in range(1, retries + 1):
             resp = await client.get(url, auth=httpx_auth, headers=headers)
             if resp.status_code >= 500 and attempt < retries:
+                from app.url_utils import mask_url
                 logger.warning(
                     "HTTP snapshot %s returned %s (attempt %d/%d), retrying...",
-                    url, resp.status_code, attempt, retries,
+                    mask_url(url), resp.status_code, attempt, retries,
                 )
                 await asyncio.sleep(1)
                 continue

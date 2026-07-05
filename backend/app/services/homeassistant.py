@@ -10,9 +10,12 @@ logger = logging.getLogger(__name__)
 
 TIMEOUT = httpx.Timeout(10.0)
 CACHE_TTL = 15  # seconds — dedupe near-simultaneous per-profile captures
+# Brief negative cache so an unreachable HA isn't re-probed (blocking up to
+# TIMEOUT and logging) on every capture across every profile.
+NEG_CACHE_TTL = 30
 SENSOR_DOMAINS = ("sensor.", "binary_sensor.")
 
-_cache: dict[str, tuple[float, list[dict]]] = {}  # base_url -> (ts, states)
+_cache: dict[str, tuple[float, list[dict] | None]] = {}  # base_url -> (ts, states|None)
 
 
 def get_ha_config(db) -> tuple[str, str] | None:
@@ -37,8 +40,11 @@ async def get_states(base_url: str, token: str) -> list[dict] | None:
     base = base_url.rstrip("/")
     now = time.time()
     cached = _cache.get(base)
-    if cached and (now - cached[0]) < CACHE_TTL:
-        return cached[1]
+    if cached:
+        ts, value = cached
+        ttl = CACHE_TTL if value is not None else NEG_CACHE_TTL
+        if (now - ts) < ttl:
+            return value
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             resp = await client.get(
@@ -49,8 +55,9 @@ async def get_states(base_url: str, token: str) -> list[dict] | None:
             states = resp.json()
             _cache[base] = (now, states)
             return states
-    except Exception:
-        logger.warning("Failed to fetch HA states from %s", base, exc_info=True)
+    except Exception as exc:
+        logger.warning("Failed to fetch HA states from %s: %s", base, exc)
+        _cache[base] = (now, None)
         return None
 
 

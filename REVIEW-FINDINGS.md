@@ -145,6 +145,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Cancel via API while finalize runs; no Timelapse row is created and partial files are removed.
 
 ### [SEV-3] F-16: Credentialed URLs leak into logs and persisted notifications
+- **FIXED:** Added `app/url_utils.py` (`mask_url`, `scrub_urls`) and applied it at the leak points: http_source retry log masks the URL; rtsp `grab_frame`/`test_connection` and the capture.py RTSP branch scrub the credentialed URL out of ffmpeg stderr before logging/raising/emitting. Regression tests in `test_url_utils.py`. (Note: the httpx-exception path in `providers.test_source` for the bytes/HTTP source can still surface a URL in the *test-connection* response only; the persisted capture-failure paths are scrubbed. Left as a minor residual — see summary.)
 - **File:** backend/app/services/http_source.py:63-68, backend/app/services/providers.py:89-90, backend/app/services/rtsp.py:96-99 (flowing into capture.py:249-260, 343-357)
 - **Issue:** The HTTP retry warning logs the plaintext URL; httpx `HTTPStatusError` messages embed the full URL (userinfo included); ffmpeg stderr for RTSP contains the credentialed URL — all of which flow into `capture_failure` event bodies persisted to the notifications table and dispatched via Apprise (which may leave the LAN).
 - **Suggested fix:** Redact userinfo (reuse the `url_masked` logic from models.py) before logging/raising, and scrub URLs from ffmpeg stderr before embedding in event bodies.
@@ -204,6 +205,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### Reliability — integrations & services
 
 ### [SEV-3] F-24: HA and weather fetch failures have no negative caching → per-capture timeout storms
+- **FIXED:** HA `get_states` now negative-caches failures (`None`) for 30s; weather adds a `_neg_cache` (60s). Both drop `exc_info` to one-line warnings. Failures are cleared on the next success.
 - **File:** backend/app/services/homeassistant.py:35-54, backend/app/services/weather.py:56-80
 - **Issue:** While HA/Open-Meteo is down, every capture (per profile, per interval) blocks up to the 10s timeout and logs a full traceback — on short intervals this can eat most of the capture budget.
 - **Suggested fix:** Cache failures with a short TTL (30-60s) or exponential backoff; drop `exc_info` to one-line warnings.

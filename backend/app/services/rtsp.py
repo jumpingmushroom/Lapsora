@@ -38,9 +38,11 @@ async def test_connection(url: str) -> dict:
             raise
 
         if proc.returncode != 0:
+            from app.url_utils import scrub_urls
+            detail = scrub_urls(stderr.decode().strip(), url) or "unknown error"
             return {
                 "success": False,
-                "message": f"Connection failed: {stderr.decode().strip() or 'unknown error'}",
+                "message": f"Connection failed: {detail}",
                 "details": None,
             }
 
@@ -94,8 +96,8 @@ async def grab_frame(url: str) -> bytes:
         raise RuntimeError("Timed out grabbing frame after 15s")
 
     if proc.returncode != 0 or not stdout:
-        raise RuntimeError(
-            f"Failed to grab frame: {stderr.decode().strip() or 'unknown error'}"
-        )
+        from app.url_utils import scrub_urls
+        detail = scrub_urls(stderr.decode().strip(), url) or "unknown error"
+        raise RuntimeError(f"Failed to grab frame: {detail}")
 
     return stdout

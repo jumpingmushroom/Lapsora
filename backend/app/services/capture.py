@@ -343,7 +343,10 @@ async def capture_frame(profile_id: int) -> None:
                     await _kill(proc)
                     raise
                 if proc.returncode != 0:
-                    err_msg = stderr.decode().strip()
+                    from app.url_utils import scrub_urls
+                    # ffmpeg echoes the full rtsp://user:pass@host URL in its
+                    # stderr; scrub it before logging or emitting a notification.
+                    err_msg = scrub_urls(stderr.decode().strip(), url)
                     logger.error(
                         "ffmpeg capture failed for profile %d: %s",
                         profile_id,
