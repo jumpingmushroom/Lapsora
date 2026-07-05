@@ -230,30 +230,35 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### Correctness — frontend
 
 ### [SEV-3] F-27: Malformed custom time in GenerateDialog silently generates over the entire history
+- **FIXED:** `handleSubmit` validates the custom range before submit — a provided-but-malformed/incomplete date or time now blocks with an inline error instead of falling through to an unbounded (whole-history) generation. A fully-empty custom range is still allowed.
 - **File:** frontend/src/lib/components/GenerateDialog.svelte:289-311 + frontend/src/lib/utils.ts:66-73
 - **Issue:** Time fields are free text; `localToUtcNaive` returns `''` for anything not `^\d{2}:\d{2}$` (e.g. "8:00"), and submit sends `period_start: period_start || undefined` → backend treats it as unbounded. The user asked for one hour and gets a full-history render queued.
 - **Suggested fix:** Validate the custom range before submit (inline error) or use `type="time"` inputs.
 - **Verification:** Enter "8:00" as start → error, not a queued job.
 
 ### [SEV-3] F-28: Duplicate-profile drops `ir_only`, `ir_chroma_threshold`, `ha_sensors`
+- **FIXED:** Added the three fields to the `createProfile` payload in `handleDuplicateProfile`.
 - **File:** frontend/src/routes/streams/[id]/+page.svelte:257-281
 - **Issue:** The duplicate payload copies every field except these three (all present on `ProfileCreate` in both frontend types and backend schema), silently producing a behaviorally different copy.
 - **Suggested fix:** Add the three fields to the payload.
 - **Verification:** Duplicate an IR-only profile with HA sensors; copy retains them.
 
 ### [SEV-3] F-29: Live view (MSE) never evicts buffer and swallows append errors → eventual freeze
+- **FIXED:** Added `trimBuffer()` (keeps 30s behind the playhead, driven from `updateend`) and an append-failure counter that surfaces `status = 'error'` after repeated failures instead of freezing silently.
 - **File:** frontend/src/lib/components/MsePlayer.svelte:23-33
 - **Issue:** `sourceBuffer.remove()` is never called and `appendBuffer` failures hit an empty `catch`, so a long-running live view hits the MSE quota and freezes with status stuck on 'playing'.
 - **Suggested fix:** On `updateend`, trim buffered ranges older than ~30s behind `currentTime`; surface repeated append failures as `status = 'error'`.
 - **Verification:** Leave live view running 30+ min; playback continues.
 
 ### [SEV-3] F-30: Shift-click range after paging selects unintended rows (feeds bulk delete)
+- **FIXED:** `changePage` now calls `clearSelection()`, resetting both the selection and the shift-click anchor so a range can't span pages.
 - **File:** frontend/src/routes/files/+page.svelte:177-187, 50-65
 - **Issue:** `changePage` clears neither selection nor `lastClickedCaptureIdx`, so a shift-click on page 2 ranges against a page-1 index and selects unintended rows — which bulk delete then deletes.
 - **Suggested fix:** Reset the last-clicked indices (and ideally clear selection) in `changePage`.
 - **Verification:** Select idx 20 on page 1, page forward, shift-click idx 3 → only 0-3 selected.
 
 ### [SEV-3] F-31: Timelapse lists silently capped at 50 with no pagination
+- **FIXED:** Both loaders (`timelapses/+page.svelte`, `files/+page.svelte`) now pass `limit: 500` (the backend max), raising the reachable ceiling from 50 to 500. (Full pagination UI deferred — see summary.)
 - **File:** frontend/src/routes/timelapses/+page.svelte:48-60, frontend/src/routes/files/+page.svelte:169-175 (backend default: routers/timelapses.py:44)
 - **Issue:** Both pages use the backend default `limit=50` with no pagination UI — the 51st-and-older timelapses are unreachable from the UI.
 - **Suggested fix:** Add pagination or pass an explicit higher limit.

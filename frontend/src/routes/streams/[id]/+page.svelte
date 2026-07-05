@@ -270,7 +270,10 @@
 				active_start_time: profile.active_start_time,
 				active_end_time: profile.active_end_time,
 				sun_offset_minutes: profile.sun_offset_minutes,
-				sun_events: profile.sun_events
+				sun_events: profile.sun_events,
+				ir_only: profile.ir_only,
+				ir_chroma_threshold: profile.ir_chroma_threshold,
+				ha_sensors: profile.ha_sensors
 			});
 			profiles = await api.getStreamProfiles(id);
 		} catch (err) {

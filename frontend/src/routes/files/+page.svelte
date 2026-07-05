@@ -169,13 +169,17 @@
 	async function loadTimelapses() {
 		timelapses = await api.getTimelapses(
 			selectedProfileId !== null
-				? { profile_id: selectedProfileId }
-				: { stream_id: selectedStreamId ?? undefined }
+				? { profile_id: selectedProfileId, limit: 500 }
+				: { stream_id: selectedStreamId ?? undefined, limit: 500 }
 		);
 	}
 
 	async function changePage(delta: number) {
 		capturePage += delta;
+		// Reset selection + the shift-click anchor: an index from the previous
+		// page would otherwise range-select unrelated rows on the new page and
+		// feed them to bulk delete.
+		clearSelection();
 		loadingMedia = true;
 		try {
 			await loadCaptures();

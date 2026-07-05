@@ -186,6 +186,21 @@
 		e.preventDefault();
 		loading = true;
 		error = '';
+		// A malformed or incomplete custom range converts to '' and would
+		// otherwise submit as an unbounded (whole-history) generation. Catch it
+		// here. A fully-empty custom range is still allowed (means "all frames").
+		if (selectedPreset === 'custom') {
+			if ((customStartDate || customStartTime) && !period_start) {
+				error = 'Enter a valid start date and time (HH:MM).';
+				loading = false;
+				return;
+			}
+			if ((customEndDate || customEndTime) && !period_end) {
+				error = 'Enter a valid end date and time (HH:MM).';
+				loading = false;
+				return;
+			}
+		}
 		try {
 			await api.generateTimelapse(selectedProfileId, {
 				period_start: period_start || undefined,

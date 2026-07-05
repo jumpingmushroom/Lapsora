@@ -19,6 +19,31 @@
 		let sourceBuffer: SourceBuffer | null = null;
 		const queue: ArrayBuffer[] = [];
 		let appending = false;
+		let appendFailures = 0;
+
+		// Keep only this many seconds of media behind the playhead. Without
+		// eviction the SourceBuffer grows unbounded on a long-running live view
+		// and eventually hits the MSE quota, freezing playback.
+		const MAX_BUFFER_BEHIND = 30;
+
+		function trimBuffer(): boolean {
+			// Returns true if a remove() was started (its updateend will fire and
+			// re-drive the queue). Never trims while the buffer is updating.
+			if (!sourceBuffer || sourceBuffer.updating || !videoEl) return false;
+			const buffered = sourceBuffer.buffered;
+			if (buffered.length === 0) return false;
+			const start = buffered.start(0);
+			const target = videoEl.currentTime - MAX_BUFFER_BEHIND;
+			if (target > start + 1) {
+				try {
+					sourceBuffer.remove(start, target);
+					return true;
+				} catch {
+					return false;
+				}
+			}
+			return false;
+		}
 
 		function appendNext() {
 			if (!sourceBuffer || appending || queue.length === 0) return;
@@ -27,8 +52,16 @@
 			const chunk = queue.shift()!;
 			try {
 				sourceBuffer.appendBuffer(chunk);
+				appendFailures = 0;
 			} catch {
 				appending = false;
+				appendFailures++;
+				// A quota error should have been prevented by trimming; if appends
+				// keep failing, surface it rather than freezing silently.
+				if (appendFailures >= 5) {
+					status = 'error';
+					errorMsg = 'Live stream buffer error';
+				}
 			}
 		}
 
@@ -49,6 +82,9 @@
 								sourceBuffer.mode = 'segments';
 								sourceBuffer.addEventListener('updateend', () => {
 									appending = false;
+									// Evict old media first; the remove() fires another
+									// updateend that then drains the append queue.
+									if (trimBuffer()) return;
 									appendNext();
 								});
 							} else {

@@ -50,7 +50,8 @@
 		error = null;
 		try {
 			timelapses = await api.getTimelapses({
-				period_type: filterPeriod || undefined
+				period_type: filterPeriod || undefined,
+				limit: 500
 			});
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';
