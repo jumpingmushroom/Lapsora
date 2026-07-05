@@ -435,8 +435,8 @@ class CleanupScheduleCreate(BaseModel):
 
 class CleanupScheduleUpdate(BaseModel):
     name: str | None = None
-    capture_retention_days: int | None = None
-    timelapse_retention_days: int | None = None
+    capture_retention_days: int | None = Field(default=None, ge=1)
+    timelapse_retention_days: int | None = Field(default=None, ge=1)
     cron_expression: str | None = None
     enabled: bool | None = None
 
