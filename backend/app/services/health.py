@@ -98,6 +98,9 @@ async def check_all_streams() -> None:
 
             except Exception:
                 logger.exception("Health check failed for stream %d", stream.id)
+                # Roll back the failed transaction so the session isn't left
+                # dirty and poison every subsequent stream's commit this run.
+                db.rollback()
 
     finally:
         db.rollback()

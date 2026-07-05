@@ -4,7 +4,7 @@ from datetime import datetime
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 # --- Streams ---
@@ -83,6 +83,12 @@ class PrusaLinkConfig(BaseModel):
     deflicker: str = "medium"
     quality: int = Field(default=90, ge=1, le=100)
     ha_sensors: str | None = None  # JSON string: [{entity_id,label,unit,icon}]
+
+    @model_validator(mode="after")
+    def _check_interval_bounds(self):
+        if self.min_interval_seconds > self.max_interval_seconds:
+            raise ValueError("min_interval_seconds must be <= max_interval_seconds")
+        return self
 
 
 class PrusaLinkRead(BaseModel):
@@ -287,7 +293,9 @@ class TimelapseGenerate(BaseModel):
     period_start: datetime | None = None
     period_end: datetime | None = None
     fps: int = Field(default=24, ge=1, le=120)
-    format: str = "mp4"
+    # Constrained: format is interpolated into the output filename, so an
+    # unvalidated value could escape the output dir or pick a bogus extension.
+    format: Literal["mp4", "webm", "gif", "mkv"] = "mp4"
     deflicker: str = "medium"
     timestamp_overlay: bool = False
     weather_overlay: bool = False
@@ -325,7 +333,7 @@ class TimelapseScheduleCreate(BaseModel):
     fps: int = Field(default=24, ge=1, le=120)
     format: str = "mp4"
     deflicker: str = "medium"
-    lookback_hours: int | None = None
+    lookback_hours: int | None = Field(default=None, ge=1)
     timestamp_overlay: bool = False
     weather_overlay: bool = False
     weather_position: str = "bottom-right"
@@ -357,7 +365,7 @@ class TimelapseScheduleUpdate(BaseModel):
     fps: int | None = Field(default=None, ge=1, le=120)
     format: str | None = None
     deflicker: str | None = None
-    lookback_hours: int | None = None
+    lookback_hours: int | None = Field(default=None, ge=1)
     timestamp_overlay: bool | None = None
     weather_overlay: bool | None = None
     weather_position: str | None = None
@@ -508,8 +516,8 @@ class TimeFormatConfig(BaseModel):
 
 class HealthConfig(BaseModel):
     check_interval_seconds: int = Field(default=300, ge=30)
-    failure_threshold: int = 3
-    low_disk_threshold_percent: int = 10
+    failure_threshold: int = Field(default=3, ge=1)
+    low_disk_threshold_percent: int = Field(default=10, ge=1, le=99)
 
 
 class NotificationEventsConfig(BaseModel):

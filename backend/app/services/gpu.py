@@ -20,7 +20,9 @@ def detect_nvidia_gpu() -> bool:
             ["nvidia-smi"], capture_output=True, timeout=5
         )
         _gpu_available = result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired):
+        # OSError covers FileNotFoundError plus PermissionError/other exec
+        # failures — any of which just means "no usable GPU here", not a crash.
         _gpu_available = False
     logger.info("NVIDIA GPU detected: %s", _gpu_available)
     return _gpu_available

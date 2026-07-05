@@ -14,6 +14,8 @@ Source types:
 
 import logging
 
+from cryptography.fernet import InvalidToken
+
 from app.config import decrypt
 from app.services import go2rtc, http_source, rtsp
 
@@ -86,5 +88,13 @@ async def test_source(stream, db) -> dict:
 
         # rtsp
         return await rtsp.test_connection(decrypt(stream.url))
+    except InvalidToken:
+        # Fernet's InvalidToken stringifies to '' — surface an actionable
+        # message instead of a blank one (the symptom of a changed SECRET_KEY).
+        return {
+            "success": False,
+            "message": "Stored URL cannot be decrypted (SECRET_KEY changed?)",
+            "details": None,
+        }
     except Exception as exc:
         return {"success": False, "message": str(exc), "details": None}

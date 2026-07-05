@@ -31,8 +31,8 @@ def _safe_remove(path: str) -> None:
 def list_captures_across_profiles(
     stream_id: int | None = None,
     profile_id: int | None = None,
-    limit: int = Query(default=50, le=1000),
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     """Captures across one or more profiles with a single global ordering and
@@ -56,8 +56,8 @@ def list_captures_across_profiles(
 @router.get("/profiles/{profile_id}/captures", response_model=list[CaptureRead])
 def list_captures(
     profile_id: int,
-    limit: int = Query(default=50, le=1000),
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ):
     return (

@@ -308,6 +308,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### Hygiene (SEV-4)
 
 ### [SEV-4] F-36: Missing validation bounds (batch)
+- **FIXED:** PrusaLinkConfig model_validator (min<=max); HealthConfig `failure_threshold` ge=1 + `low_disk_threshold_percent` ge=1/le=99; `lookback_hours` ge=1 (Create+Update); `TimelapseGenerate.format` constrained to `Literal[mp4,webm,gif,mkv]`; captures `limit` ge=1 / `offset` ge=0 on both list endpoints. Regression tests `test_schema_bounds.py`.
 - **File:** backend/app/schemas.py + routers
 - **Issue / fix per item:**
   - schemas.py:78-80 — `PrusaLinkConfig` allows `min_interval_seconds > max_interval_seconds`; add a model validator.
@@ -334,6 +335,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Suggested fix:** Only derive cron from preset when `cron_expression` is absent from the payload.
 
 ### [SEV-4] F-40: Swallowed/blank error paths (batch)
+- **FIXED:** health per-stream handler now `db.rollback()`s on failure; `providers.test_source` catches `InvalidToken` and returns an actionable message; `gpu.detect_nvidia_gpu` broadened to `except OSError`. (MJPEG overall-deadline item left as deferred — see summary.)
 - **File:** various
 - **Issue / fix per item:**
   - services/health.py:97-100 — per-stream handler doesn't `db.rollback()`, poisoning the session for subsequent streams in the run. Add rollback.
@@ -354,6 +356,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Suggested fix:** Select `(id, file_path)` and delete by id chunks. Also: the empty-dir sweep (163-173) can rmdir a just-created date dir before ffmpeg writes the first frame — skip dirs younger than a few minutes.
 
 ### [SEV-4] F-43: Deflicker re-encodes at quality 85 while the rest of the pipeline uses 95
+- **FIXED:** the timelapse.py caller now passes `quality=95` to `deflicker_frames`.
 - **File:** backend/app/services/deflicker.py:51 + backend/app/services/timelapse.py:596
 - **Issue:** The only caller never passes `quality`, making deflicker the silent quality bottleneck.
 - **Suggested fix:** Pass `quality=95` (or the profile quality) from timelapse.py.

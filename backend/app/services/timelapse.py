@@ -610,7 +610,7 @@ async def generate_timelapse(
 
             await asyncio.to_thread(_copy_frames)
         else:
-            await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker, cancel_check=_check_cancel)
+            await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker, quality=95, cancel_check=_check_cancel)
         # Keep each surviving frame paired with its source capture. Filtering
         # frame_paths alone would shift indices relative to `captures` whenever a
         # frame is dropped, mislabelling the per-frame weather overlay below.
