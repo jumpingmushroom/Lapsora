@@ -174,24 +174,28 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### PrusaLink lifecycle
 
 ### [SEV-3] F-20: Disable-during-poll TOCTOU can leave a permanently open print + endless captures
+- **FIXED:** `poll_printer` now re-reads the config after the `get_status` await (with a `db.rollback()` to drop the read snapshot) and bails if the integration was disabled mid-poll, before `_reconcile` mutates any state.
 - **File:** backend/app/services/prusalink.py:373-388 + backend/app/routers/settings.py:386-402
 - **Issue:** `poll_printer` checks `cfg["enabled"]` once, then awaits `get_status` (up to 5s). Disabling via PUT in that window removes the poll job and cancels the open PrintJob — then the resuming poll sees no open job, recreates one, re-enables the managed profile, and adds a capture job. No poller remains to ever close it.
 - **Suggested fix:** Re-read enabled/stream_id from the DB inside `_reconcile` (after the await) before acting on the start branch.
 - **Verification:** Stub `get_status` to block, flip enabled=False mid-poll, assert no new PrintJob/profile enable.
 
 ### [SEV-3] F-21: No job-id dedupe — back-to-back prints merge into one PrintJob
+- **FIXED:** `_reconcile` detects a changed `job_id` on a still-`printing` status and reconciles it as finish-then-start (two recursive calls into the existing FINISHED then PRINTING paths). Regression test `test_job_id_change_while_printing_splits_prints`.
 - **File:** backend/app/services/prusalink.py:289-293
 - **Issue:** Transition detection is by state edge only; `status["job_id"]` is stored but never compared, so two consecutive prints that never show a non-PRINTING state within one poll interval merge into a single PrintJob/timelapse with the first print's gcode name.
 - **Suggested fix:** When a job is open, state is printing, and `status["job_id"]` differs from `pj.prusalink_job_id`, treat as finish-then-start.
 - **Verification:** Unit test: open pj with job_id=1, poll PRINTING with job_id=2 → old closed, new created.
 
 ### [SEV-3] F-22: Printer unreachable mid-print leaves the job and capture profile running forever
+- **FIXED:** Added `_handle_unreachable` — after `UNREACHABLE_GRACE_SECONDS` (15 min) of no status with an open print, it closes the print as cancelled and disables the managed profile. Regression test `test_unreachable_past_grace_closes_open_print`.
 - **File:** backend/app/services/prusalink.py:190-194, 380-382
 - **Issue:** `get_status` returns None on any error and the poll early-returns, so a printer powered off mid-print (called "normal" in the code's own comment) never reconciles: open PrintJob and enabled managed capture profile persist indefinitely.
 - **Suggested fix:** Track consecutive unreachable polls; cancel-close the open print and stop capture after a grace period.
 - **Verification:** Open pj, force `get_status` → None repeatedly; job closed and capture job removed after the threshold.
 
 ### [SEV-3] F-23: Password decrypt failure silently degrades to empty password + warn-loop
+- **FIXED:** `get_config` now returns None (treat as unconfigured) when a stored password can't be decrypted, and logs the warning once (re-armed on next successful decrypt) instead of every poll. The settings badge then shows disconnected. Regression test `test_get_config_returns_none_on_undecryptable_password`.
 - **File:** backend/app/services/prusalink.py:219-226
 - **Issue:** Decrypt failure logs a warning and proceeds with `password=""`; digest auth then fails, `get_status` returns None (debug level), and print tracking silently stops while the warning fires every poll and on every settings read.
 - **Suggested fix:** Treat decrypt failure as unconfigured (return None from `get_config`) and surface a persistent unhealthy state.

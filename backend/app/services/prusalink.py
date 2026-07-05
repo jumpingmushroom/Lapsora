@@ -202,8 +202,17 @@ def _get_setting(db, key: str) -> str | None:
     return row.value if row else None
 
 
+_password_error_logged = False
+
+
 def get_config(db) -> dict | None:
-    """Return the merged PrusaLink config (incl. decrypted password), or None if unset."""
+    """Return the merged PrusaLink config (incl. decrypted password), or None if
+    unset — or if a stored password can't be decrypted (a corrupted-key state).
+
+    Returning None on decrypt failure treats the integration as unconfigured, so
+    the poller stops rather than looping forever with an empty password that
+    fails digest auth on every poll, and the settings badge shows disconnected."""
+    global _password_error_logged
     base = _get_setting(db, "prusalink_base_url")
     if not base:
         return None
@@ -217,13 +226,22 @@ def get_config(db) -> dict | None:
     cfg["base_url"] = base
     cfg["username"] = _get_setting(db, "prusalink_username") or "maker"
     pw = _get_setting(db, "prusalink_password")
-    password = ""
     if pw:
         try:
-            password = decrypt(pw)
+            cfg["password"] = decrypt(pw)
+            _password_error_logged = False
         except Exception:
-            logger.warning("Failed to decrypt PrusaLink password")
-    cfg["password"] = password
+            # Log once (the poll runs every ~10s) until it decrypts again.
+            if not _password_error_logged:
+                logger.warning(
+                    "PrusaLink password could not be decrypted (SECRET_KEY "
+                    "changed?); treating the integration as unconfigured until "
+                    "the password is re-entered"
+                )
+                _password_error_logged = True
+            return None
+    else:
+        cfg["password"] = ""
     return cfg
 
 
@@ -290,6 +308,23 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
     """Apply the side effects implied by a single polled status."""
     pj = _open_print_job(db)
     state = normalize_state(status.get("state"))
+
+    # Job-id change while still 'printing': the previous print finished and a new
+    # one began within a single poll interval (we never observed a non-printing
+    # state between them). Close the old print (finish + generate) as if we had
+    # polled FINISHED, then start the new one from idle — otherwise both prints
+    # merge into one PrintJob/timelapse under the first print's name.
+    incoming_job_id = status.get("job_id")
+    if (
+        pj is not None
+        and state == "printing"
+        and incoming_job_id is not None
+        and pj.prusalink_job_id is not None
+        and incoming_job_id != pj.prusalink_job_id
+    ):
+        await _reconcile(db, cfg, {**status, "state": "FINISHED"})
+        return await _reconcile(db, cfg, status)
+
     d = decide_transition(pj is not None, state, cfg.get("generate_on_cancel", False))
 
     profile = None
@@ -375,6 +410,45 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
     return d
 
 
+# How long a printer may stay unreachable mid-print before we close the open
+# print (as cancelled) so the managed capture profile doesn't run forever.
+UNREACHABLE_GRACE_SECONDS = 900
+
+# In-memory: open print_job id -> first time we polled it and got no status.
+_unreachable_since: dict[int, datetime] = {}
+
+
+async def _handle_unreachable(db) -> None:
+    """A poll returned no status. If a print is open and the printer has been
+    unreachable past the grace period, close it (cancelled) and stop capturing —
+    otherwise a printer powered off mid-print leaves the print and the managed
+    capture profile running indefinitely."""
+    pj = _open_print_job(db)
+    if not pj:
+        _unreachable_since.clear()
+        return
+    now = datetime.now(UTC)
+    first = _unreachable_since.setdefault(pj.id, now)
+    if (now - first).total_seconds() < UNREACHABLE_GRACE_SECONDS:
+        return
+    profile = db.query(Profile).filter(Profile.managed_by == "prusalink").first()
+    if profile:
+        scheduler.remove_capture_job(profile.id)
+        profile.enabled = False
+        profile.auto_disabled = False
+    pj.status = "cancelled"
+    pj.finished_at = now
+    db.commit()
+    _unreachable_since.pop(pj.id, None)
+    await events.emit(
+        "print_failed",
+        "Print stopped",
+        f"Print stopped: printer unreachable for over "
+        f"{UNREACHABLE_GRACE_SECONDS // 60} minutes.",
+        level="warning",
+    )
+
+
 async def poll_printer() -> None:
     """Scheduled job: poll PrusaLink and reconcile the print lifecycle."""
     db = SessionLocal()
@@ -383,8 +457,22 @@ async def poll_printer() -> None:
         if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
         status = await get_status(cfg["base_url"], cfg["username"], cfg["password"])
-        if not status or not status.get("state"):
+
+        # Re-read config after the network await: a PUT that disabled the
+        # integration (and removed this poll job) may have committed while we
+        # waited on get_status. Drop the read snapshot so we observe the commit,
+        # and bail before mutating state on stale config — otherwise we would
+        # recreate a PrintJob / re-enable the managed profile that nothing will
+        # ever close.
+        db.rollback()
+        cfg = get_config(db)
+        if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
+
+        if not status or not status.get("state"):
+            await _handle_unreachable(db)
+            return
+        _unreachable_since.clear()
         await _reconcile(db, cfg, status)
     except Exception:
         logger.exception("PrusaLink poll failed")

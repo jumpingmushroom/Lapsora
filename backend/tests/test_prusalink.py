@@ -356,3 +356,67 @@ async def test_active_state_survives_restart_via_open_row(db, fakes):
     # simulate restart: nothing reset, next poll sees FINISHED
     await _run(db, cfg, _status("FINISHED"))
     assert db.query(PrintJob).one().status == "finished"
+
+
+@pytest.mark.asyncio
+async def test_job_id_change_while_printing_splits_prints(db, fakes):
+    """F-21: a new job id while still 'printing' closes the old print (generating
+    its render) and opens a new one, instead of merging both into one."""
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", job_id=1, name="first.gcode", est=1500))
+    await _run(db, cfg, _status("PRINTING", job_id=2, name="second.gcode", est=1500))
+
+    jobs = db.query(PrintJob).order_by(PrintJob.id).all()
+    assert len(jobs) == 2
+    assert jobs[0].status == "finished" and jobs[0].prusalink_job_id == 1
+    assert jobs[1].status == "printing" and jobs[1].prusalink_job_id == 2
+    # exactly one render enqueued, for the finished first print
+    assert len(fakes["enqueue"]) == 1
+    assert fakes["enqueue"][0]["name"] == "first.gcode"
+
+
+@pytest.mark.asyncio
+async def test_unreachable_past_grace_closes_open_print(db, fakes, monkeypatch):
+    """F-22: a printer unreachable past the grace period closes the open print so
+    the managed capture profile doesn't run forever."""
+    from datetime import UTC, datetime, timedelta
+
+    s = _stream(db)
+    cfg = _cfg(stream_id=s.id)
+    await _run(db, cfg, _status("PRINTING", est=1500))
+    pj = db.query(PrintJob).one()
+    profile = db.query(Profile).one()
+    assert profile.enabled is True
+
+    pl._unreachable_since.clear()
+    monkeypatch.setattr(pl, "SessionLocal", lambda: db)
+
+    # First unreachable poll: within grace, nothing closes.
+    await pl._handle_unreachable(db)
+    assert db.query(PrintJob).one().status == "printing"
+
+    # Force the grace to have elapsed, then poll again.
+    pl._unreachable_since[pj.id] = datetime.now(UTC) - timedelta(
+        seconds=pl.UNREACHABLE_GRACE_SECONDS + 1
+    )
+    await pl._handle_unreachable(db)
+
+    db.refresh(pj)
+    db.refresh(profile)
+    assert pj.status == "cancelled"
+    assert profile.enabled is False
+    assert fakes["enqueue"] == []  # cancelled, not generated
+
+
+def test_get_config_returns_none_on_undecryptable_password(db):
+    """F-23: a stored password that can't be decrypted makes the integration
+    read as unconfigured rather than polling forever with an empty password."""
+    from app.models import Setting
+
+    db.add(Setting(key="prusalink_base_url", value="http://prusa.local"))
+    db.add(Setting(key="prusalink_password", value="not-a-valid-fernet-token"))
+    db.commit()
+    pl._password_error_logged = False
+
+    assert pl.get_config(db) is None
