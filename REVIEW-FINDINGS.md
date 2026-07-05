@@ -423,3 +423,31 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - Runtime/browser verification: this review is static analysis plus one full backend test-suite run (183 passed, 4 failed — see F-33); no Docker build or Chrome DevTools verification was performed, per read-only scope.
 - Trilium docs sync was not performed (read-only review; no project changes to document).
 - The `caveman`/superpowers tooling directories are session tooling, not project code.
+
+---
+
+## Fix Session Summary — 2026-07-05 — applied by Opus 4.8
+
+**Verification:** backend suite **208 passed / 0 failed** (was 184 passed / 3-4 env-dependent failures at review time; +24 new regression tests). The full app lifespan — migrations, scheduler, `start_worker`/`stop_worker` — runs on every router test via the `client` fixture, so the boot/shutdown paths for F-4/F-5/F-6/F-18 are exercised. Frontend: `svelte-check` **0 errors**, `vitest` **9 passed**, production `vite build` succeeds. Work is on branch `fix/review-findings-2026-07-05` across 15 commits (one per finding group).
+
+### Fixed (all SEV-1, SEV-2, SEV-3, plus trivial SEV-4)
+There were **no SEV-1** findings. All **SEV-2** (F-1, F-9, F-10, F-11, F-32) and all **SEV-3** (F-2–F-8, F-12–F-31, F-33, F-34, F-35, plus the two F-31-related items and the F-26 CuPy/HDR sub-items) are fixed and, where testable, covered by new regression tests. Trivial high-value **SEV-4s** also done: F-36 (validation bounds), F-40 (error-handling: health rollback, InvalidToken message, gpu OSError), F-43 (deflicker quality).
+
+New test files: `test_url_utils.py`, `test_motion_blur.py`, `test_deflicker.py`, `test_schema_bounds.py`; plus additions to `test_orphan_cleanup.py`, `test_migration_runner.py`, `test_timelapses.py`, `test_capture_gap.py`, `test_prusalink.py`, `test_generation_queue.py`, and hermeticity fixes to `test_homeassistant.py`, `test_scheduler.py`, `test_config.py`, `test_data_integrity.py`.
+
+### Disputed / deviated from the report's suggested fix
+- **F-10** — did **not** exclude managed profiles from health auto re-enable (the report's "defense in depth"): that would regress the legitimate case where a stream recovers *mid-print* and captures should resume. Clearing `auto_disabled` on print-stop is the correct minimal fix and handles the reported scenario.
+
+### Partially fixed
+- **F-16** — persisted capture-failure paths and RTSP/HTTP logs are scrubbed; the httpx-exception path in `providers.test_source` for a bytes/HTTP source can still surface a URL in the *test-connection response only* (not persisted). Low residual risk on a local-only app.
+- **F-25** — offloaded the concrete blocking op (`upload_logo` PIL encode) to a thread; the broader "sync DB in async handlers" pattern is left as-is, mitigated by F-5's WAL + busy_timeout (the reviewer noted accepting it for the tiny settings table is reasonable).
+- **F-35** — added tests for the highest-risk gaps (retention timelapse paths, generation-queue worker loop, migration DROP COLUMN replay). Deferred: full `health.check_all_streams` integration test, the RTSP capture-branch test, a `poll_printer`-wrapper test, and a semicolon-in-string-literal migration test.
+
+### Deferred (SEV-4, not done)
+- **F-37** (period end at 23:59:59 drops final-second captures) — real but the period-boundary change needs care against existing renders; not trivial.
+- **F-38** (PrusaLink poll starts without a stored password) — partly mitigated by F-23 (`get_config` returns None when a set password can't be decrypted); the no-password-at-all gate on the PUT handler is untouched.
+- **F-39** (preset overwrites explicit cron on schedule update), **F-41** (docker/deploy friction), **F-42** (retention hydrates full rows / young-dir rmdir), **F-44** (dead code), **F-45** (frontend polish batch), and the F-40 MJPEG overall-deadline item — left as documented, low-value hygiene.
+
+### Not done (process)
+- No Docker rebuild + Chrome MCP walkthrough (CLAUDE.md's manual verification): boot/shutdown are covered by the test-suite lifespan, but a containerized smoke test + visual check of the frontend flows is a sensible follow-up before merge. GPU compose builds also need `nvidia-persistenced` started manually per project ops notes.
+- Trilium docs not synced (read-review-then-fix session).
