@@ -21,8 +21,20 @@ dependencies = [
     "cupy-cuda12x>=13.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Async tests are explicitly marked with @pytest.mark.asyncio; strict mode makes
+# a missing marker on an async test an error rather than a silent skip.
+asyncio_mode = "strict"
 
 [build-system]
 requires = ["setuptools>=68"]

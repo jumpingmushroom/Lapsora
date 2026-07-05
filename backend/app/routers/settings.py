@@ -1,5 +1,6 @@
 """Settings API endpoints for notifications and health monitoring."""
 
+import asyncio
 import json
 import logging
 import os
@@ -437,13 +438,23 @@ def get_logo(db: Session = Depends(get_db)):
 @router.post("/logo")
 async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     data = await file.read()
-    try:
+
+    def _decode():
         Image.open(BytesIO(data)).verify()
-        img = Image.open(BytesIO(data)).convert("RGBA")
+        return Image.open(BytesIO(data)).convert("RGBA")
+
+    # PIL decode/convert/encode is CPU-bound; run it off the event loop so a
+    # large upload can't stall SSE and the scheduler's asyncio jobs.
+    try:
+        img = await asyncio.to_thread(_decode)
     except Exception:
         raise HTTPException(400, "Uploaded file is not a valid image")
-    LOGO_DIR.mkdir(parents=True, exist_ok=True)
-    img.save(LOGO_PATH, "PNG")
+
+    def _save(image) -> None:
+        LOGO_DIR.mkdir(parents=True, exist_ok=True)
+        image.save(LOGO_PATH, "PNG")
+
+    await asyncio.to_thread(_save, img)
     _upsert_setting(db, "logo_file_path", str(LOGO_PATH))
     db.commit()
     return _logo_info(db)

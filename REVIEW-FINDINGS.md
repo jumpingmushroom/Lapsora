@@ -212,6 +212,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Point HA at a black-holed IP with two 5s-interval profiles; one probe per TTL, not per capture.
 
 ### [SEV-3] F-25: Blocking DB (and PIL) work inside `async def` settings handlers
+- **FIXED (partial):** Offloaded the concrete CPU-bound op — `upload_logo`'s PIL decode/convert/PNG-encode — to `asyncio.to_thread`. The broader "sync DB calls in async handlers" pattern is left as-is: F-5's WAL + busy_timeout removes the lock-stall that made it dangerous, and the reviewer noted accepting it for the tiny settings table is reasonable. See Fix Session Summary.
 - **File:** backend/app/routers/settings.py:184-189, 275-300, 349-405, 438-449 (pattern)
 - **Issue:** Handlers that must be async (they await health probes) run sync SQLAlchemy/SQLite calls — and in `upload_logo`, PIL encode — directly on the event loop. Under SQLite lock contention one stuck query stalls the entire loop, including SSE and all APScheduler asyncio jobs. Largely mitigated if F-5 (busy_timeout/WAL) lands, but the pattern remains.
 - **Suggested fix:** Move DB work to `asyncio.to_thread`, or split sync reads from the awaited probes.
@@ -278,18 +279,21 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Seed a sentinel file in `backend/data/captures/1/`, run the suite; sentinel survives.
 
 ### [SEV-3] F-33: Suite is red without network/at certain hours — 4 failing tests
+- **FIXED:** Stubbed `health_status.reachable` in the two HA settings tests; made `_compute_start_date` accept an injectable `now` and pinned the scheduler tests to a fixed midday reference; made `test_settings_defaults` construct `Settings(_env_file=None)` with `LAPSORA_*` env deleted. Full suite now 204 passed, 0 failed, offline.
 - **File:** backend/tests/test_homeassistant.py:70-87; backend/tests/test_scheduler.py:32-60
 - **Issue:** (a) Two HA tests assert `connected is True` but the endpoint performs a real HTTP probe to `http://ha.local:8123` / `http://b` — verified failing (~10s timeout each) on any machine without those hosts. (b) `test_compute_start_date_*` derive windows from wall-clock; between 00:00-02:00 local the `now − 2h` strftime wraps to yesterday and the assertion fails — verified at 01:01.
 - **Suggested fix:** Stub `health_status.reachable` as test_prusalink.py:120-126 already does; inject/freeze the clock in scheduler tests instead of deriving from `datetime.now()`.
 - **Verification:** `pytest` offline and at 01:00 → 0 failures.
 
 ### [SEV-3] F-34: No test dependencies or pytest config declared; CI never runs tests
+- **FIXED:** Added a `dev` optional-dependency group (pytest, pytest-asyncio) and `[tool.pytest.ini_options]` (`testpaths`, `asyncio_mode = strict`) to `backend/pyproject.toml`, plus a `.github/workflows/test.yml` that installs `.[dev]` and runs pytest on push/PR against a throwaway DB/data dir.
 - **File:** backend/pyproject.toml; .github/workflows/docker-publish.yml
 - **Issue:** pytest/pytest-asyncio appear nowhere in the repo; ~20 `@pytest.mark.asyncio` tests depend on the unpinned `.venv` happening to have pytest-asyncio (without it they skip-with-warning, silently shrinking the suite). The only CI workflow builds Docker images and never runs the suite.
 - **Suggested fix:** Add a dev dependency group + `[tool.pytest.ini_options]` with `asyncio_mode`; add a test job to CI.
 - **Verification:** Fresh venv from pyproject → full suite runs; CI fails on a broken test.
 
 ### [SEV-3] F-35: Critical-path coverage gaps (ranked)
+- **FIXED (partial):** Added regression tests for the highest-risk gaps touched by these fixes — retention timelapse age-delete + thumbnail + orphan-guard (gap 1), the generation-queue worker loop end-to-end incl. cancelled-skip (gap 2), and the migration DROP COLUMN replay (adjacent to gap 6). Remaining gaps (RTSP capture branch, full `health.check_all_streams` integration, poll_printer wrapper, semicolon-in-literal migration) are deferred — see Fix Session Summary.
 - **File:** gap: multiple modules
 - **Issue / Suggested fix / Verification (per gap):**
   1. **retention.py timelapse paths** — all retention tests seed only Capture rows; the timelapse age-delete and orphan scan are unasserted. Retention is the highest data-loss surface in the app. Mirror the capture tests with Timelapse rows. (Inverting the timelapse cutoff comparison passes the suite today.)

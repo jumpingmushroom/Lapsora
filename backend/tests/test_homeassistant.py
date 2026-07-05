@@ -66,7 +66,16 @@ async def test_read_sensors_returns_value_and_unit(monkeypatch):
     assert out == {"sensor.temp": {"value": "21.4", "unit": "°C"}}
 
 
-def test_ha_settings_roundtrip_masks_token(client):
+def test_ha_settings_roundtrip_masks_token(client, monkeypatch):
+    # Stub the live reachability probe so the test doesn't depend on ha.local
+    # actually resolving/responding (it would time out and fail otherwise).
+    from app.services import health_status
+
+    async def _reachable(*a, **kw):
+        return True
+
+    monkeypatch.setattr(health_status, "reachable", _reachable)
+
     # Save URL + token
     resp = client.put("/api/settings/homeassistant",
                       json={"base_url": "http://ha.local:8123/", "token": "secret-token"})
@@ -78,7 +87,14 @@ def test_ha_settings_roundtrip_masks_token(client):
     assert "token" not in got
 
 
-def test_ha_settings_update_without_token_keeps_existing(client):
+def test_ha_settings_update_without_token_keeps_existing(client, monkeypatch):
+    from app.services import health_status
+
+    async def _reachable(*a, **kw):
+        return True
+
+    monkeypatch.setattr(health_status, "reachable", _reachable)
+
     client.put("/api/settings/homeassistant", json={"base_url": "http://a", "token": "tok1"})
     # Update URL only (no token) — should stay connected
     client.put("/api/settings/homeassistant", json={"base_url": "http://b"})

@@ -18,15 +18,17 @@ def init_scheduler() -> None:
     logger.info("Capture scheduler started")
 
 
-def _compute_start_date(profile: Profile):
+def _compute_start_date(profile: Profile, now=None):
     """Compute start_date so captures align to predictable clock times.
 
     Times are interpreted in the scheduler's local timezone (container TZ),
-    which matches how the capture gate reads manual active windows.
+    which matches how the capture gate reads manual active windows. ``now`` is
+    injectable for deterministic tests; production callers omit it.
     """
     from datetime import datetime, timedelta
 
-    now = datetime.now()
+    if now is None:
+        now = datetime.now()
     interval = profile.interval_seconds
 
     if profile.capture_mode == "manual" and profile.active_start_time:

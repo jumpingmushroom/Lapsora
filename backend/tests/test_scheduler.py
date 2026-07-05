@@ -16,13 +16,17 @@ from app.models import Base, Profile, Stream
 from app.services import scheduler
 
 
+# A fixed midday reference so building "2h earlier/later" never wraps across a
+# day boundary (the wall-clock version failed between 00:00-02:00 / 22:00-00:00).
+NOW = datetime(2026, 7, 5, 12, 0, 0)
+
+
 def test_compute_start_date_interval_is_future_and_aligned():
     profile = SimpleNamespace(capture_mode="always", interval_seconds=300, active_start_time=None)
-    now = datetime.now()
-    start = scheduler._compute_start_date(profile)
+    start = scheduler._compute_start_date(profile, now=NOW)
 
     # Strictly in the future, within one interval.
-    delta = (start - now).total_seconds()
+    delta = (start - NOW).total_seconds()
     assert 0 < delta <= 300
     # Aligned to an interval boundary measured from the top of the hour.
     top_of_hour = start.replace(minute=0, second=0, microsecond=0)
@@ -31,32 +35,31 @@ def test_compute_start_date_interval_is_future_and_aligned():
 
 def test_compute_start_date_manual_future_time_today():
     # A start time later today should schedule for today at that time.
-    future = (datetime.now() + timedelta(hours=2)).strftime("%H:%M")
+    future = (NOW + timedelta(hours=2)).strftime("%H:%M")
     profile = SimpleNamespace(capture_mode="manual", interval_seconds=60, active_start_time=future)
-    start = scheduler._compute_start_date(profile)
+    start = scheduler._compute_start_date(profile, now=NOW)
     h, m = map(int, future.split(":"))
     assert (start.hour, start.minute) == (h, m)
-    assert start >= datetime.now()
+    assert start >= NOW
 
 
 def test_compute_start_date_manual_inside_window_resumes_same_day():
     # A start time that already passed (e.g. app restarted mid-window) must
     # resume at the next interval tick today, NOT defer until tomorrow.
-    past = (datetime.now() - timedelta(hours=2)).strftime("%H:%M")
+    past = (NOW - timedelta(hours=2)).strftime("%H:%M")
     profile = SimpleNamespace(capture_mode="manual", interval_seconds=600, active_start_time=past)
-    now = datetime.now()
-    start = scheduler._compute_start_date(profile)
+    start = scheduler._compute_start_date(profile, now=NOW)
     # Strictly future, and within one interval — not a ~22h jump to tomorrow.
-    assert now < start <= now + timedelta(seconds=600)
+    assert NOW < start <= NOW + timedelta(seconds=600)
 
 
 def test_compute_start_date_manual_ticks_aligned_to_anchor():
     # Ticks stay aligned to the window-open anchor + k*interval.
-    past = (datetime.now() - timedelta(hours=2)).strftime("%H:%M")
+    past = (NOW - timedelta(hours=2)).strftime("%H:%M")
     profile = SimpleNamespace(capture_mode="manual", interval_seconds=600, active_start_time=past)
     h, m = map(int, past.split(":"))
-    anchor = datetime.now().replace(hour=h, minute=m, second=0, microsecond=0)
-    start = scheduler._compute_start_date(profile)
+    anchor = NOW.replace(hour=h, minute=m, second=0, microsecond=0)
+    start = scheduler._compute_start_date(profile, now=NOW)
     assert (start - anchor).total_seconds() % 600 == 0
 
 

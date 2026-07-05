@@ -6,7 +6,10 @@ the event — the worker skips and cleans up the job when it dequeues it. This
 avoids racing the worker's get() and double-counting task_done().
 """
 
+import asyncio
 import threading
+
+import pytest
 
 from app.services import generation_queue as gq
 
@@ -50,4 +53,38 @@ def test_cancel_active_job_sets_event():
 
     assert gq.cancel_generation(gid) is True
     assert event.is_set()
+    _reset()
+
+
+@pytest.mark.asyncio
+async def test_worker_runs_pending_and_skips_cancelled(monkeypatch):
+    """F-35: drive the worker loop end-to-end — a cancelled job is skipped and
+    cleaned up, a normal job runs, task_done accounting stays balanced, and both
+    cancel events are popped."""
+    _reset()
+    # Fresh queue bound to this test's event loop (the module global was created
+    # at import, possibly on another loop).
+    gq._queue = asyncio.Queue()
+
+    ran = []
+
+    async def fake_generate(**kwargs):
+        ran.append(kwargs["generation_id"])
+
+    monkeypatch.setattr("app.services.timelapse.generate_timelapse", fake_generate)
+
+    r1 = await gq.enqueue_generation(profile_id=1)
+    r2 = await gq.enqueue_generation(profile_id=2)
+    gq.cancel_generation(r1["generation_id"])  # cancel the first, before the worker starts
+
+    gq.start_worker()
+    try:
+        await asyncio.wait_for(gq._queue.join(), timeout=5)
+    finally:
+        await gq.stop_worker()
+
+    assert r1["generation_id"] not in ran   # cancelled -> skipped
+    assert r2["generation_id"] in ran        # normal -> ran
+    assert gq._cancel_events == {}           # both events popped by the worker
+    assert gq._current_job is None
     _reset()

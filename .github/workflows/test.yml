@@ -1,0 +1,34 @@
+name: Backend tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend + test deps
+        run: pip install .[dev]
+
+      - name: Run tests
+        env:
+          # Point at a throwaway DB/data dir so tests never touch a real volume.
+          LAPSORA_DATABASE_URL: sqlite:////tmp/lapsora_ci.db
+          LAPSORA_DATA_DIR: /tmp/lapsora_ci_data
+        run: |
+          mkdir -p /tmp/lapsora_ci_data
+          pytest -q
