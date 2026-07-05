@@ -158,12 +158,14 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Point ffprobe at a FIFO; no lingering process after the 30s timeout.
 
 ### [SEV-3] F-18: App shutdown never stops the generation worker or active ffmpeg
+- **FIXED:** Added `generation_queue.stop_worker()` (kills the active ffmpeg, cancels and awaits `_worker_task`) and call it after `_scheduler.shutdown()` in the lifespan.
 - **File:** backend/app/main.py:69-75, backend/app/services/generation_queue.py
 - **Issue:** Lifespan shutdown stops only the scheduler; the worker task and any active ffmpeg subprocess are never cancelled/awaited (`start_worker` exists, no stop). Relies on process teardown; produces orphaned ffmpeg / "Task was destroyed but it is pending" on restart mid-render.
 - **Suggested fix:** Add a `stop_worker()` that cancels `_worker_task` and terminates the active proc; call it in lifespan shutdown.
 - **Verification:** Stop uvicorn mid-render; clean exit, no orphaned ffmpeg.
 
 ### [SEV-3] F-19: Capture-gap alert fires falsely when an active window opens
+- **FIXED:** For windowed profiles only (`_has_active_window`), an in-memory `_window_open_since` marker starts a `threshold_seconds` grace period on the first check that observes the window open, and is cleared when it closes. 24/7 profiles are unaffected. Regression test `test_no_alert_on_first_check_after_window_opens`.
 - **File:** backend/app/services/capture_gap.py:63-73
 - **Issue:** The gap is measured as `now − last_capture` across window-closed time: the first hourly check after a sun/manual window opens (before the day's first frame) sees yesterday's last capture and fires a false "capture gap" alert; suppression resets on the first success so this can recur daily.
 - **Suggested fix:** Clamp the gap start to the window-open time, or skip when the window opened less than `threshold_seconds` ago.

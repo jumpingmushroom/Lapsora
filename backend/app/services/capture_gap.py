@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 # In-memory suppression: profile_id → True when alerted, cleared on successful capture
 _alerted: dict[int, bool] = {}
 
+# In-memory window-open marker: profile_id → datetime we first observed the
+# active window open (cleared when it closes). Gives a fresh profile.interval*3
+# grace period after each window opening so a windowed profile doesn't
+# false-alarm on the first check after opening (before the day's first frame),
+# when the only prior capture is from yesterday.
+_window_open_since: dict[int, datetime] = {}
+
 
 def _as_utc(dt: datetime) -> datetime:
     """Treat a DB-read datetime as UTC. SQLite returns naive datetimes even
@@ -24,6 +31,17 @@ def _as_utc(dt: datetime) -> datetime:
 def clear_alert(profile_id: int) -> None:
     """Reset alert state after a successful capture."""
     _alerted.pop(profile_id, None)
+
+
+def _has_active_window(profile) -> bool:
+    """True when the profile only captures during a bounded window (so it has a
+    real 'window opened' event that warrants a grace period). A 24/7 profile
+    ('always', or manual with no times) captures continuously and needs none."""
+    if profile.capture_mode == "sun":
+        return True
+    if profile.capture_mode == "manual":
+        return bool(profile.active_start_time and profile.active_end_time)
+    return False
 
 
 async def check_capture_gaps() -> None:
@@ -64,10 +82,22 @@ async def check_capture_gaps() -> None:
                 if age < threshold_seconds:
                     continue
 
-                # Skip if outside active window
+                # Skip if outside active window (and reset the grace marker so
+                # the next opening starts a fresh grace period).
                 from app.services.capture import _is_within_active_window
                 if not _is_within_active_window(profile, db, now):
+                    _window_open_since.pop(profile.id, None)
                     continue
+
+                # Grace period after the window opens (windowed profiles only):
+                # on the first check that observes the window open, start the
+                # clock and skip. Only alert once at least threshold_seconds of
+                # in-window time has elapsed, so a profile whose window just
+                # opened doesn't false-alarm against yesterday's last capture.
+                if _has_active_window(profile):
+                    opened_at = _window_open_since.setdefault(profile.id, now)
+                    if (now - opened_at).total_seconds() < threshold_seconds:
+                        continue
 
                 gap_seconds = (now - _as_utc(last_capture_at)).total_seconds()
                 if gap_seconds > threshold_seconds and not _alerted.get(profile.id):

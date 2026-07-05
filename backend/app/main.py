@@ -71,8 +71,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown scheduler
+    # Shutdown: stop the scheduler, then cancel the generation worker and kill
+    # any in-flight ffmpeg so a restart mid-render exits cleanly.
     _scheduler.shutdown()
+    from app.services.generation_queue import stop_worker
+    await stop_worker()
 
 
 app = FastAPI(title="Lapsora", version="0.1.0", lifespan=lifespan)

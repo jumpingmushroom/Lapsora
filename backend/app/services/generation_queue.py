@@ -221,3 +221,27 @@ def start_worker() -> None:
     _worker_task = asyncio.get_running_loop().create_task(_worker())
     _worker_task.add_done_callback(_on_worker_done)
     logger.info("Generation queue worker launched")
+
+
+async def stop_worker() -> None:
+    """Kill any in-flight ffmpeg and cancel the worker task. Call from app
+    lifespan shutdown so a restart mid-render doesn't orphan an ffmpeg process
+    or emit 'Task was destroyed but it is pending' warnings."""
+    global _worker_task
+    proc = get_active_ffmpeg_proc()
+    if proc:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+    task = _worker_task
+    _worker_task = None
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Generation queue worker raised during shutdown")
+    logger.info("Generation queue worker stopped")

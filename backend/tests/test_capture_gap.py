@@ -25,7 +25,7 @@ def _session_factory():
     return sessionmaker(bind=engine)
 
 
-def _seed(Session, *, last_capture_age: timedelta):
+def _seed(Session, *, last_capture_age: timedelta, capture_mode="always", **profile_kw):
     s = Session()
     created = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=1)
     captured = datetime.now(UTC).replace(tzinfo=None) - last_capture_age
@@ -38,8 +38,9 @@ def _seed(Session, *, last_capture_age: timedelta):
         interval_seconds=60,  # threshold = 180s
         enabled=True,
         auto_disabled=False,
-        capture_mode="always",
+        capture_mode=capture_mode,
         created_at=created,
+        **profile_kw,
     )
     s.add(profile)
     s.flush()
@@ -79,3 +80,31 @@ def test_no_alert_when_recent_capture():
         asyncio.run(capture_gap.check_capture_gaps())
 
     assert emit_mock.await_count == 0
+
+
+def test_no_alert_on_first_check_after_window_opens():
+    """F-19: a windowed (manual, 24h-open) profile whose only capture is from
+    yesterday must not false-alarm on the first check that observes the window
+    open — the grace period suppresses it."""
+    from app.services import capture_gap
+
+    Session = _session_factory()
+    # Manual window that is always "open" (00:00-23:59) so _is_within_active_window
+    # is True, but it is still a *windowed* profile so the grace period applies.
+    _seed(
+        Session,
+        last_capture_age=timedelta(hours=20),
+        capture_mode="manual",
+        active_start_time="00:00",
+        active_end_time="23:59",
+    )
+    capture_gap._alerted.clear()
+    capture_gap._window_open_since.clear()
+
+    emit_mock = AsyncMock()
+    with patch.object(capture_gap, "SessionLocal", Session), patch(
+        "app.services.events.emit", emit_mock
+    ):
+        asyncio.run(capture_gap.check_capture_gaps())
+
+    assert emit_mock.await_count == 0  # first observation is within the grace window
