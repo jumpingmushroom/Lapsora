@@ -49,6 +49,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Make the DB read-only, issue a delete, confirm files untouched and an error is returned.
 
 ### [SEV-3] F-4: Ephemeral SECRET_KEY silently makes encrypted stream URLs unrecoverable
+- **FIXED:** When no env key is set, `_load_or_create_persistent_key` now persists a generated key to `{DATA_DIR}/.secret_key` (mode 0600) and reuses it on later boots; env var still takes precedence, and an unwritable DATA_DIR falls back to ephemeral with a clear warning. Verified persistence + precedence + 0600 mode by hand.
 - **File:** backend/app/config.py:19-26
 - **Issue:** When `LAPSORA_SECRET_KEY` is unset the app logs a warning and continues with a per-boot random key, so every stream URL/credential written during that run is permanently undecryptable after restart. Migration `004_clear_stale_encrypted_urls.sql` (`UPDATE streams SET url = '';`) is the historical proof this already destroyed data once.
 - **Evidence:** `self.SECRET_KEY = secrets.token_hex(32)` after a mere `logging.warning`. Verified in source.
@@ -56,6 +57,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Boot twice without the env var; a stream created on boot 1 must still decrypt on boot 2.
 
 ### [SEV-3] F-5: SQLite runs without WAL or busy_timeout despite concurrent writers
+- **FIXED:** The connect listener now also runs `PRAGMA journal_mode=WAL` and `PRAGMA busy_timeout=5000` (no-ops on the in-memory test engine). Full suite still green.
 - **File:** backend/app/database.py:13-30
 - **Issue:** The connect listener sets only `PRAGMA foreign_keys=ON`. Writers are genuinely concurrent (sync routers in FastAPI's threadpool, AsyncIOScheduler capture/cleanup jobs, the generation worker), so a long retention DELETE holding the write lock can surface as `database is locked` capture failures and stalled requests.
 - **Evidence:** `create_engine(settings.DATABASE_URL, connect_args=connect_args, pool_pre_ping=True)`; listener executes one pragma. Verified in source.
@@ -63,6 +65,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Run a cleanup deleting ~50k captures while a 5s-interval profile captures; no lock errors, no missed ticks; `PRAGMA journal_mode` returns `wal`.
 
 ### [SEV-3] F-6: `DROP COLUMN` migration is not replay-tolerant → potential boot loop
+- **FIXED:** Added `"no such column"` to the runner's tolerated-error set so a replayed `DROP COLUMN` converges instead of boot-looping. Regression test `test_replayed_drop_column_converges`.
 - **File:** backend/app/migrations/versions/018_drop_heatmap_opacity.sql + backend/app/migrations/runner.py:54-62
 - **Issue:** In the documented partial-failure scenario (DDL autocommits, then the `_migrations` INSERT fails — e.g. volume flips read-only), the next boot re-runs `ALTER TABLE ... DROP COLUMN heatmap_opacity` and fails with "no such column", which is not in the runner's tolerated-error list ("duplicate column name" / "already exists"). Boot-loops until a manual `_migrations` row insert.
 - **Evidence:** `if "duplicate column name" in msg or "already exists" in msg:` — verified; 018 is the only DROP COLUMN migration.

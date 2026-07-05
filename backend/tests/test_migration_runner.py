@@ -88,6 +88,27 @@ def test_partial_failure_recovers_on_rerun(tmp_path, monkeypatch):
     assert "001_two_tables.sql" in _applied(engine)
 
 
+def test_replayed_drop_column_converges(tmp_path, monkeypatch):
+    """F-6: a DROP COLUMN migration that gets replayed (its _migrations row was
+    never written) must tolerate 'no such column' and converge, not boot-loop."""
+    versions = tmp_path / "versions"
+    versions.mkdir()
+    _write(versions, "001_base.sql", "CREATE TABLE t (id INTEGER PRIMARY KEY, gone TEXT);")
+    _write(versions, "002_drop.sql", "ALTER TABLE t DROP COLUMN gone;")
+    monkeypatch.setattr(runner, "VERSIONS_DIR", versions)
+
+    engine = create_engine(f"sqlite:///{tmp_path}/db.sqlite")
+    runner.run_migrations(engine)  # applies both cleanly
+
+    # Simulate a partial apply of 002: the column is already dropped but the
+    # _migrations row was never written, so the runner will replay it.
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM _migrations WHERE filename = '002_drop.sql'"))
+
+    runner.run_migrations(engine)  # must NOT raise on "no such column: gone"
+    assert "002_drop.sql" in _applied(engine)
+
+
 def test_real_error_still_raises(tmp_path, monkeypatch):
     versions = tmp_path / "versions"
     versions.mkdir()

@@ -51,13 +51,19 @@ def run_migrations(engine: Engine) -> None:
                         # read-only mid-file) leaves earlier statements applied
                         # but writes no _migrations row. On the next boot the
                         # migration re-runs from the top; tolerating "already
-                        # exists" (table/index) and "duplicate column name"
-                        # (ALTER lacks IF NOT EXISTS) lets it converge instead of
-                        # boot-looping on the already-applied prefix. DDL here is
-                        # idempotent by object name, so skipping is safe.
+                        # exists" (table/index), "duplicate column name" (ADD
+                        # COLUMN lacks IF NOT EXISTS) and "no such column" (a
+                        # replayed DROP COLUMN whose column is already gone) lets
+                        # it converge instead of boot-looping on the
+                        # already-applied prefix. DDL here is idempotent by
+                        # object name, so skipping is safe.
                         msg = str(exc).lower()
-                        if "duplicate column name" in msg or "already exists" in msg:
-                            logger.info("Object already exists, skipping: %s", exc)
+                        if (
+                            "duplicate column name" in msg
+                            or "already exists" in msg
+                            or "no such column" in msg
+                        ):
+                            logger.info("Object already in target state, skipping: %s", exc)
                         else:
                             raise
 

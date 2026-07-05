@@ -17,12 +17,45 @@ class Settings(BaseSettings):
 
     def model_post_init(self, __context: object) -> None:
         if not self.SECRET_KEY:
-            import logging
-            logging.getLogger(__name__).warning(
-                "LAPSORA_SECRET_KEY not set — using random key. "
-                "Encrypted data will be unreadable after restart."
+            self.SECRET_KEY = self._load_or_create_persistent_key()
+
+    def _load_or_create_persistent_key(self) -> str:
+        """No env-provided key: reuse a persisted per-install key so encrypted
+        data (stream URLs, credentials) survives restarts. Only falls back to an
+        ephemeral key when the key file can be neither read nor written."""
+        import logging
+        import os
+
+        logger = logging.getLogger(__name__)
+        key_path = os.path.join(self.DATA_DIR, ".secret_key")
+
+        try:
+            if os.path.exists(key_path):
+                with open(key_path) as fh:
+                    existing = fh.read().strip()
+                if existing:
+                    return existing
+        except OSError:
+            logger.warning("Could not read persisted SECRET_KEY at %s", key_path)
+
+        new_key = secrets.token_hex(32)
+        try:
+            os.makedirs(self.DATA_DIR, exist_ok=True)
+            with open(key_path, "w") as fh:
+                fh.write(new_key)
+            os.chmod(key_path, 0o600)
+            logger.warning(
+                "LAPSORA_SECRET_KEY not set — generated and persisted a random "
+                "key at %s. Set LAPSORA_SECRET_KEY to manage it explicitly.",
+                key_path,
             )
-            self.SECRET_KEY = secrets.token_hex(32)
+        except OSError:
+            logger.warning(
+                "LAPSORA_SECRET_KEY not set and %s is not writable — using an "
+                "ephemeral key. Encrypted data will be unreadable after restart.",
+                key_path,
+            )
+        return new_key
 
 
 settings = Settings()

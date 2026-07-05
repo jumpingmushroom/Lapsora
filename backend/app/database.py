@@ -19,6 +19,14 @@ def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
     if isinstance(dbapi_connection, sqlite3.Connection):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
+        # Writers are concurrent (sync routers in FastAPI's threadpool, the
+        # AsyncIOScheduler capture/cleanup jobs, the generation worker) against
+        # one file DB. WAL lets readers proceed during a write, and busy_timeout
+        # makes a blocked writer wait for the lock instead of failing
+        # immediately with "database is locked". Both are no-ops on the
+        # in-memory test engine.
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
         cursor.close()
 
 
