@@ -101,15 +101,25 @@ async def capture_hdr_frame(url: str, output_path: str, quality: int = 85) -> di
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+            # Grabbing 3 keyframes can take connect time + up to a couple of GOPs;
+            # 15s intermittently timed out on long-GOP (4-5s keyframe) cameras.
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except asyncio.TimeoutError:
             await _kill(proc)
-            raise RuntimeError("Timed out grabbing HDR frames after 15s")
+            raise RuntimeError("Timed out grabbing HDR frames after 30s")
         if proc.returncode != 0:
-            raise RuntimeError(f"ffmpeg frame grab failed: {stderr.decode().strip()}")
+            from app.url_utils import scrub_urls
+            raise RuntimeError(
+                f"ffmpeg frame grab failed: {scrub_urls(stderr.decode().strip(), url)}"
+            )
 
-        # FFmpeg %d pattern is 1-indexed
-        frame_paths = [os.path.join(tmp_dir, f"frame_{i}.jpg") for i in range(1, 4)]
+        # ffmpeg exits 0 on input EOF, so it may have written fewer than 3
+        # frames (stream ended right after connect). Fuse whatever landed rather
+        # than erroring on a hardcoded frame_3.jpg; fail only if nothing was written.
+        import glob
+        frame_paths = sorted(glob.glob(os.path.join(tmp_dir, "frame_*.jpg")))
+        if not frame_paths:
+            raise RuntimeError("ffmpeg produced no HDR frames")
 
         # OpenCV fusion + encode is CPU-bound — run off the event loop.
         return await asyncio.to_thread(_fuse_hdr_frames, frame_paths, output_path, quality)

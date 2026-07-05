@@ -20,16 +20,21 @@ STRENGTH_SIGMA = {
 def calc_brightness(image: np.ndarray, sigma: float | None = 2.5) -> float:
     """Calculate mean brightness of an image, with optional sigma clipping."""
     if sigma is not None and is_cupy_available():
-        import cupy as cp
-        gpu_img = cp.asarray(image)
-        mask = cp.ones(image.shape[:2], dtype=cp.bool_)
-        for c in range(image.shape[2]):
-            channel = gpu_img[:, :, c].astype(cp.float32)
-            mean = channel.mean()
-            std = channel.std()
-            if float(std) > 0:
-                mask &= cp.abs(channel - mean) / std <= sigma
-        return float(cp.mean(gpu_img[mask]))
+        try:
+            import cupy as cp
+            gpu_img = cp.asarray(image)
+            mask = cp.ones(image.shape[:2], dtype=cp.bool_)
+            for c in range(image.shape[2]):
+                channel = gpu_img[:, :, c].astype(cp.float32)
+                mean = channel.mean()
+                std = channel.std()
+                if float(std) > 0:
+                    mask &= cp.abs(channel - mean) / std <= sigma
+            return float(cp.mean(gpu_img[mask]))
+        except Exception:
+            # A mid-run CUDA failure (OOM, context loss) must degrade to CPU
+            # rather than fail the whole timelapse generation.
+            logger.warning("CuPy brightness computation failed; using CPU")
 
     if sigma is not None:
         mask = np.ones(image.shape[:2], dtype=bool)
@@ -87,6 +92,14 @@ def deflicker_frames(
         logger.warning("No readable frames to deflicker")
         return
 
+    # Unreadable frames were recorded as brightness 0.0. Left as-is they drag the
+    # smoothed target curve toward black around the gap and visibly darken the
+    # readable frames next to it. Interpolate their brightness from readable
+    # neighbours before smoothing.
+    readable_idx = np.flatnonzero(readable)
+    if len(readable_idx) < n:
+        brightness = np.interp(np.arange(n), readable_idx, brightness[readable_idx])
+
     # Compute target brightness via Gaussian smoothing (nearest mode avoids zero-padding)
     target = gaussian_filter1d(brightness, sigma=gauss_sigma, mode="nearest")
 
@@ -105,10 +118,17 @@ def deflicker_frames(
             scale = target[i] / brightness[i]
             lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
             if use_gpu:
-                import cupy as cp
-                gpu_lab = cp.asarray(lab[:, :, 0], dtype=cp.float32)
-                gpu_lab = cp.clip(gpu_lab * scale, 0, 255)
-                lab[:, :, 0] = cp.asnumpy(gpu_lab).astype(np.uint8)
+                try:
+                    import cupy as cp
+                    gpu_lab = cp.asarray(lab[:, :, 0], dtype=cp.float32)
+                    gpu_lab = cp.clip(gpu_lab * scale, 0, 255)
+                    lab[:, :, 0] = cp.asnumpy(gpu_lab).astype(np.uint8)
+                except Exception:
+                    # Latch to CPU for the rest of the run on any CUDA failure.
+                    logger.warning("CuPy deflicker step failed; using CPU for remaining frames")
+                    use_gpu = False
+                    lab_f = lab[:, :, 0].astype(np.float32)
+                    lab[:, :, 0] = np.clip(lab_f * scale, 0, 255).astype(np.uint8)
             else:
                 lab_f = lab[:, :, 0].astype(np.float32)
                 lab[:, :, 0] = np.clip(lab_f * scale, 0, 255).astype(np.uint8)

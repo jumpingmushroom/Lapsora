@@ -218,6 +218,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Hold a write transaction open in a second connection; settings GETs must not freeze unrelated endpoints.
 
 ### [SEV-3] F-26: Deflicker treats unreadable frames as brightness 0.0, darkening neighbors
+- **FIXED:** Interpolate unreadable-frame brightness from readable neighbours (`np.interp`) before smoothing; wrapped both CuPy branches (calc_brightness + pass-2 LAB scale) in try/except that falls back to CPU (latching for the rest of the run). HDR: raised the grab timeout 15→30s, glob the frames actually written instead of assuming exactly 3, scrub the credentialed URL from ffmpeg stderr. Regression tests `test_deflicker.py`.
 - **File:** backend/app/services/deflicker.py:81, 91
 - **Issue:** Unreadable frames are recorded as 0.0 but still feed the Gaussian smoothing, so the target curve dips toward black around a missing frame and adjacent good frames get visibly darkened.
 - **Suggested fix:** Interpolate brightness for unreadable indices from readable neighbors (`np.interp`) before smoothing.
