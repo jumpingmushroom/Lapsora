@@ -254,33 +254,46 @@ def apply_motion_blur(frame_dir: str, blend_count: int, cancel_check: callable =
     offsets = np.arange(-half, half + 1, dtype=np.float32)
     weights = np.exp(-0.5 * (offsets / sigma) ** 2)
 
-    # Read all frames into memory as uint8 (convert to float only in blend window)
     paths = [os.path.join(frame_dir, f) for f in frame_files]
-    frames = []
-    for p in paths:
-        img = cv2.imread(p)
-        frames.append(img)  # keep as uint8 or None
+    n = len(paths)
 
     use_gpu = is_cupy_available()
     if use_gpu:
         import cupy as cp
 
-    n = len(frames)
+    # Sliding cache of ORIGINAL decoded frames keyed by index, bounded to the
+    # blend window (~blend_count frames) instead of the whole sequence — a few
+    # thousand 1080p frames held at once is tens of GB and OOM-kills the app.
+    # We overwrite paths[i] with the blended result as we advance, so neighbours
+    # must be served from this cache (their on-disk copy is already blended),
+    # never re-read from disk.
+    cache: dict = {}
+
+    def _load(idx: int):
+        if idx not in cache:
+            cache[idx] = cv2.imread(paths[idx])  # uint8 or None
+        return cache[idx]
+
     for i in range(n):
         if cancel_check and i % 10 == 0:
             cancel_check()
-        if frames[i] is None:
-            continue
         # Determine window with boundary clamping
         start = max(0, i - half)
         end = min(n - 1, i + half)
+        # Drop originals no future window can reach, then load this window.
+        for stale in [k for k in cache if k < start]:
+            del cache[stale]
+        for j in range(start, end + 1):
+            _load(j)
+        if cache.get(i) is None:
+            continue
         # Gather valid frames and their weights
         w_list = []
         f_list = []
         for j in range(start, end + 1):
-            if frames[j] is not None:
+            if cache.get(j) is not None:
                 w_list.append(weights[j - i + half])
-                f_list.append(frames[j])
+                f_list.append(cache[j])
         if not f_list:
             continue
 
@@ -835,14 +848,19 @@ async def generate_timelapse(
             stderr=asyncio.subprocess.PIPE,
         )
         set_active_ffmpeg_proc(proc)
+        # Scale the timeout with the frame count: FFMPEG_TIMEOUT is a floor, plus
+        # a generous per-frame budget so a large yearly software encode (e.g.
+        # libx265 -preset veryslow over tens of thousands of frames) isn't killed
+        # mid-encode, while a genuinely hung process is still bounded.
+        encode_timeout = max(FFMPEG_TIMEOUT, 60 + frame_count * 2)
         try:
-            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=FFMPEG_TIMEOUT)
+            _, stderr = await asyncio.wait_for(proc.communicate(), timeout=encode_timeout)
         except asyncio.TimeoutError:
             # Kill the overran encoder so it stops burning CPU/NVENC and growing
             # the partial output while the next job starts — wait_for only
             # cancels the await, not the process.
             await _kill(proc)
-            raise RuntimeError(f"ffmpeg encode timed out after {FFMPEG_TIMEOUT}s")
+            raise RuntimeError(f"ffmpeg encode timed out after {encode_timeout}s")
         finally:
             set_active_ffmpeg_proc(None)
 
@@ -859,6 +877,11 @@ async def generate_timelapse(
         # Step: finalizing
         await _progress("finalizing", "in_progress")
 
+        # A cancel that lands after the encode finished must still abort before
+        # we commit a Timelapse row, or the user sees both a "cancelled" response
+        # and a finished timelapse. GenerationCancelled routes to the cleanup path.
+        _check_cancel()
+
         # Get file size
         file_size = os.path.getsize(out_path)
 
@@ -874,9 +897,15 @@ async def generate_timelapse(
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            probe_out, _ = await asyncio.wait_for(
-                probe_proc.communicate(), timeout=30
-            )
+            try:
+                probe_out, _ = await asyncio.wait_for(
+                    probe_proc.communicate(), timeout=30
+                )
+            except asyncio.TimeoutError:
+                # wait_for cancels the await, not the child — kill it so a hung
+                # ffprobe doesn't leak a process per generation.
+                await _kill(probe_proc)
+                raise
             if probe_proc.returncode == 0 and probe_out:
                 probe_data = json.loads(probe_out.decode())
                 duration_seconds = float(
@@ -895,7 +924,11 @@ async def generate_timelapse(
                 "-frames:v", "1", "-q:v", "2", thumb_path,
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
-            await asyncio.wait_for(proc.communicate(), timeout=30)
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=30)
+            except asyncio.TimeoutError:
+                await _kill(proc)
+                raise
             if proc.returncode != 0:
                 thumb_path = None
         except Exception:

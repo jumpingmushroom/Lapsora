@@ -124,18 +124,21 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** POST to a nonexistent id → 404 instead of 202.
 
 ### [SEV-3] F-13: Fixed 5-minute ffmpeg timeout kills large CPU encodes
+- **FIXED:** Encode timeout is now `max(FFMPEG_TIMEOUT, 60 + frame_count * 2)` — the 300s floor for small jobs, scaling generously with frame count so large software encodes complete while a hung process stays bounded.
 - **File:** backend/app/services/timelapse.py:318, 835
 - **Issue:** `FFMPEG_TIMEOUT = 300` is a hard cap. A yearly render (tens of thousands of frames), especially `libx265` on the lossless CPU path, routinely exceeds 5 minutes — every such generation is killed and reported failed.
 - **Suggested fix:** Scale the timeout with `frame_count` (base + per-frame budget) or make it a setting.
 - **Verification:** Encode ~10k 1080p frames with h265 lossless on CPU; completes instead of "ffmpeg encode timed out".
 
 ### [SEV-3] F-14: Motion blur loads the entire frame set into RAM
+- **FIXED:** Replaced the load-everything list with a bounded per-index cache holding only the blend window (~`blend_count` frames); originals are cached so the in-place overwrite of `paths[i]` never corrupts a neighbour's blend. Regression tests in `test_motion_blur.py` (constant sequence stays constant; all frames preserved).
 - **File:** backend/app/services/timelapse.py:257-262 (`apply_motion_blur`)
 - **Issue:** All frames are decoded and appended to a list up front (~6 MB per 1080p frame ⇒ a few thousand frames is 20-60 GB) — an OOM kill of the whole app, taking capture down with it.
 - **Suggested fix:** Keep a sliding window of `blend_count` decoded frames (deque), writing to temp names to avoid re-reading blended output.
 - **Verification:** motion_blur=high over a few thousand frames while watching container RSS; flat memory profile, identical output on a small set.
 
 ### [SEV-3] F-15: Late cancel after encode still commits the timelapse
+- **FIXED:** Added `_check_cancel()` at the start of the finalizing step (before file-size/ffprobe/DB insert); a late cancel now raises `GenerationCancelled`, which the existing handler routes to `_remove_partial_output` + cancel notification. (No new automated test — drives the same exception path already exercised by earlier `_check_cancel` calls; verified placement by reading.)
 - **File:** backend/app/services/generation_queue.py:141-153 + backend/app/services/timelapse.py:853-957
 - **Issue:** `generate_timelapse` never checks the cancel event after the encode step, so cancelling during finalize (ffprobe/thumbnail/commit) yields both a "cancelled" API response and a finished timelapse.
 - **Suggested fix:** Call `_check_cancel()` at the start of the finalize step (before the DB insert) so a late cancel routes through the existing `GenerationCancelled` cleanup.
@@ -148,6 +151,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Configure a stream with `http://user:pass@host/…`, force a failure, grep logs + notifications table for the password.
 
 ### [SEV-3] F-17: Subprocess timeout paths in finalize never kill the child
+- **FIXED:** The ffprobe and thumbnail-ffmpeg blocks now catch `asyncio.TimeoutError`, `await _kill(proc)`, and re-raise (the outer `except` still degrades gracefully to estimated duration / no thumbnail) — no leaked process per generation.
 - **File:** backend/app/services/timelapse.py:862-899
 - **Issue:** The ffprobe and thumbnail-ffmpeg blocks catch bare `Exception` (swallowing `TimeoutError`) without `_kill`, unlike every other subprocess call in the codebase — a hung child leaks a process per generation.
 - **Suggested fix:** Catch `TimeoutError` explicitly and `await _kill(proc)` in both blocks, mirroring capture.py:337-342.
