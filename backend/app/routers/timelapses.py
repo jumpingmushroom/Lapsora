@@ -137,11 +137,15 @@ def get_timelapse_thumbnail(timelapse_id: int, db: Session = Depends(get_db)):
 @router.delete("/timelapses/bulk", status_code=204)
 def bulk_delete_timelapses(body: BulkDeleteRequest, db: Session = Depends(get_db)):
     tls = db.query(Timelapse).filter(Timelapse.id.in_(body.ids)).all()
+    # Commit row removal before unlinking so a failed commit can't leave the
+    # media gone but the row (and its 404-ing endpoints) behind.
+    paths = [(tl.file_path, tl.thumbnail_path) for tl in tls]
     for tl in tls:
-        _safe_remove(tl.file_path)
-        _safe_remove(tl.thumbnail_path)
         db.delete(tl)
     db.commit()
+    for file_path, thumb_path in paths:
+        _safe_remove(file_path)
+        _safe_remove(thumb_path)
 
 
 @router.delete("/timelapses/{timelapse_id}", status_code=204)
@@ -149,7 +153,8 @@ def delete_timelapse(timelapse_id: int, db: Session = Depends(get_db)):
     tl = db.get(Timelapse, timelapse_id)
     if not tl:
         raise HTTPException(404, "Timelapse not found")
-    _safe_remove(tl.file_path)
-    _safe_remove(tl.thumbnail_path)
+    file_path, thumb_path = tl.file_path, tl.thumbnail_path
     db.delete(tl)
     db.commit()
+    _safe_remove(file_path)
+    _safe_remove(thumb_path)

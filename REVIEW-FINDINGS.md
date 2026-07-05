@@ -33,6 +33,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** PUT a schedule with `capture_retention_days: 0` → assert 422; existing retention tests still pass.
 
 ### [SEV-3] F-2: Orphan-record sweep bulk-deletes rows when the captures tree is merely unreadable
+- **FIXED:** Added `_collect_orphans` guard — skips a category's orphan sweep if the media root is unreadable (`os.access`), or if ≥5 rows all appear orphaned at once (a mass-orphan signal that means the tree is inaccessible, not genuinely empty). Regression test `test_orphan_sweep_skips_when_all_rows_appear_orphaned`.
 - **File:** backend/app/services/retention.py:129-155
 - **Issue:** The DB→disk orphan sweep trusts `os.path.exists`. If a profile's capture tree becomes untraversable while the DB stays writable — and this deployment has a **documented recurring failure mode** where Unraid re-chowns appdata out from under the app — every row for the profile "looks" orphaned and is bulk-DELETEd. Files survive but all capture/timelapse records are permanently lost. Marked SEV-3 rather than SEV-1 because the full read-only case also breaks the DB commit (rows survive); partial-permission cases do not.
 - **Evidence:** `orphan_capture_ids = [cid for cid, fpath in capture_rows if not os.path.exists(...)]` followed by unconditional `db.execute(delete(Capture)...)`. No sanity threshold. Verified in source.
@@ -40,6 +41,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** `chmod 000` a profile's captures dir, run cleanup, assert rows are not deleted and a warning is logged.
 
 ### [SEV-3] F-3: Delete endpoints unlink media before committing the DB row
+- **FIXED:** Reordered all four delete handlers (single + bulk, captures + timelapses) to snapshot paths, `db.delete` + `db.commit`, then unlink — matching the profiles-router rationale. A failed commit now leaves media intact instead of orphaning rows.
 - **File:** backend/app/routers/captures.py:86-103, backend/app/routers/timelapses.py:137-155
 - **Issue:** Files are removed **before** `db.commit()`. If the commit fails (the read-only-DB scenario has actually occurred on this deployment), the media is gone but the rows survive as ghosts whose image/video endpoints 404. This is the exact inverse of the ordering rationale documented in profiles.py:105-108.
 - **Evidence:** `_safe_remove(...); db.delete(capture); db.commit()` — verified in source for single, bulk, and timelapse variants.
@@ -70,6 +72,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Related negative check:** a state-machine scan of all 29 migration files found **no** semicolons inside comments or string literals (the known runner gotcha has no current violations), and no model↔migration schema drift.
 
 ### [SEV-3] F-7: Retention never deletes timelapse thumbnails
+- **FIXED:** Age-based timelapse deletion now unlinks `thumbnail_path`, and the orphan sweep selects + unlinks thumbnails for the rows it removes. Regression test `test_age_cleanup_removes_timelapse_thumbnail`.
 - **File:** backend/app/services/retention.py:112-126, 146-155
 - **Issue:** Age-based deletion unlinks `tl.file_path` but never `tl.thumbnail_path` (the router delete endpoints remove both), and the orphan sweep ignores thumbnails too. Since there is no disk→DB sweep, thumbnails leak on disk forever.
 - **Evidence:** `_safe_unlink(tl_abs); db.delete(tl)` with no thumbnail handling — verified in source vs routers/timelapses.py:141-142.

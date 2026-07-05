@@ -86,10 +86,16 @@ def get_capture_image(capture_id: int, db: Session = Depends(get_db)):
 @router.delete("/captures/bulk", status_code=204)
 def bulk_delete_captures(body: BulkDeleteRequest, db: Session = Depends(get_db)):
     captures = db.query(Capture).filter(Capture.id.in_(body.ids)).all()
+    # Commit the row removal before unlinking files. If the commit fails (e.g.
+    # read-only DB) we must not have already deleted media for rows that still
+    # exist — a failed unlink afterwards leaves a recoverable orphan file, not a
+    # dangling row whose image endpoint 404s.
+    paths = [os.path.join(settings.DATA_DIR, c.file_path) for c in captures]
     for capture in captures:
-        _safe_remove(os.path.join(settings.DATA_DIR, capture.file_path))
         db.delete(capture)
     db.commit()
+    for path in paths:
+        _safe_remove(path)
 
 
 @router.delete("/captures/{capture_id}", status_code=204)
@@ -98,6 +104,7 @@ def delete_capture(capture_id: int, db: Session = Depends(get_db)):
     if not capture:
         raise HTTPException(404, "Capture not found")
 
-    _safe_remove(os.path.join(settings.DATA_DIR, capture.file_path))
+    path = os.path.join(settings.DATA_DIR, capture.file_path)
     db.delete(capture)
     db.commit()
+    _safe_remove(path)
