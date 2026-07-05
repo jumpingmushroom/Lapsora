@@ -266,7 +266,9 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** With 51+ timelapses, all reachable.
 
 - **Related (latent, SEV-3):** `handle_event`'s persisted-path SSE payload drops the `data` dict (notifications.py:80-87), so `generation_id` never reaches the frontend's `clearActiveGeneration`; correct today only because the queue is serial. Include `**(data or {})` in the payload.
+  - **FIXED:** persisted SSE payload now spreads `**(data or {})` (explicit keys win on overlap), so `generation_id` reaches the frontend.
 - **Related (SEV-3):** CapturePreview.svelte:89-102 dereferences `current.id`/`current.captured_at` in markup without the `{#if current}` guard the script explicitly notes is required — crashes if `captures` shrinks below `index`.
+  - **FIXED:** wrapped the image/caption block in `{#if current}`.
 
 ### Tests
 

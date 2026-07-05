@@ -76,8 +76,12 @@ async def handle_event(event_type: str, title: str, body: str, level: str = "inf
         db.commit()
         db.refresh(notification)
 
-        # 2. Push to SSE queues
+        # 2. Push to SSE queues. Include the event's data payload (e.g.
+        # generation_id on timelapse_complete/failure) so the frontend can
+        # target the right entry instead of guessing; explicit keys win on
+        # any overlap.
         sse_data = json.dumps({
+            **(data or {}),
             "id": notification.id,
             "event_type": event_type,
             "title": title,

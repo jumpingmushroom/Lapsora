@@ -86,38 +86,42 @@
 			{#if imgLoading}
 				<div class="absolute h-10 w-10 animate-spin rounded-full border-2 border-gray-600 border-t-blue-500"></div>
 			{/if}
-			{#key current.id}
-				<img
-					src={api.getCaptureImageUrl(current.id)}
-					alt="Capture {current.id}"
-					class="max-h-full max-w-full object-contain"
-					onload={() => (imgLoading = false)}
-					onerror={() => (imgLoading = false)}
-				/>
-			{/key}
+			<!-- Guard: `current` is undefined if `captures` shrinks below `index`
+			     (e.g. a delete). Without this the markup would throw on current.id. -->
+			{#if current}
+				{#key current.id}
+					<img
+						src={api.getCaptureImageUrl(current.id)}
+						alt="Capture {current.id}"
+						class="max-h-full max-w-full object-contain"
+						onload={() => (imgLoading = false)}
+						onerror={() => (imgLoading = false)}
+					/>
+				{/key}
 
-			<!-- Caption bar -->
-			<div class="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-t from-black/85 to-transparent px-4 pb-4 pt-10">
-				<span class="rounded-full bg-black/70 px-3 py-1 text-sm font-semibold text-gray-100">
-					{formatDateTime(current.captured_at)}
-				</span>
-				<span class="flex items-center gap-2 text-xs text-gray-300">
-					{#if current.width && current.height}
-						<span>{current.width}×{current.height}</span>
-					{/if}
-					{#if current.file_size != null}
-						<span class="text-gray-500">·</span>
-						<span>{formatBytes(current.file_size)}</span>
-					{/if}
-					{#if current.is_hdr}
-						<span class="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">HDR</span>
-					{/if}
-					{#if current.weather_temp != null}
-						<span class="text-gray-500">·</span>
-						<span>{current.weather_temp.toFixed(1)}°C</span>
-					{/if}
-				</span>
-			</div>
+				<!-- Caption bar -->
+				<div class="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-between gap-2 bg-gradient-to-t from-black/85 to-transparent px-4 pb-4 pt-10">
+					<span class="rounded-full bg-black/70 px-3 py-1 text-sm font-semibold text-gray-100">
+						{formatDateTime(current.captured_at)}
+					</span>
+					<span class="flex items-center gap-2 text-xs text-gray-300">
+						{#if current.width && current.height}
+							<span>{current.width}×{current.height}</span>
+						{/if}
+						{#if current.file_size != null}
+							<span class="text-gray-500">·</span>
+							<span>{formatBytes(current.file_size)}</span>
+						{/if}
+						{#if current.is_hdr}
+							<span class="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">HDR</span>
+						{/if}
+						{#if current.weather_temp != null}
+							<span class="text-gray-500">·</span>
+							<span>{current.weather_temp.toFixed(1)}°C</span>
+						{/if}
+					</span>
+				</div>
+			{/if}
 		</div>
 
 		<!-- Next -->
