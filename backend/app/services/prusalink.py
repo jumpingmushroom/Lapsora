@@ -314,6 +314,7 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
         )
         db.add(pj)
         profile.enabled = True
+        profile.auto_disabled = False
         profile.interval_seconds = interval
         db.commit()
         scheduler.add_capture_job(profile)
@@ -337,6 +338,10 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
         if profile:
             scheduler.remove_capture_job(profile.id)
             profile.enabled = False
+            # Clear any stale auto-disable marker left by a mid-print stream
+            # flap so health recovery can't re-enable this profile once the
+            # print is over (it would then capture forever with no print).
+            profile.auto_disabled = False
         pj.status = "finished" if d.event == "print_finished" else "cancelled"
         pj.finished_at = datetime.now(UTC)
         db.commit()

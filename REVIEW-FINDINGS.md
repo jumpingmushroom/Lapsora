@@ -86,6 +86,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### Correctness — backend
 
 ### [SEV-2] F-9: Manual disable is undone by health auto-recovery (`auto_disabled` never cleared)
+- **FIXED:** Clear `auto_disabled = False` in `enable_profile`, `disable_profile`, and `update_profile` (when `enabled` is in the payload), so a deliberate user toggle overrides the health auto-disable marker.
 - **File:** backend/app/routers/profiles.py:126-153 + backend/app/services/health.py:44-57
 - **Issue:** `disable_profile` sets `enabled=False` but leaves a stale `auto_disabled=True` (set earlier by health). When the stream recovers, health re-enables **every** `auto_disabled` profile — including ones the user deliberately disabled. The stale flag also makes capture-gap alerting skip the profile and renders the UI badge wrong after manual enable.
 - **Evidence:** Verified in source: neither `enable_profile` nor `disable_profile` touches `auto_disabled`; health.py filters `Profile.auto_disabled.is_(True)` and sets `enabled = True`.
@@ -93,6 +94,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Auto-disable a profile (fail health checks), manually disable it, restore the stream → profile must stay disabled.
 
 ### [SEV-2] F-10: PrusaLink stop path + health recovery re-enables a managed profile forever
+- **FIXED:** Clear `auto_disabled = False` in the PrusaLink `_reconcile` start and stop paths, so once a print ends the managed profile is not marked auto-disabled and health recovery can't re-enable it. (Did NOT exclude managed profiles from health re-enable as the report suggested — that would regress the legitimate mid-print stream-recovery case where captures should resume; clearing the flag on stop is the correct minimal fix.)
 - **File:** backend/app/services/prusalink.py:336-342 + backend/app/services/health.py:44-57
 - **Issue:** Same root flaw as F-9, different actor: prusalink's stop path sets `profile.enabled = False` without clearing `auto_disabled`. Sequence: stream flaps mid-print (health sets `auto_disabled=True`), print finishes (prusalink disables, flag stays), stream recovers → health re-enables the managed profile and re-adds its capture job, which nothing removes until the *next* print finishes. Endless captures with no print running.
 - **Evidence:** Verified in source: `profile.enabled = False` at prusalink.py:339 with `auto_disabled` untouched.

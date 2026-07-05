@@ -81,6 +81,11 @@ def update_profile(profile_id: int, body: ProfileUpdate, db: Session = Depends(g
     for key, value in update_data.items():
         setattr(profile, key, value)
 
+    # An explicit enabled toggle is a deliberate user decision; clear the
+    # auto-disable marker so health recovery can't silently override it.
+    if "enabled" in update_data:
+        profile.auto_disabled = False
+
     db.commit()
     db.refresh(profile)
 
@@ -131,6 +136,7 @@ def enable_profile(profile_id: int, db: Session = Depends(get_db)):
     _reject_managed(profile)
 
     profile.enabled = True
+    profile.auto_disabled = False
     db.commit()
     db.refresh(profile)
 
@@ -146,6 +152,7 @@ def disable_profile(profile_id: int, db: Session = Depends(get_db)):
     _reject_managed(profile)
 
     profile.enabled = False
+    profile.auto_disabled = False
     db.commit()
     db.refresh(profile)
 
