@@ -3,6 +3,7 @@ delete, and schema validation that was previously bypassable.
 """
 
 import os
+from unittest.mock import patch
 
 from app.config import settings
 from app.models import Capture, Profile, Stream, Timelapse
@@ -40,33 +41,38 @@ def test_fk_cascade_removes_child_rows_on_stream_delete(client, db):
     assert db.get(Timelapse, tl_id) is None
 
 
-def test_delete_profile_removes_media_dirs(client, db):
+def test_delete_profile_removes_media_dirs(client, db, tmp_path):
     s, p = _seed_stream_profile(db)
-    cap_dir = os.path.join(settings.DATA_DIR, "captures", str(s.id), str(p.id))
-    tl_dir = os.path.join(settings.DATA_DIR, "timelapses", str(p.id))
-    os.makedirs(cap_dir, exist_ok=True)
-    os.makedirs(tl_dir, exist_ok=True)
-    open(os.path.join(cap_dir, "f.jpg"), "w").close()
-    open(os.path.join(tl_dir, "v.mp4"), "w").close()
+    # Redirect DATA_DIR to a temp path: the shared settings object is what both
+    # this test and the profiles router read, so the delete must never touch the
+    # real capture archive.
+    with patch.object(settings, "DATA_DIR", str(tmp_path)):
+        cap_dir = os.path.join(settings.DATA_DIR, "captures", str(s.id), str(p.id))
+        tl_dir = os.path.join(settings.DATA_DIR, "timelapses", str(p.id))
+        os.makedirs(cap_dir, exist_ok=True)
+        os.makedirs(tl_dir, exist_ok=True)
+        open(os.path.join(cap_dir, "f.jpg"), "w").close()
+        open(os.path.join(tl_dir, "v.mp4"), "w").close()
 
-    resp = client.delete(f"/api/profiles/{p.id}")
-    assert resp.status_code == 204
-    assert not os.path.isdir(cap_dir)
-    assert not os.path.isdir(tl_dir)
+        resp = client.delete(f"/api/profiles/{p.id}")
+        assert resp.status_code == 204
+        assert not os.path.isdir(cap_dir)
+        assert not os.path.isdir(tl_dir)
 
 
-def test_delete_stream_removes_media_dirs(client, db):
+def test_delete_stream_removes_media_dirs(client, db, tmp_path):
     s, p = _seed_stream_profile(db)
-    cap_dir = os.path.join(settings.DATA_DIR, "captures", str(s.id))
-    tl_dir = os.path.join(settings.DATA_DIR, "timelapses", str(p.id))
-    os.makedirs(os.path.join(cap_dir, str(p.id)), exist_ok=True)
-    os.makedirs(tl_dir, exist_ok=True)
-    open(os.path.join(tl_dir, "v.mp4"), "w").close()
+    with patch.object(settings, "DATA_DIR", str(tmp_path)):
+        cap_dir = os.path.join(settings.DATA_DIR, "captures", str(s.id))
+        tl_dir = os.path.join(settings.DATA_DIR, "timelapses", str(p.id))
+        os.makedirs(os.path.join(cap_dir, str(p.id)), exist_ok=True)
+        os.makedirs(tl_dir, exist_ok=True)
+        open(os.path.join(tl_dir, "v.mp4"), "w").close()
 
-    resp = client.delete(f"/api/streams/{s.id}")
-    assert resp.status_code == 204
-    assert not os.path.isdir(cap_dir)
-    assert not os.path.isdir(tl_dir)
+        resp = client.delete(f"/api/streams/{s.id}")
+        assert resp.status_code == 204
+        assert not os.path.isdir(cap_dir)
+        assert not os.path.isdir(tl_dir)
 
 
 def test_template_rejects_zero_interval(client):

@@ -102,6 +102,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Unit test the sequence (unhealthy during print → print finish → recovery); assert profile stays disabled and no `capture_<id>` job exists.
 
 ### [SEV-2] F-11: `deflicker == "off"` copies every frame synchronously on the event loop
+- **FIXED:** Wrapped the deflicker-off copy loop in `asyncio.to_thread`, mirroring the `deflicker_frames` branch, so multi-thousand-frame jobs no longer block the event loop.
 - **File:** backend/app/services/timelapse.py:590-594
 - **Issue:** The off-branch runs `shutil.copy2` in a plain loop inside the async generation coroutine, while the on-branch correctly uses `asyncio.to_thread`. A multi-thousand-frame job freezes the API and stalls APScheduler capture ticks (default misfire grace silently skips them) for the duration of the copy.
 - **Evidence:** Verified in source: `for src, dst in zip(...): _shutil.copy2(src, dst)` directly in the coroutine.
@@ -243,6 +244,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 ### Tests
 
 ### [SEV-2] F-32: Two data-integrity tests delete directories under the real DATA_DIR
+- **FIXED:** Both tests now `patch.object(settings, "DATA_DIR", str(tmp_path))` around their setup and the delete call, so they can never touch the real capture archive. (Left the broader conftest env-var hardening as a deferred follow-up — see Fix Session Summary.)
 - **File:** backend/tests/test_data_integrity.py:43-69
 - **Issue:** `test_delete_profile_removes_media_dirs` / `test_delete_stream_removes_media_dirs` use `settings.DATA_DIR` unpatched; the in-memory test DB always yields id 1, so the API call recursively deletes `backend/data/captures/1` — real captured media if present. The documented test recipe (only `LAPSORA_DATABASE_URL` set) leaves DATA_DIR pointing at the real directory.
 - **Evidence:** No monkeypatch, unlike test_delete_robustness.py:53 which patches DATA_DIR.

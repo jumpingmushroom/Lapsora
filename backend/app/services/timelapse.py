@@ -589,9 +589,13 @@ async def generate_timelapse(
         ]
         if deflicker == "off":
             import shutil as _shutil
-            for src, dst in zip(original_paths, deflickered_paths):
-                if os.path.exists(src):
-                    _shutil.copy2(src, dst)
+
+            def _copy_frames() -> None:
+                for src, dst in zip(original_paths, deflickered_paths):
+                    if os.path.exists(src):
+                        _shutil.copy2(src, dst)
+
+            await asyncio.to_thread(_copy_frames)
         else:
             await asyncio.to_thread(deflicker_frames, original_paths, deflickered_paths, deflicker, cancel_check=_check_cancel)
         # Keep each surviving frame paired with its source capture. Filtering
