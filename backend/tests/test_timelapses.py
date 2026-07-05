@@ -25,6 +25,13 @@ def test_get_nonexistent_timelapse(client):
     assert resp.status_code == 404
 
 
+def test_generate_nonexistent_profile_404(client):
+    """F-12: generating for a missing profile must 404 immediately, not accept
+    the job (202) only to fail minutes later as 'No captures found'."""
+    resp = client.post("/api/profiles/9999/timelapses/generate", json={})
+    assert resp.status_code == 404
+
+
 def test_schedule_weather_style_defaults_to_glass(client):
     """Creating a schedule without specifying weather_style should default to 'glass'."""
     sid = _create_stream(client)

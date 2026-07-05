@@ -209,6 +209,8 @@ async def capture_frame(profile_id: int) -> None:
     db = SessionLocal()
     profile = None
     stream = None
+    abs_path = None
+    saved = False
     try:
         profile = db.query(Profile).filter(Profile.id == profile_id).first()
         if not profile:
@@ -453,6 +455,7 @@ async def capture_frame(profile_id: int) -> None:
         )
         db.add(capture)
         db.commit()
+        saved = True
 
         from app.services.capture_gap import clear_alert
         clear_alert(profile_id)
@@ -478,3 +481,13 @@ async def capture_frame(profile_id: int) -> None:
     finally:
         db.rollback()
         db.close()
+        # Any path that wrote the frame file but did not commit a Capture row
+        # (ffmpeg failure, timeout, resize/DB error) would otherwise leave a
+        # JPEG on disk that nothing tracks — the orphan sweep only works
+        # DB->disk. Reclaim it here. (Intentional discards already removed it,
+        # so the exists() check makes this a no-op for them.)
+        if not saved and abs_path and os.path.exists(abs_path):
+            try:
+                os.remove(abs_path)
+            except OSError:
+                logger.exception("Failed to remove uncommitted frame %s", abs_path)

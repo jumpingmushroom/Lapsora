@@ -67,7 +67,10 @@ def list_timelapses(
 async def generate(
     profile_id: int,
     body: TimelapseGenerate,
+    db: Session = Depends(get_db),
 ):
+    if not db.get(Profile, profile_id):
+        raise HTTPException(404, "Profile not found")
     result = await enqueue_generation(
         profile_id=profile_id,
         period_type="custom",

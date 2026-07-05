@@ -83,6 +83,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Age a timelapse past retention, run cleanup, assert `*_thumb.jpg` is gone.
 
 ### [SEV-3] F-8: Capture error paths leave orphan JPEGs that nothing reclaims
+- **FIXED:** Track a `saved` flag set only after `db.commit()`; the `finally` block now unlinks `abs_path` when the frame was written but no row was committed (ffmpeg failure, timeout, resize/DB error). Intentional discards already removed the file, so the `exists()` check no-ops for them.
 - **File:** backend/app/services/capture.py:336-357, 465-477
 - **Issue:** On ffmpeg non-zero exit, on capture timeout, and on any exception after the frame file is written (resize failure, DB commit failure), the partial/unregistered JPEG stays on disk with no DB row. The orphan sweep only works DB→disk, so these accumulate forever.
 - **Evidence:** `if proc.returncode != 0: ... return` with no `os.remove(abs_path)`, unlike the corrupt-frame branch at 364-365.
@@ -116,6 +117,7 @@ The codebase is in good shape overall: subprocess handling is consistently `exec
 - **Verification:** Generate with deflicker=off over several thousand captures; API stays responsive, capture jobs fire on schedule.
 
 ### [SEV-3] F-12: Generate endpoint returns 202 for nonexistent profiles
+- **FIXED:** Added a `get_db` dependency and a `db.get(Profile, profile_id)` 404 guard before enqueueing. Regression test `test_generate_nonexistent_profile_404`.
 - **File:** backend/app/routers/timelapses.py:63-101
 - **Issue:** `POST /profiles/{profile_id}/timelapses/generate` never checks the profile exists (no DB dependency at all). Any id returns 202 "queued"; the failure surfaces minutes later as a "No captures found" failure notification. Also the concrete backend half of frontend finding F-27's failure mode.
 - **Suggested fix:** `db.get(Profile, profile_id)` + 404 before enqueueing.
