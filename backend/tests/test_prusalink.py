@@ -565,8 +565,19 @@ def test_no_fetch_when_print_finished(db):
     assert pl._needs_gcode_name(db, {"state": "FINISHED", "gcode_name": None}) is False
 
 
-def test_needs_name_while_paused(db):
+def test_needs_name_while_paused_with_open_unnamed_job(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
     assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is True
+
+
+def test_no_fetch_while_paused_with_no_open_job(db):
+    # A paused printer with no open PrintJob has nothing to backfill
+    # (decide_transition never creates one from idle+paused), so this must not
+    # keep polling /api/v1/job forever.
+    assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is False
 
 
 # --- format_print_name -------------------------------------------------------

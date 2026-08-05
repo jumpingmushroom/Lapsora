@@ -1,6 +1,5 @@
 """Capture management endpoints."""
 
-import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,8 +11,6 @@ from app.database import get_db
 from app.models import Capture, Profile
 from app.schemas import BulkDeleteRequest, CaptureRead
 from app.services.files import safe_remove
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["captures"])
 

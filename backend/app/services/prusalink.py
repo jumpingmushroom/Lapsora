@@ -493,12 +493,19 @@ def _needs_gcode_name(db, status: dict) -> bool:
     """Whether this poll should spend an extra request on /api/v1/job.
 
     Only while a print is live (the endpoint 204s otherwise) and only until we
-    have a name — so this costs about one request per print, not one per poll."""
+    have a name — so this costs about one request per print, not one per poll.
+    While printing, that covers both the rising edge (no open job yet — the
+    name is captured at creation) and an open job still missing a name. While
+    paused, only the latter applies: a paused printer with no open print job
+    has nothing to backfill, so it must not keep polling forever."""
     if status.get("gcode_name"):
         return False
-    if normalize_state(status.get("state")) not in ("printing", "paused"):
+    state = normalize_state(status.get("state"))
+    if state not in ("printing", "paused"):
         return False
     pj = _open_print_job(db)
+    if state == "paused":
+        return pj is not None and not pj.gcode_name
     return pj is None or not pj.gcode_name
 
 

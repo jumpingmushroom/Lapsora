@@ -1,6 +1,5 @@
 """Timelapse management endpoints."""
 
-import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,8 +12,6 @@ from app.models import Profile, Timelapse
 from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
 from app.services.files import safe_remove
 from app.services.generation_queue import enqueue_generation
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["timelapses"])
 

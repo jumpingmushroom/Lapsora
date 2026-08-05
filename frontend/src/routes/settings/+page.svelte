@@ -716,7 +716,7 @@
 				</div>
 				<div class="mb-4">
 					<label for="ha-token" class="mb-1 block text-sm text-gray-400">Long-lived access token</label>
-					<input id="ha-token" type="password" bind:value={haToken} placeholder={haConfig.configured ? '•••••••• (leave blank to keep)' : 'Paste token'}
+					<input id="ha-token" type="password" bind:value={haToken} placeholder={haConfig.configured ? (haConfig.credential_error ? 'Re-enter to restore the connection' : '•••••••• (leave blank to keep)') : 'Paste token'}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
 				</div>
 
@@ -823,7 +823,7 @@
 
 				<div class="mb-4">
 					<label for="prusa-pass" class="mb-1 block text-sm text-gray-400">Password</label>
-					<input id="prusa-pass" type="password" bind:value={prusaPassword} placeholder={prusaConfig.configured ? '•••••••• (leave blank to keep)' : 'PrusaLink password'}
+					<input id="prusa-pass" type="password" bind:value={prusaPassword} placeholder={prusaConfig.configured ? (prusaConfig.credential_error ? 'Re-enter to restore the connection' : '•••••••• (leave blank to keep)') : 'PrusaLink password'}
 						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-blue-600 focus:outline-none" />
 				</div>
 
