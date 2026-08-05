@@ -1,0 +1,59 @@
+"""Credential decryption must degrade to a readable error, never a 500.
+
+A regenerated .secret_key (see config._load_or_create_persistent_key) leaves
+stored secrets undecryptable. Every read path has to say so rather than raise.
+"""
+
+import pytest
+
+from app import config
+from app.models import Setting
+
+
+# --- decrypt_optional -------------------------------------------------------
+
+def test_decrypt_optional_round_trips_a_valid_token():
+    assert config.decrypt_optional(config.encrypt("hunter2")) == "hunter2"
+
+
+def test_decrypt_optional_returns_none_for_a_foreign_token(monkeypatch):
+    token = config.encrypt("hunter2")
+    monkeypatch.setattr(config.settings, "SECRET_KEY", "a-completely-different-key")
+    assert config.decrypt_optional(token) is None
+
+
+def test_decrypt_optional_returns_none_for_garbage():
+    assert config.decrypt_optional("not-a-fernet-token") is None
+
+
+# --- test endpoints ---------------------------------------------------------
+
+def test_prusalink_test_reports_undecryptable_password(client, db, monkeypatch):
+    db.add(Setting(key="prusalink_base_url", value="http://printer"))
+    db.add(Setting(key="prusalink_password", value=config.encrypt("pw")))
+    db.commit()
+    monkeypatch.setattr(config.settings, "SECRET_KEY", "rotated-key")
+
+    resp = client.post(
+        "/api/settings/prusalink/test",
+        json={"base_url": "http://printer", "username": "maker"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is False
+    assert "re-enter" in body["message"].lower()
+
+
+def test_ha_test_reports_undecryptable_token(client, db, monkeypatch):
+    db.add(Setting(key="ha_base_url", value="http://ha"))
+    db.add(Setting(key="ha_token", value=config.encrypt("tok")))
+    db.commit()
+    monkeypatch.setattr(config.settings, "SECRET_KEY", "rotated-key")
+
+    resp = client.post("/api/settings/homeassistant/test", json={"base_url": "http://ha"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is False
+    assert "re-enter" in body["message"].lower()

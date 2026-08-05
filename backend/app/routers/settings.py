@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.config import decrypt, encrypt
+from app.config import decrypt_optional, encrypt
 from app.config import settings as app_settings
 from app.database import get_db
 from app.models import NotificationURL, PrintJob, Profile, Setting
@@ -307,7 +307,16 @@ async def test_ha_connection(data: HomeAssistantConfig, db: Session = Depends(ge
     token = data.token
     if not token:  # fall back to the stored token
         tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
-        token = decrypt(tok_row.value) if tok_row and tok_row.value else ""
+        if tok_row and tok_row.value:
+            token = decrypt_optional(tok_row.value)
+            if token is None:
+                return {
+                    "success": False,
+                    "message": "Stored token cannot be decrypted (the encryption "
+                               "key changed) — re-enter it",
+                }
+        else:
+            token = ""
     return await test_connection(data.base_url.rstrip("/"), token)
 
 
@@ -412,7 +421,16 @@ async def test_prusalink_connection(data: PrusaLinkConfig, db: Session = Depends
     password = data.password
     if not password:  # fall back to stored password
         pw_row = db.query(Setting).filter(Setting.key == "prusalink_password").first()
-        password = decrypt(pw_row.value) if pw_row and pw_row.value else ""
+        if pw_row and pw_row.value:
+            password = decrypt_optional(pw_row.value)
+            if password is None:
+                return {
+                    "success": False,
+                    "message": "Stored password cannot be decrypted (the encryption "
+                               "key changed) — re-enter it",
+                }
+        else:
+            password = ""
     return await test_connection(data.base_url.rstrip("/"), data.username or "maker", password)
 
 
