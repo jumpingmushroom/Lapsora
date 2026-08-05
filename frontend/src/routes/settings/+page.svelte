@@ -694,12 +694,19 @@
 					<h2 class="text-xl font-semibold text-white">Home Assistant</h2>
 					{#if !haConfig.configured}
 						<span class="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Not configured</span>
+					{:else if haConfig.credential_error}
+						<span class="rounded-full bg-amber-900 px-2 py-0.5 text-xs text-amber-300">⚠ Re-auth needed</span>
 					{:else if haConfig.connected}
 						<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Connected</span>
 					{:else}
 						<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Unreachable</span>
 					{/if}
 				</div>
+				{#if haConfig.credential_error}
+					<p class="mb-4 rounded-lg border border-amber-800 bg-amber-950/50 p-3 text-sm text-amber-300">
+						Stored token can't be decrypted (the encryption key changed). Re-enter your token to restore the connection.
+					</p>
+				{/if}
 				<p class="mb-4 text-sm text-gray-400">Read sensor entities to overlay on timelapses. Create a long-lived access token in your HA profile.</p>
 
 				<div class="mb-4">
@@ -784,12 +791,19 @@
 					<h2 class="text-xl font-semibold text-white">3D Printing (PrusaLink)</h2>
 					{#if !prusaConfig.configured}
 						<span class="rounded-full bg-gray-700 px-2 py-0.5 text-xs text-gray-400">Not configured</span>
+					{:else if prusaConfig.credential_error}
+						<span class="rounded-full bg-amber-900 px-2 py-0.5 text-xs text-amber-300">⚠ Re-auth needed</span>
 					{:else if prusaConfig.connected}
 						<span class="rounded-full bg-green-900 px-2 py-0.5 text-xs text-green-300">Connected</span>
 					{:else}
 						<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Unreachable</span>
 					{/if}
 				</div>
+				{#if prusaConfig.credential_error}
+					<p class="mb-4 rounded-lg border border-amber-800 bg-amber-950/50 p-3 text-sm text-amber-300">
+						Stored password can't be decrypted (the encryption key changed). Re-enter your password to restore the connection.
+					</p>
+				{/if}
 				<p class="mb-4 text-sm text-gray-400">
 					Poll a Prusa printer's local PrusaLink API and capture a timelapse for each print. Pick the camera pointed at the printer — capture interval is computed per print from the printer's time estimate, so short and overnight prints both render to the clip length below.
 				</p>
