@@ -6,9 +6,15 @@ the poller should perform. Keeping it pure makes the transitions testable withou
 printer, the scheduler, or the DB.
 """
 
+import os
+import time as _time
 from datetime import UTC, datetime
 
 import pytest
+
+os.environ["TZ"] = "UTC"
+if hasattr(_time, "tzset"):
+    _time.tzset()
 
 from app.services import prusalink as pl
 
@@ -412,7 +418,7 @@ async def test_finish_closes_job_and_enqueues_named_render(db, fakes):
     assert profile.enabled is False
     assert fakes["remove"] == [profile.id]
     (kw,) = fakes["enqueue"]
-    assert kw["name"] == "benchy.gcode"
+    assert kw["name"] == pl.format_print_name(pj.gcode_name, pj.started_at, pj.finished_at)
     assert kw["print_job_id"] == pj.id
     assert kw["fps_mode"] == "target_duration"
     assert kw["render_target_seconds"] == 20
@@ -460,7 +466,9 @@ async def test_job_id_change_while_printing_splits_prints(db, fakes):
     assert jobs[1].status == "printing" and jobs[1].prusalink_job_id == 2
     # exactly one render enqueued, for the finished first print
     assert len(fakes["enqueue"]) == 1
-    assert fakes["enqueue"][0]["name"] == "first.gcode"
+    assert fakes["enqueue"][0]["name"] == pl.format_print_name(
+        jobs[0].gcode_name, jobs[0].started_at, jobs[0].finished_at
+    )
 
 
 @pytest.mark.asyncio
@@ -549,3 +557,57 @@ def test_no_fetch_when_print_finished(db):
 
 def test_needs_name_while_paused(db):
     assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is True
+
+
+# --- format_print_name -------------------------------------------------------
+
+def test_format_print_name_same_day():
+    got = pl.format_print_name(
+        "benchy.gcode",
+        datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+        datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+    )
+    assert got == "benchy — 2026-08-05 14:32–17:08"
+
+
+def test_format_print_name_crossing_midnight_repeats_the_date():
+    got = pl.format_print_name(
+        "big-part.bgcode",
+        datetime(2026, 8, 5, 22, 10, tzinfo=UTC),
+        datetime(2026, 8, 6, 4, 32, tzinfo=UTC),
+    )
+    assert got == "big-part — 2026-08-05 22:10–2026-08-06 04:32"
+
+
+def test_format_print_name_falls_back_when_unnamed():
+    for empty in ("", "   ", None):
+        got = pl.format_print_name(
+            empty,
+            datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+            datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+        )
+        assert got == "Print — 2026-08-05 14:32–17:08"
+
+
+def test_format_print_name_strips_known_extensions_case_insensitively():
+    start = datetime(2026, 8, 5, 14, 32, tzinfo=UTC)
+    end = datetime(2026, 8, 5, 17, 8, tzinfo=UTC)
+    assert pl.format_print_name("a.GCODE", start, end).startswith("a — ")
+    assert pl.format_print_name("b.bgcode", start, end).startswith("b — ")
+    assert pl.format_print_name("c.gco", start, end).startswith("c — ")
+    assert pl.format_print_name("no-extension", start, end).startswith("no-extension — ")
+
+
+def test_format_print_name_treats_naive_datetimes_as_utc():
+    # SQLite hands back naive datetimes; they must not be read as local time.
+    aware = pl.format_print_name(
+        "x.gcode",
+        datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+        datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+    )
+    naive = pl.format_print_name(
+        "x.gcode",
+        datetime(2026, 8, 5, 14, 32),
+        datetime(2026, 8, 5, 17, 8),
+    )
+    assert aware == naive

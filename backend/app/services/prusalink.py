@@ -122,6 +122,46 @@ def compute_interval(
     return int(max(min_interval, min(max_interval, interval)))
 
 
+# Extensions PrusaSlicer / PrusaLink produce, longest first so ".bgcode" is
+# matched before ".gcode" would be considered.
+_GCODE_SUFFIXES = (".bgcode", ".gcode", ".gco", ".g")
+
+
+def _strip_gcode_suffix(name: str) -> str:
+    lowered = name.lower()
+    for suffix in _GCODE_SUFFIXES:
+        if lowered.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _as_local(dt: datetime) -> datetime:
+    """Render a stored timestamp in the container's local zone.
+
+    Timestamps are written as UTC, but SQLite returns them naive — assume UTC
+    for those rather than letting them be read as local wall-clock."""
+    return (dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt).astimezone()
+
+
+def format_print_name(
+    gcode_name: str | None,
+    started_at: datetime,
+    finished_at: datetime,
+) -> str:
+    """Human-readable timelapse name: model, date, and the print's time span.
+
+    e.g. "benchy — 2026-08-05 14:32–17:08". A print that crosses midnight
+    repeats the date on the end of the span so the range stays unambiguous."""
+    model = _strip_gcode_suffix((gcode_name or "").strip()) or "Print"
+    start = _as_local(started_at)
+    end = _as_local(finished_at)
+    if start.date() == end.date():
+        span = f"{start:%Y-%m-%d %H:%M}–{end:%H:%M}"
+    else:
+        span = f"{start:%Y-%m-%d %H:%M}–{end:%Y-%m-%d %H:%M}"
+    return f"{model} — {span}"
+
+
 # --- status parsing + HTTP -------------------------------------------------
 
 
@@ -433,7 +473,11 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
             logo_overlay=cfg.get("logo_overlay", False),
             deflicker=cfg.get("deflicker", "medium"),
             ha_overlay=bool(profile.ha_sensors),
-            name=pj.gcode_name or None,
+            name=format_print_name(
+                pj.gcode_name,
+                pj.started_at,
+                pj.finished_at or datetime.now(UTC),
+            ),
             print_job_id=pj.id,
         )
 
