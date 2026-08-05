@@ -77,18 +77,23 @@ describe('formatFinishedAt', () => {
 	});
 
 	it('shows time only when the finish is the same local day as the start', () => {
-		const got = formatFinishedAt('2026-08-05T14:32:00Z', '2026-08-05T17:08:00Z');
+		// Constructed in local time (month is 0-indexed, so 7 = August) so the
+		// "same local day" property holds by construction at any host offset —
+		// no fixed UTC pair can guarantee this at every zone.
+		const start = new Date(2026, 7, 5, 14, 32);
+		const end = new Date(2026, 7, 5, 17, 8);
+		const got = formatFinishedAt(start.toISOString(), end.toISOString());
 		// Date is already in the Started column, so it is not repeated here.
 		expect(got).not.toContain('2026');
 		expect(got).toMatch(/\d{1,2}[:.]\d{2}/);
 	});
 
 	it('shows the full date-time when the print crosses midnight', () => {
-		// Gap is >24h so the local dates differ under any fixed UTC offset,
-		// regardless of the runner's timezone (a 6h22m UTC gap crossing a UTC
-		// day boundary does NOT reliably cross a *local* midnight — e.g. in
-		// UTC+2 both instants land on the same local calendar day).
-		const got = formatFinishedAt('2026-08-05T22:10:00Z', '2026-08-07T04:32:00Z');
+		// Constructed in local time so the "different local day" property holds
+		// by construction at any host offset.
+		const start = new Date(2026, 7, 5, 22, 10);
+		const end = new Date(2026, 7, 6, 4, 32);
+		const got = formatFinishedAt(start.toISOString(), end.toISOString());
 		expect(got).toContain('2026');
 	});
 });
