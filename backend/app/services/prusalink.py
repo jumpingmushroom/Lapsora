@@ -445,6 +445,19 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
     return d
 
 
+def _needs_gcode_name(db, status: dict) -> bool:
+    """Whether this poll should spend an extra request on /api/v1/job.
+
+    Only while a print is live (the endpoint 204s otherwise) and only until we
+    have a name — so this costs about one request per print, not one per poll."""
+    if status.get("gcode_name"):
+        return False
+    if normalize_state(status.get("state")) not in ("printing", "paused"):
+        return False
+    pj = _open_print_job(db)
+    return pj is None or not pj.gcode_name
+
+
 # How long a printer may stay unreachable mid-print before we close the open
 # print (as cancelled) so the managed capture profile doesn't run forever.
 UNREACHABLE_GRACE_SECONDS = 900
@@ -492,6 +505,14 @@ async def poll_printer() -> None:
         if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
         status = await get_status(cfg["base_url"], cfg["username"], cfg["password"])
+
+        # The filename lives only on /api/v1/job. Fetch it here, before the
+        # staleness checkpoint below, so all network awaits stay on one side of
+        # it and there remains a single point where we re-read config.
+        if status and status.get("state") and _needs_gcode_name(db, status):
+            job = await get_job(cfg["base_url"], cfg["username"], cfg["password"])
+            if job and job.get("gcode_name"):
+                status["gcode_name"] = job["gcode_name"]
 
         # Re-read config after the network await: a PUT that disabled the
         # integration (and removed this poll job) may have committed while we

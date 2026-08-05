@@ -6,6 +6,8 @@ the poller should perform. Keeping it pure makes the transitions testable withou
 printer, the scheduler, or the DB.
 """
 
+from datetime import UTC, datetime
+
 import pytest
 
 from app.services import prusalink as pl
@@ -505,3 +507,45 @@ def test_get_config_returns_none_on_undecryptable_password(db):
     pl._password_error_logged = False
 
     assert pl.get_config(db) is None
+
+
+# --- gcode-name fetch gating -------------------------------------------------
+
+from app.models import PrintJob
+
+
+def test_needs_name_when_printing_and_no_open_job(db):
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is True
+
+
+def test_needs_name_when_open_job_has_empty_name(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is True
+
+
+def test_no_fetch_when_open_job_already_named(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="benchy.gcode", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is False
+
+
+def test_no_fetch_when_status_already_carried_a_name(db):
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": "x.gcode"}) is False
+
+
+def test_no_fetch_when_printer_is_idle(db):
+    assert pl._needs_gcode_name(db, {"state": "IDLE", "gcode_name": None}) is False
+
+
+def test_no_fetch_when_print_finished(db):
+    # By FINISHED the job endpoint is already 204 — nothing left to fetch.
+    assert pl._needs_gcode_name(db, {"state": "FINISHED", "gcode_name": None}) is False
+
+
+def test_needs_name_while_paused(db):
+    assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is True
