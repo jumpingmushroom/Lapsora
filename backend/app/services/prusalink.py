@@ -126,7 +126,12 @@ def compute_interval(
 
 
 def parse_status(data: dict) -> dict:
-    """Extract the bits we care about from a PrusaLink /api/v1/status response."""
+    """Extract the bits we care about from a PrusaLink /api/v1/status response.
+
+    Note: real firmware does NOT put a `file` object here — Prusa's OpenAPI
+    `StatusJob` is only id/progress/time_remaining/time_printing, so
+    `gcode_name` is normally None and the caller must use `get_job`. The `file`
+    lookup below is kept as a tolerant fallback, not an expected path."""
     printer = (data or {}).get("printer") or {}
     job = (data or {}).get("job") or {}
     file_info = job.get("file") or {}
@@ -191,6 +196,36 @@ async def get_status(base_url: str, username: str, password: str) -> dict | None
         # An offline/unreachable printer is expected (printers are often powered off);
         # log quietly without a traceback. Test Connection surfaces config errors loudly.
         logger.debug("PrusaLink status poll failed for %s: %s", base, exc)
+        return None
+
+
+def parse_job(data: dict) -> dict:
+    """Extract the file metadata from a PrusaLink /api/v1/job response.
+
+    This is the only endpoint that carries the printed filename; /api/v1/status
+    does not (see `parse_status`)."""
+    job = data or {}
+    file_info = job.get("file") or {}
+    return {
+        "job_id": job.get("id"),
+        "gcode_name": file_info.get("display_name") or file_info.get("name"),
+    }
+
+
+async def get_job(base_url: str, username: str, password: str) -> dict | None:
+    """Fetch the current job's file metadata, or None if there is no job.
+
+    PrusaLink answers 204 (no body) when nothing is printing, so a non-200 is a
+    normal idle state rather than an error worth surfacing."""
+    base = base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=STATUS_TIMEOUT) as client:
+            resp = await client.get(f"{base}/api/v1/job", auth=_auth(username, password))
+        if resp.status_code != 200:
+            return None
+        return parse_job(resp.json())
+    except Exception as exc:
+        logger.debug("PrusaLink job fetch failed for %s: %s", base, exc)
         return None
 
 

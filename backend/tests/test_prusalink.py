@@ -180,27 +180,112 @@ def test_interval_default_is_also_clamped():
 
 # --- parse_status: job metadata ---------------------------------------------
 
-def test_parse_status_extracts_gcode_name_and_estimate():
+def test_parse_status_extracts_estimate_from_status_job():
     got = pl.parse_status({
         "printer": {"state": "PRINTING"},
-        "job": {
-            "id": 7, "progress": 12.5,
-            "time_printing": 300, "time_remaining": 3300,
-            "file": {"name": "benchy~1.gco", "display_name": "benchy.gcode"},
-        },
+        "job": {"id": 7, "time_remaining": 600, "time_printing": 300},
     })
-    assert got["gcode_name"] == "benchy.gcode"
-    assert got["estimated_seconds"] == 3600.0
+    assert got["job_id"] == 7
+    assert got["estimated_seconds"] == 900
 
-def test_parse_status_falls_back_to_file_name():
-    got = pl.parse_status({"printer": {}, "job": {"file": {"name": "x.gco"}}})
-    assert got["gcode_name"] == "x.gco"
+
+def test_parse_status_has_no_gcode_name_on_real_firmware():
+    # Prusa's OpenAPI StatusJob carries only id/progress/time_remaining/
+    # time_printing — there is no `file`. The name comes from /api/v1/job.
+    got = pl.parse_status({
+        "printer": {"state": "PRINTING"},
+        "job": {"id": 7, "progress": 12, "time_remaining": 600, "time_printing": 300},
+    })
+    assert got["gcode_name"] is None
+
+
+def test_parse_status_still_tolerates_a_file_object_if_one_appears():
+    # Defensive only: no shipping firmware sends this, but if one ever does,
+    # take it rather than ignore it.
+    got = pl.parse_status({"printer": {}, "job": {"file": {"display_name": "benchy.gcode"}}})
+    assert got["gcode_name"] == "benchy.gcode"
+
 
 def test_parse_status_no_estimate_when_remaining_missing_or_bogus():
     assert pl.parse_status({"job": {"time_printing": 300}})["estimated_seconds"] is None
     assert pl.parse_status({"job": {"time_remaining": -1}})["estimated_seconds"] is None
     assert pl.parse_status({})["estimated_seconds"] is None
     assert pl.parse_status({})["gcode_name"] is None
+
+
+# --- parse_job ---------------------------------------------------------------
+
+def test_parse_job_prefers_display_name():
+    got = pl.parse_job({"id": 9, "file": {"name": "benchy~1.gco", "display_name": "benchy.gcode"}})
+    assert got["gcode_name"] == "benchy.gcode"
+    assert got["job_id"] == 9
+
+
+def test_parse_job_falls_back_to_short_name():
+    assert pl.parse_job({"file": {"name": "x.gco"}})["gcode_name"] == "x.gco"
+
+
+def test_parse_job_tolerates_missing_file_and_empty_body():
+    assert pl.parse_job({"id": 3})["gcode_name"] is None
+    assert pl.parse_job({})["gcode_name"] is None
+
+
+# --- get_job -----------------------------------------------------------------
+
+class _FakeResp:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no content")
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, resp):
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, **kw):
+        if isinstance(self._resp, Exception):
+            raise self._resp
+        return self._resp
+
+
+def _patch_job_client(monkeypatch, resp):
+    monkeypatch.setattr(pl.httpx, "AsyncClient", lambda *a, **k: _FakeClient(resp))
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_name_on_200(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(200, {"id": 4, "file": {"display_name": "cube.gcode"}}))
+    got = await pl.get_job("http://printer", "maker", "pw")
+    assert got["gcode_name"] == "cube.gcode"
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_204_idle(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(204))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_error_status(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(401))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_transport_error(monkeypatch):
+    _patch_job_client(monkeypatch, RuntimeError("connection refused"))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
 
 
 # --- ensure_managed_profile --------------------------------------------------
