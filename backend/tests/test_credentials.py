@@ -143,3 +143,43 @@ def test_ha_test_falls_back_when_stored_token_is_empty(client, db, monkeypatch):
     message = resp.json()["message"].lower()
     assert "cannot be decrypted" not in message
     assert "re-enter" not in message
+
+
+# --- credential_error on the read endpoints ---------------------------------
+
+def test_prusalink_read_flags_undecryptable_password(client, db, monkeypatch):
+    db.add(Setting(key="prusalink_base_url", value="http://printer"))
+    db.add(Setting(key="prusalink_password", value=config.encrypt("pw")))
+    db.commit()
+    monkeypatch.setattr(config.settings, "SECRET_KEY", "rotated-key")
+
+    body = client.get("/api/settings/prusalink").json()
+
+    assert body["configured"] is True       # a secret IS stored
+    assert body["credential_error"] is True  # ...it just can't be read
+    assert body["connected"] is False
+
+
+def test_prusalink_read_clean_when_nothing_configured(client, db):
+    body = client.get("/api/settings/prusalink").json()
+    assert body["configured"] is False
+    assert body["credential_error"] is False
+
+
+def test_ha_read_flags_undecryptable_token(client, db, monkeypatch):
+    db.add(Setting(key="ha_base_url", value="http://ha"))
+    db.add(Setting(key="ha_token", value=config.encrypt("tok")))
+    db.commit()
+    monkeypatch.setattr(config.settings, "SECRET_KEY", "rotated-key")
+
+    body = client.get("/api/settings/homeassistant").json()
+
+    assert body["configured"] is True
+    assert body["credential_error"] is True
+    assert body["connected"] is False
+
+
+def test_ha_read_clean_when_nothing_configured(client, db):
+    body = client.get("/api/settings/homeassistant").json()
+    assert body["configured"] is False
+    assert body["credential_error"] is False

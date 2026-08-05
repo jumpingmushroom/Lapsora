@@ -277,11 +277,20 @@ async def _read_ha(db: Session) -> dict:
     """base_url + configured (creds present) + connected (cached live probe)."""
     from app.services import health_status, homeassistant
     url_row = db.query(Setting).filter(Setting.key == "ha_base_url").first()
+    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
     base_url = url_row.value if url_row else ""
+    # `configured` means "a secret is stored", matching PrusaLink — NOT "the
+    # secret decrypts". An undecryptable token used to report as unconfigured,
+    # which hid the real problem behind an innocuous-looking badge.
+    configured = bool(base_url and tok_row and tok_row.value)
     cfg = homeassistant.get_ha_config(db)  # (base_url, token) or None
-    configured = cfg is not None
-    connected = await health_status.reachable("ha", lambda: homeassistant.health(*cfg)) if configured else False
-    return {"base_url": base_url, "configured": configured, "connected": connected}
+    connected = await health_status.reachable("ha", lambda: homeassistant.health(*cfg)) if cfg else False
+    return {
+        "base_url": base_url,
+        "configured": configured,
+        "connected": connected,
+        "credential_error": bool(configured and cfg is None),
+    }
 
 
 @router.get("/homeassistant")
@@ -361,6 +370,10 @@ async def _read_prusalink_live(db: Session) -> dict:
     from app.services import health_status, prusalink
     cfg = _read_prusalink(db)
     pcfg = prusalink.get_config(db)  # includes decrypted password, or None
+    # get_config returns None both when unset and when the stored password can't
+    # be decrypted. `configured` already tells us a secret exists, so the two
+    # together separate "not set up" from "set up but unreadable".
+    cfg["credential_error"] = bool(cfg["configured"] and pcfg is None)
     if cfg["configured"] and pcfg:
         cfg["connected"] = await health_status.reachable(
             "prusalink",
