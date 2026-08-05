@@ -48,7 +48,12 @@ def _finished_job(db, tmp_path, *, with_timelapse=True, status="finished"):
 
 
 def test_delete_missing_job_is_404(client):
-    assert client.delete("/api/print-jobs/9999").status_code == 404
+    resp = client.delete("/api/print-jobs/9999")
+    assert resp.status_code == 404
+    # A plain routing 404 (no DELETE route registered at all) returns
+    # {"detail": "Not Found"}; only the handler's own `if not pj` branch
+    # produces this message, so this pins down that the branch actually ran.
+    assert resp.json()["detail"] == "Print job not found"
 
 
 def test_cannot_delete_a_running_print(client, db, tmp_path):
