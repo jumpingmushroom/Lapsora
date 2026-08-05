@@ -4,6 +4,7 @@ import {
 	formatDuration,
 	formatCronTime,
 	formatInterval,
+	formatFinishedAt,
 	localToUtcNaive,
 	setUse24h
 } from './utils';
@@ -67,5 +68,27 @@ describe('localToUtcNaive', () => {
 		const back = new Date(out + 'Z');
 		expect(back.getHours()).toBe(8);
 		expect(back.getMinutes()).toBe(30);
+	});
+});
+
+describe('formatFinishedAt', () => {
+	it('returns an em dash when the print has not finished', () => {
+		expect(formatFinishedAt('2026-08-05T14:32:00Z', null)).toBe('—');
+	});
+
+	it('shows time only when the finish is the same local day as the start', () => {
+		const got = formatFinishedAt('2026-08-05T14:32:00Z', '2026-08-05T17:08:00Z');
+		// Date is already in the Started column, so it is not repeated here.
+		expect(got).not.toContain('2026');
+		expect(got).toMatch(/\d{1,2}[:.]\d{2}/);
+	});
+
+	it('shows the full date-time when the print crosses midnight', () => {
+		// Gap is >24h so the local dates differ under any fixed UTC offset,
+		// regardless of the runner's timezone (a 6h22m UTC gap crossing a UTC
+		// day boundary does NOT reliably cross a *local* midnight — e.g. in
+		// UTC+2 both instants land on the same local calendar day).
+		const got = formatFinishedAt('2026-08-05T22:10:00Z', '2026-08-07T04:32:00Z');
+		expect(got).toContain('2026');
 	});
 });

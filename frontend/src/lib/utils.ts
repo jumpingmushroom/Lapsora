@@ -18,6 +18,21 @@ export function formatDateTime(iso: string): string {
 	return new Date(iso).toLocaleString(undefined, { hour12: !_use24h });
 }
 
+/**
+ * Finish timestamp for the 3D Prints table. Same local day as the start shows
+ * only the time — the date is already in the Started column — while a print
+ * that crossed midnight shows the full date-time so the span stays unambiguous.
+ */
+export function formatFinishedAt(startIso: string, finishIso: string | null): string {
+	if (!finishIso) return '—';
+	const start = new Date(startIso);
+	const end = new Date(finishIso);
+	if (start.toDateString() === end.toDateString()) {
+		return end.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: !_use24h });
+	}
+	return formatDateTime(finishIso);
+}
+
 export function formatCronTime(hour: number, minute: number): string {
 	if (_use24h) {
 		return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;

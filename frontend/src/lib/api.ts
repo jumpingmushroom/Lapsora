@@ -92,6 +92,8 @@ export const api = {
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
 	bulkDeleteTimelapses: (ids: number[]) => request<void>('/timelapses/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
 	getPrintJobs: () => request<PrintJob[]>('/print-jobs'),
+	deletePrintJob: (id: number, deleteTimelapse: boolean) =>
+		request<void>(`/print-jobs/${id}?delete_timelapse=${deleteTimelapse}`, { method: 'DELETE' }),
 
 	// Timelapse Schedules
 	getTimelapseSchedules: (profileId?: number) => {
