@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Profile, Timelapse
 from app.schemas import BulkDeleteRequest, TimelapseGenerate, TimelapseRead
+from app.services.files import safe_remove
 from app.services.generation_queue import enqueue_generation
 
 logger = logging.getLogger(__name__)
@@ -22,18 +23,6 @@ MEDIA_TYPES = {
     "webm": "video/webm",
     "gif": "image/gif",
 }
-
-
-def _safe_remove(path: str | None) -> None:
-    """Remove a file, logging (not raising) on failure so a single bad file
-    never aborts a delete that must still purge the DB rows."""
-    if not path:
-        return
-    try:
-        if os.path.isfile(path):
-            os.unlink(path)
-    except OSError:
-        logger.exception("Failed to remove file %s during delete", path)
 
 
 @router.get("/timelapses", response_model=list[TimelapseRead])
@@ -147,8 +136,8 @@ def bulk_delete_timelapses(body: BulkDeleteRequest, db: Session = Depends(get_db
         db.delete(tl)
     db.commit()
     for file_path, thumb_path in paths:
-        _safe_remove(file_path)
-        _safe_remove(thumb_path)
+        safe_remove(file_path)
+        safe_remove(thumb_path)
 
 
 @router.delete("/timelapses/{timelapse_id}", status_code=204)
@@ -159,5 +148,5 @@ def delete_timelapse(timelapse_id: int, db: Session = Depends(get_db)):
     file_path, thumb_path = tl.file_path, tl.thumbnail_path
     db.delete(tl)
     db.commit()
-    _safe_remove(file_path)
-    _safe_remove(thumb_path)
+    safe_remove(file_path)
+    safe_remove(thumb_path)
