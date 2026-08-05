@@ -9,6 +9,7 @@ printer, the scheduler, or the DB.
 import os
 import time as _time
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 
@@ -407,18 +408,23 @@ async def test_start_without_estimate_uses_default_then_recomputes_once(db, fake
 
 @pytest.mark.asyncio
 async def test_finish_closes_job_and_enqueues_named_render(db, fakes):
+    """Verifies wiring only (the enqueue path passes the formatted name); the
+    formatting itself is covered independently by the format_print_name unit
+    tests below, so format_print_name is mocked here rather than invoked."""
     s = _stream(db)
     cfg = _cfg(stream_id=s.id)
     await _run(db, cfg, _status("PRINTING", est=1500))
-    await _run(db, cfg, _status("FINISHED"))
+    with patch.object(pl, "format_print_name", return_value="mocked-print-name") as mock_format:
+        await _run(db, cfg, _status("FINISHED"))
     pj = db.query(PrintJob).one()
     assert pj.status == "finished"
     assert pj.finished_at is not None
     profile = db.query(Profile).one()
     assert profile.enabled is False
     assert fakes["remove"] == [profile.id]
+    mock_format.assert_called_once_with(pj.gcode_name, pj.started_at, pj.finished_at)
     (kw,) = fakes["enqueue"]
-    assert kw["name"] == pl.format_print_name(pj.gcode_name, pj.started_at, pj.finished_at)
+    assert kw["name"] == "mocked-print-name"
     assert kw["print_job_id"] == pj.id
     assert kw["fps_mode"] == "target_duration"
     assert kw["render_target_seconds"] == 20
@@ -454,11 +460,16 @@ async def test_active_state_survives_restart_via_open_row(db, fakes):
 @pytest.mark.asyncio
 async def test_job_id_change_while_printing_splits_prints(db, fakes):
     """F-21: a new job id while still 'printing' closes the old print (generating
-    its render) and opens a new one, instead of merging both into one."""
+    its render) and opens a new one, instead of merging both into one.
+
+    Verifies wiring only (the enqueue path passes the formatted name); the
+    formatting itself is covered independently by the format_print_name unit
+    tests below, so format_print_name is mocked here rather than invoked."""
     s = _stream(db)
     cfg = _cfg(stream_id=s.id)
     await _run(db, cfg, _status("PRINTING", job_id=1, name="first.gcode", est=1500))
-    await _run(db, cfg, _status("PRINTING", job_id=2, name="second.gcode", est=1500))
+    with patch.object(pl, "format_print_name", return_value="mocked-print-name") as mock_format:
+        await _run(db, cfg, _status("PRINTING", job_id=2, name="second.gcode", est=1500))
 
     jobs = db.query(PrintJob).order_by(PrintJob.id).all()
     assert len(jobs) == 2
@@ -466,9 +477,8 @@ async def test_job_id_change_while_printing_splits_prints(db, fakes):
     assert jobs[1].status == "printing" and jobs[1].prusalink_job_id == 2
     # exactly one render enqueued, for the finished first print
     assert len(fakes["enqueue"]) == 1
-    assert fakes["enqueue"][0]["name"] == pl.format_print_name(
-        jobs[0].gcode_name, jobs[0].started_at, jobs[0].finished_at
-    )
+    mock_format.assert_called_once_with(jobs[0].gcode_name, jobs[0].started_at, jobs[0].finished_at)
+    assert fakes["enqueue"][0]["name"] == "mocked-print-name"
 
 
 @pytest.mark.asyncio
