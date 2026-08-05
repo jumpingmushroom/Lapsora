@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image
 from sqlalchemy.orm import Session
 
-from app.config import decrypt, encrypt
+from app.config import decrypt_optional, encrypt
 from app.config import settings as app_settings
 from app.database import get_db
 from app.models import NotificationURL, PrintJob, Profile, Setting
@@ -277,11 +277,20 @@ async def _read_ha(db: Session) -> dict:
     """base_url + configured (creds present) + connected (cached live probe)."""
     from app.services import health_status, homeassistant
     url_row = db.query(Setting).filter(Setting.key == "ha_base_url").first()
+    tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
     base_url = url_row.value if url_row else ""
+    # `configured` means "a secret is stored", matching PrusaLink — NOT "the
+    # secret decrypts". An undecryptable token used to report as unconfigured,
+    # which hid the real problem behind an innocuous-looking badge.
+    configured = bool(base_url and tok_row and tok_row.value)
     cfg = homeassistant.get_ha_config(db)  # (base_url, token) or None
-    configured = cfg is not None
-    connected = await health_status.reachable("ha", lambda: homeassistant.health(*cfg)) if configured else False
-    return {"base_url": base_url, "configured": configured, "connected": connected}
+    connected = await health_status.reachable("ha", lambda: homeassistant.health(*cfg)) if cfg else False
+    return {
+        "base_url": base_url,
+        "configured": configured,
+        "connected": connected,
+        "credential_error": bool(configured and cfg is None),
+    }
 
 
 @router.get("/homeassistant")
@@ -307,7 +316,16 @@ async def test_ha_connection(data: HomeAssistantConfig, db: Session = Depends(ge
     token = data.token
     if not token:  # fall back to the stored token
         tok_row = db.query(Setting).filter(Setting.key == "ha_token").first()
-        token = decrypt(tok_row.value) if tok_row and tok_row.value else ""
+        if tok_row and tok_row.value:
+            token = decrypt_optional(tok_row.value)
+            if token is None:
+                return {
+                    "success": False,
+                    "message": "Stored token cannot be decrypted (the encryption "
+                               "key changed) — re-enter it",
+                }
+        else:
+            token = ""
     return await test_connection(data.base_url.rstrip("/"), token)
 
 
@@ -352,6 +370,10 @@ async def _read_prusalink_live(db: Session) -> dict:
     from app.services import health_status, prusalink
     cfg = _read_prusalink(db)
     pcfg = prusalink.get_config(db)  # includes decrypted password, or None
+    # get_config returns None both when unset and when the stored password can't
+    # be decrypted. `configured` already tells us a secret exists, so the two
+    # together separate "not set up" from "set up but unreadable".
+    cfg["credential_error"] = bool(cfg["configured"] and pcfg is None)
     if cfg["configured"] and pcfg:
         cfg["connected"] = await health_status.reachable(
             "prusalink",
@@ -412,7 +434,16 @@ async def test_prusalink_connection(data: PrusaLinkConfig, db: Session = Depends
     password = data.password
     if not password:  # fall back to stored password
         pw_row = db.query(Setting).filter(Setting.key == "prusalink_password").first()
-        password = decrypt(pw_row.value) if pw_row and pw_row.value else ""
+        if pw_row and pw_row.value:
+            password = decrypt_optional(pw_row.value)
+            if password is None:
+                return {
+                    "success": False,
+                    "message": "Stored password cannot be decrypted (the encryption "
+                               "key changed) — re-enter it",
+                }
+        else:
+            password = ""
     return await test_connection(data.base_url.rstrip("/"), data.username or "maker", password)
 
 

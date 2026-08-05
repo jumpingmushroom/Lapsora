@@ -4,6 +4,7 @@ import {
 	formatDuration,
 	formatCronTime,
 	formatInterval,
+	formatFinishedAt,
 	localToUtcNaive,
 	setUse24h
 } from './utils';
@@ -67,5 +68,32 @@ describe('localToUtcNaive', () => {
 		const back = new Date(out + 'Z');
 		expect(back.getHours()).toBe(8);
 		expect(back.getMinutes()).toBe(30);
+	});
+});
+
+describe('formatFinishedAt', () => {
+	it('returns an em dash when the print has not finished', () => {
+		expect(formatFinishedAt('2026-08-05T14:32:00Z', null)).toBe('—');
+	});
+
+	it('shows time only when the finish is the same local day as the start', () => {
+		// Constructed in local time (month is 0-indexed, so 7 = August) so the
+		// "same local day" property holds by construction at any host offset —
+		// no fixed UTC pair can guarantee this at every zone.
+		const start = new Date(2026, 7, 5, 14, 32);
+		const end = new Date(2026, 7, 5, 17, 8);
+		const got = formatFinishedAt(start.toISOString(), end.toISOString());
+		// Date is already in the Started column, so it is not repeated here.
+		expect(got).not.toContain('2026');
+		expect(got).toMatch(/\d{1,2}[:.]\d{2}/);
+	});
+
+	it('shows the full date-time when the print crosses midnight', () => {
+		// Constructed in local time so the "different local day" property holds
+		// by construction at any host offset.
+		const start = new Date(2026, 7, 5, 22, 10);
+		const end = new Date(2026, 7, 6, 4, 32);
+		const got = formatFinishedAt(start.toISOString(), end.toISOString());
+		expect(got).toContain('2026');
 	});
 });

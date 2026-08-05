@@ -77,3 +77,15 @@ def decrypt(token: str) -> str:
     """Decrypt a Fernet token string back to plaintext."""
     f = Fernet(_derive_fernet_key(settings.SECRET_KEY))
     return f.decrypt(token.encode()).decode()
+
+
+def decrypt_optional(token: str) -> str | None:
+    """Decrypt, or None when the token can't be read under the current key.
+
+    Distinguishes "stored secret is unreadable" (the key was rotated or
+    regenerated) from "no secret stored", so callers can tell the user to
+    re-enter it instead of failing with a 500."""
+    try:
+        return decrypt(token)
+    except Exception:
+        return None

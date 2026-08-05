@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { Timelapse, PrintJob } from '$lib/types';
-	import { formatDate, formatDuration, formatBytes } from '$lib/utils';
+	import { formatDate, formatDateTime, formatFinishedAt, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
 	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
 	import ScheduleManager from '$lib/components/ScheduleManager.svelte';
@@ -34,6 +34,11 @@
 	// Delete
 	let deleteTarget = $state<Timelapse | null>(null);
 	let deleting = $state(false);
+
+	// Print job delete
+	let printDeleteTarget = $state<PrintJob | null>(null);
+	let printDeleteWithTimelapse = $state(false);
+	let deletingPrint = $state(false);
 
 	function clearActiveGeneration(id: string | undefined) {
 		// Prefer the explicit id from the event; fall back to clearing a lone
@@ -178,6 +183,30 @@
 		}
 	}
 
+	function openPrintDelete(pj: PrintJob) {
+		printDeleteTarget = pj;
+		printDeleteWithTimelapse = false;
+	}
+
+	async function confirmPrintDelete() {
+		if (!printDeleteTarget) return;
+		deletingPrint = true;
+		const target = printDeleteTarget;
+		const alsoTimelapse = printDeleteWithTimelapse;
+		try {
+			await api.deletePrintJob(target.id, alsoTimelapse);
+			printJobs = printJobs.filter((p) => p.id !== target.id);
+			if (alsoTimelapse && target.timelapse_id) {
+				timelapses = timelapses.filter((t) => t.id !== target.timelapse_id);
+			}
+			printDeleteTarget = null;
+		} catch (err) {
+			alert(err instanceof Error ? err.message : 'Delete failed');
+		} finally {
+			deletingPrint = false;
+		}
+	}
+
 </script>
 
 <svelte:head><title>Timelapses - Lapsora</title></svelte:head>
@@ -313,8 +342,10 @@
 							<th class="py-2 pr-4 font-medium">Print</th>
 							<th class="py-2 pr-4 font-medium">Status</th>
 							<th class="py-2 pr-4 font-medium">Started</th>
+							<th class="py-2 pr-4 font-medium">Finished</th>
 							<th class="py-2 pr-4 font-medium">Duration</th>
-							<th class="py-2 font-medium">Timelapse</th>
+							<th class="py-2 pr-4 font-medium">Timelapse</th>
+							<th class="py-2 font-medium"><span class="sr-only">Actions</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -330,13 +361,29 @@
 										<span class="rounded-full bg-red-900 px-2 py-0.5 text-xs text-red-300">Cancelled</span>
 									{/if}
 								</td>
-								<td class="py-2 pr-4">{formatDate(pj.started_at)}</td>
+								<td class="py-2 pr-4">{formatDateTime(pj.started_at)}</td>
+								<td class="py-2 pr-4">{formatFinishedAt(pj.started_at, pj.finished_at)}</td>
 								<td class="py-2 pr-4">{printDuration(pj)}</td>
-								<td class="py-2">
+								<td class="py-2 pr-4">
 									{#if pj.timelapse_id}
 										<button onclick={() => playPrintJob(pj)} class="text-blue-400 hover:text-blue-300">Play</button>
 									{:else}
 										<span class="text-gray-500">—</span>
+									{/if}
+								</td>
+								<td class="py-2 text-right">
+									{#if pj.status === 'printing'}
+										<span class="text-xs text-gray-600" title="Finish or cancel the print first">—</span>
+									{:else}
+										<button
+											onclick={() => openPrintDelete(pj)}
+											aria-label="Delete print {pj.gcode_name || 'Untitled print'}"
+											class="text-gray-500 transition-colors hover:text-red-400"
+										>
+											<svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+												<path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+											</svg>
+										</button>
 									{/if}
 								</td>
 							</tr>
@@ -489,3 +536,37 @@
 	</div>
 {/if}
 
+<!-- Print Job Delete Confirmation -->
+{#if printDeleteTarget}
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { printDeleteTarget = null; }}>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="w-full max-w-sm rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
+			<h3 class="mb-2 text-lg font-semibold text-gray-100">Delete print?</h3>
+			<p class="mb-4 text-sm text-gray-400">
+				{printDeleteTarget.gcode_name || 'Untitled print'} ({formatDate(printDeleteTarget.started_at)})
+			</p>
+			{#if printDeleteTarget.timelapse_id}
+				<label class="mb-4 flex items-center gap-2 text-sm text-gray-300">
+					<input type="checkbox" bind:checked={printDeleteWithTimelapse} class="rounded border-gray-600 bg-gray-800" />
+					Also delete the timelapse video
+				</label>
+			{/if}
+			<div class="flex justify-end gap-3">
+				<button
+					onclick={() => { printDeleteTarget = null; }}
+					class="rounded-lg bg-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-600"
+				>
+					Cancel
+				</button>
+				<button
+					onclick={confirmPrintDelete}
+					disabled={deletingPrint}
+					class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-500 disabled:opacity-50"
+				>
+					{deletingPrint ? 'Deleting...' : 'Delete'}
+				</button>
+			</div>
+		</div>
+	</div>
+{/if}

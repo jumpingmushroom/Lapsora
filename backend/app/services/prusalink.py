@@ -122,11 +122,56 @@ def compute_interval(
     return int(max(min_interval, min(max_interval, interval)))
 
 
+# Extensions PrusaSlicer / PrusaLink produce, longest first so ".bgcode" is
+# matched before ".gcode" would be considered.
+_GCODE_SUFFIXES = (".bgcode", ".gcode", ".gco", ".g")
+
+
+def _strip_gcode_suffix(name: str) -> str:
+    lowered = name.lower()
+    for suffix in _GCODE_SUFFIXES:
+        if lowered.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _as_local(dt: datetime) -> datetime:
+    """Render a stored timestamp in the container's local zone.
+
+    Timestamps are written as UTC, but SQLite returns them naive — assume UTC
+    for those rather than letting them be read as local wall-clock."""
+    return (dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt).astimezone()
+
+
+def format_print_name(
+    gcode_name: str | None,
+    started_at: datetime,
+    finished_at: datetime,
+) -> str:
+    """Human-readable timelapse name: model, date, and the print's time span.
+
+    e.g. "benchy — 2026-08-05 14:32–17:08". A print that crosses midnight
+    repeats the date on the end of the span so the range stays unambiguous."""
+    model = _strip_gcode_suffix((gcode_name or "").strip()) or "Print"
+    start = _as_local(started_at)
+    end = _as_local(finished_at)
+    if start.date() == end.date():
+        span = f"{start:%Y-%m-%d %H:%M}–{end:%H:%M}"
+    else:
+        span = f"{start:%Y-%m-%d %H:%M}–{end:%Y-%m-%d %H:%M}"
+    return f"{model} — {span}"
+
+
 # --- status parsing + HTTP -------------------------------------------------
 
 
 def parse_status(data: dict) -> dict:
-    """Extract the bits we care about from a PrusaLink /api/v1/status response."""
+    """Extract the bits we care about from a PrusaLink /api/v1/status response.
+
+    Note: real firmware does NOT put a `file` object here — Prusa's OpenAPI
+    `StatusJob` is only id/progress/time_remaining/time_printing, so
+    `gcode_name` is normally None and the caller must use `get_job`. The `file`
+    lookup below is kept as a tolerant fallback, not an expected path."""
     printer = (data or {}).get("printer") or {}
     job = (data or {}).get("job") or {}
     file_info = job.get("file") or {}
@@ -191,6 +236,36 @@ async def get_status(base_url: str, username: str, password: str) -> dict | None
         # An offline/unreachable printer is expected (printers are often powered off);
         # log quietly without a traceback. Test Connection surfaces config errors loudly.
         logger.debug("PrusaLink status poll failed for %s: %s", base, exc)
+        return None
+
+
+def parse_job(data: dict) -> dict:
+    """Extract the file metadata from a PrusaLink /api/v1/job response.
+
+    This is the only endpoint that carries the printed filename; /api/v1/status
+    does not (see `parse_status`)."""
+    job = data or {}
+    file_info = job.get("file") or {}
+    return {
+        "job_id": job.get("id"),
+        "gcode_name": file_info.get("display_name") or file_info.get("name"),
+    }
+
+
+async def get_job(base_url: str, username: str, password: str) -> dict | None:
+    """Fetch the current job's file metadata, or None if there is no job.
+
+    PrusaLink answers 204 (no body) when nothing is printing, so a non-200 is a
+    normal idle state rather than an error worth surfacing."""
+    base = base_url.rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=STATUS_TIMEOUT) as client:
+            resp = await client.get(f"{base}/api/v1/job", auth=_auth(username, password))
+        if resp.status_code != 200:
+            return None
+        return parse_job(resp.json())
+    except Exception as exc:
+        logger.debug("PrusaLink job fetch failed for %s: %s", base, exc)
         return None
 
 
@@ -398,7 +473,11 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
             logo_overlay=cfg.get("logo_overlay", False),
             deflicker=cfg.get("deflicker", "medium"),
             ha_overlay=bool(profile.ha_sensors),
-            name=pj.gcode_name or None,
+            name=format_print_name(
+                pj.gcode_name,
+                pj.started_at,
+                pj.finished_at or datetime.now(UTC),
+            ),
             print_job_id=pj.id,
         )
 
@@ -408,6 +487,26 @@ async def _reconcile(db, cfg: dict, status: dict) -> PrintDecision:
         await events.emit(d.event, title, f"{title}: {name}", level=level)
 
     return d
+
+
+def _needs_gcode_name(db, status: dict) -> bool:
+    """Whether this poll should spend an extra request on /api/v1/job.
+
+    Only while a print is live (the endpoint 204s otherwise) and only until we
+    have a name — so this costs about one request per print, not one per poll.
+    While printing, that covers both the rising edge (no open job yet — the
+    name is captured at creation) and an open job still missing a name. While
+    paused, only the latter applies: a paused printer with no open print job
+    has nothing to backfill, so it must not keep polling forever."""
+    if status.get("gcode_name"):
+        return False
+    state = normalize_state(status.get("state"))
+    if state not in ("printing", "paused"):
+        return False
+    pj = _open_print_job(db)
+    if state == "paused":
+        return pj is not None and not pj.gcode_name
+    return pj is None or not pj.gcode_name
 
 
 # How long a printer may stay unreachable mid-print before we close the open
@@ -457,6 +556,14 @@ async def poll_printer() -> None:
         if not cfg or not cfg.get("enabled", True) or not cfg.get("stream_id"):
             return
         status = await get_status(cfg["base_url"], cfg["username"], cfg["password"])
+
+        # The filename lives only on /api/v1/job. Fetch it here, before the
+        # staleness checkpoint below, so all network awaits stay on one side of
+        # it and there remains a single point where we re-read config.
+        if status and status.get("state") and _needs_gcode_name(db, status):
+            job = await get_job(cfg["base_url"], cfg["username"], cfg["password"])
+            if job and job.get("gcode_name"):
+                status["gcode_name"] = job["gcode_name"]
 
         # Re-read config after the network await: a PUT that disabled the
         # integration (and removed this poll job) may have committed while we

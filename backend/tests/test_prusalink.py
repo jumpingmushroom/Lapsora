@@ -6,7 +6,16 @@ the poller should perform. Keeping it pure makes the transitions testable withou
 printer, the scheduler, or the DB.
 """
 
+import os
+import time as _time
+from datetime import UTC, datetime
+from unittest.mock import patch
+
 import pytest
+
+os.environ["TZ"] = "UTC"
+if hasattr(_time, "tzset"):
+    _time.tzset()
 
 from app.services import prusalink as pl
 
@@ -180,27 +189,112 @@ def test_interval_default_is_also_clamped():
 
 # --- parse_status: job metadata ---------------------------------------------
 
-def test_parse_status_extracts_gcode_name_and_estimate():
+def test_parse_status_extracts_estimate_from_status_job():
     got = pl.parse_status({
         "printer": {"state": "PRINTING"},
-        "job": {
-            "id": 7, "progress": 12.5,
-            "time_printing": 300, "time_remaining": 3300,
-            "file": {"name": "benchy~1.gco", "display_name": "benchy.gcode"},
-        },
+        "job": {"id": 7, "time_remaining": 600, "time_printing": 300},
     })
-    assert got["gcode_name"] == "benchy.gcode"
-    assert got["estimated_seconds"] == 3600.0
+    assert got["job_id"] == 7
+    assert got["estimated_seconds"] == 900
 
-def test_parse_status_falls_back_to_file_name():
-    got = pl.parse_status({"printer": {}, "job": {"file": {"name": "x.gco"}}})
-    assert got["gcode_name"] == "x.gco"
+
+def test_parse_status_has_no_gcode_name_on_real_firmware():
+    # Prusa's OpenAPI StatusJob carries only id/progress/time_remaining/
+    # time_printing — there is no `file`. The name comes from /api/v1/job.
+    got = pl.parse_status({
+        "printer": {"state": "PRINTING"},
+        "job": {"id": 7, "progress": 12, "time_remaining": 600, "time_printing": 300},
+    })
+    assert got["gcode_name"] is None
+
+
+def test_parse_status_still_tolerates_a_file_object_if_one_appears():
+    # Defensive only: no shipping firmware sends this, but if one ever does,
+    # take it rather than ignore it.
+    got = pl.parse_status({"printer": {}, "job": {"file": {"display_name": "benchy.gcode"}}})
+    assert got["gcode_name"] == "benchy.gcode"
+
 
 def test_parse_status_no_estimate_when_remaining_missing_or_bogus():
     assert pl.parse_status({"job": {"time_printing": 300}})["estimated_seconds"] is None
     assert pl.parse_status({"job": {"time_remaining": -1}})["estimated_seconds"] is None
     assert pl.parse_status({})["estimated_seconds"] is None
     assert pl.parse_status({})["gcode_name"] is None
+
+
+# --- parse_job ---------------------------------------------------------------
+
+def test_parse_job_prefers_display_name():
+    got = pl.parse_job({"id": 9, "file": {"name": "benchy~1.gco", "display_name": "benchy.gcode"}})
+    assert got["gcode_name"] == "benchy.gcode"
+    assert got["job_id"] == 9
+
+
+def test_parse_job_falls_back_to_short_name():
+    assert pl.parse_job({"file": {"name": "x.gco"}})["gcode_name"] == "x.gco"
+
+
+def test_parse_job_tolerates_missing_file_and_empty_body():
+    assert pl.parse_job({"id": 3})["gcode_name"] is None
+    assert pl.parse_job({})["gcode_name"] is None
+
+
+# --- get_job -----------------------------------------------------------------
+
+class _FakeResp:
+    def __init__(self, status_code, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no content")
+        return self._payload
+
+
+class _FakeClient:
+    def __init__(self, resp):
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def get(self, url, **kw):
+        if isinstance(self._resp, Exception):
+            raise self._resp
+        return self._resp
+
+
+def _patch_job_client(monkeypatch, resp):
+    monkeypatch.setattr(pl.httpx, "AsyncClient", lambda *a, **k: _FakeClient(resp))
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_name_on_200(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(200, {"id": 4, "file": {"display_name": "cube.gcode"}}))
+    got = await pl.get_job("http://printer", "maker", "pw")
+    assert got["gcode_name"] == "cube.gcode"
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_204_idle(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(204))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_error_status(monkeypatch):
+    _patch_job_client(monkeypatch, _FakeResp(401))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
+
+
+@pytest.mark.asyncio
+async def test_get_job_returns_none_on_transport_error(monkeypatch):
+    _patch_job_client(monkeypatch, RuntimeError("connection refused"))
+    assert await pl.get_job("http://printer", "maker", "pw") is None
 
 
 # --- ensure_managed_profile --------------------------------------------------
@@ -314,18 +408,23 @@ async def test_start_without_estimate_uses_default_then_recomputes_once(db, fake
 
 @pytest.mark.asyncio
 async def test_finish_closes_job_and_enqueues_named_render(db, fakes):
+    """Verifies wiring only (the enqueue path passes the formatted name); the
+    formatting itself is covered independently by the format_print_name unit
+    tests below, so format_print_name is mocked here rather than invoked."""
     s = _stream(db)
     cfg = _cfg(stream_id=s.id)
     await _run(db, cfg, _status("PRINTING", est=1500))
-    await _run(db, cfg, _status("FINISHED"))
+    with patch.object(pl, "format_print_name", return_value="mocked-print-name") as mock_format:
+        await _run(db, cfg, _status("FINISHED"))
     pj = db.query(PrintJob).one()
     assert pj.status == "finished"
     assert pj.finished_at is not None
     profile = db.query(Profile).one()
     assert profile.enabled is False
     assert fakes["remove"] == [profile.id]
+    mock_format.assert_called_once_with(pj.gcode_name, pj.started_at, pj.finished_at)
     (kw,) = fakes["enqueue"]
-    assert kw["name"] == "benchy.gcode"
+    assert kw["name"] == "mocked-print-name"
     assert kw["print_job_id"] == pj.id
     assert kw["fps_mode"] == "target_duration"
     assert kw["render_target_seconds"] == 20
@@ -361,11 +460,16 @@ async def test_active_state_survives_restart_via_open_row(db, fakes):
 @pytest.mark.asyncio
 async def test_job_id_change_while_printing_splits_prints(db, fakes):
     """F-21: a new job id while still 'printing' closes the old print (generating
-    its render) and opens a new one, instead of merging both into one."""
+    its render) and opens a new one, instead of merging both into one.
+
+    Verifies wiring only (the enqueue path passes the formatted name); the
+    formatting itself is covered independently by the format_print_name unit
+    tests below, so format_print_name is mocked here rather than invoked."""
     s = _stream(db)
     cfg = _cfg(stream_id=s.id)
     await _run(db, cfg, _status("PRINTING", job_id=1, name="first.gcode", est=1500))
-    await _run(db, cfg, _status("PRINTING", job_id=2, name="second.gcode", est=1500))
+    with patch.object(pl, "format_print_name", return_value="mocked-print-name") as mock_format:
+        await _run(db, cfg, _status("PRINTING", job_id=2, name="second.gcode", est=1500))
 
     jobs = db.query(PrintJob).order_by(PrintJob.id).all()
     assert len(jobs) == 2
@@ -373,7 +477,8 @@ async def test_job_id_change_while_printing_splits_prints(db, fakes):
     assert jobs[1].status == "printing" and jobs[1].prusalink_job_id == 2
     # exactly one render enqueued, for the finished first print
     assert len(fakes["enqueue"]) == 1
-    assert fakes["enqueue"][0]["name"] == "first.gcode"
+    mock_format.assert_called_once_with(jobs[0].gcode_name, jobs[0].started_at, jobs[0].finished_at)
+    assert fakes["enqueue"][0]["name"] == "mocked-print-name"
 
 
 @pytest.mark.asyncio
@@ -420,3 +525,110 @@ def test_get_config_returns_none_on_undecryptable_password(db):
     pl._password_error_logged = False
 
     assert pl.get_config(db) is None
+
+
+# --- gcode-name fetch gating -------------------------------------------------
+
+from app.models import PrintJob
+
+
+def test_needs_name_when_printing_and_no_open_job(db):
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is True
+
+
+def test_needs_name_when_open_job_has_empty_name(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is True
+
+
+def test_no_fetch_when_open_job_already_named(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="benchy.gcode", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": None}) is False
+
+
+def test_no_fetch_when_status_already_carried_a_name(db):
+    assert pl._needs_gcode_name(db, {"state": "PRINTING", "gcode_name": "x.gcode"}) is False
+
+
+def test_no_fetch_when_printer_is_idle(db):
+    assert pl._needs_gcode_name(db, {"state": "IDLE", "gcode_name": None}) is False
+
+
+def test_no_fetch_when_print_finished(db):
+    # By FINISHED the job endpoint is already 204 — nothing left to fetch.
+    assert pl._needs_gcode_name(db, {"state": "FINISHED", "gcode_name": None}) is False
+
+
+def test_needs_name_while_paused_with_open_unnamed_job(db):
+    s = _stream(db)
+    db.add(PrintJob(gcode_name="", stream_id=s.id, status="printing",
+                    started_at=datetime(2026, 8, 5, 12, 0, tzinfo=UTC)))
+    db.commit()
+    assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is True
+
+
+def test_no_fetch_while_paused_with_no_open_job(db):
+    # A paused printer with no open PrintJob has nothing to backfill
+    # (decide_transition never creates one from idle+paused), so this must not
+    # keep polling /api/v1/job forever.
+    assert pl._needs_gcode_name(db, {"state": "PAUSED", "gcode_name": None}) is False
+
+
+# --- format_print_name -------------------------------------------------------
+
+def test_format_print_name_same_day():
+    got = pl.format_print_name(
+        "benchy.gcode",
+        datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+        datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+    )
+    assert got == "benchy — 2026-08-05 14:32–17:08"
+
+
+def test_format_print_name_crossing_midnight_repeats_the_date():
+    got = pl.format_print_name(
+        "big-part.bgcode",
+        datetime(2026, 8, 5, 22, 10, tzinfo=UTC),
+        datetime(2026, 8, 6, 4, 32, tzinfo=UTC),
+    )
+    assert got == "big-part — 2026-08-05 22:10–2026-08-06 04:32"
+
+
+def test_format_print_name_falls_back_when_unnamed():
+    for empty in ("", "   ", None):
+        got = pl.format_print_name(
+            empty,
+            datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+            datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+        )
+        assert got == "Print — 2026-08-05 14:32–17:08"
+
+
+def test_format_print_name_strips_known_extensions_case_insensitively():
+    start = datetime(2026, 8, 5, 14, 32, tzinfo=UTC)
+    end = datetime(2026, 8, 5, 17, 8, tzinfo=UTC)
+    assert pl.format_print_name("a.GCODE", start, end).startswith("a — ")
+    assert pl.format_print_name("b.bgcode", start, end).startswith("b — ")
+    assert pl.format_print_name("c.gco", start, end).startswith("c — ")
+    assert pl.format_print_name("no-extension", start, end).startswith("no-extension — ")
+
+
+def test_format_print_name_treats_naive_datetimes_as_utc():
+    # SQLite hands back naive datetimes; they must not be read as local time.
+    aware = pl.format_print_name(
+        "x.gcode",
+        datetime(2026, 8, 5, 14, 32, tzinfo=UTC),
+        datetime(2026, 8, 5, 17, 8, tzinfo=UTC),
+    )
+    naive = pl.format_print_name(
+        "x.gcode",
+        datetime(2026, 8, 5, 14, 32),
+        datetime(2026, 8, 5, 17, 8),
+    )
+    assert aware == naive

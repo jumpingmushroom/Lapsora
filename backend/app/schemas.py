@@ -110,6 +110,7 @@ class PrusaLinkRead(BaseModel):
     quality: int
     ha_sensors: str | None
     configured: bool  # credentials present (drives the password placeholder)
+    credential_error: bool = False  # a secret is stored but can't be decrypted
     connected: bool  # live reachability probe (cached); drives the status badge
 
 

@@ -454,6 +454,7 @@ export interface HomeAssistantConfig {
 	base_url: string;
 	configured?: boolean;
 	connected?: boolean;
+	credential_error?: boolean;
 }
 
 export interface PrusaLinkConfig {
@@ -477,6 +478,7 @@ export interface PrusaLinkConfig {
 	ha_sensors: string | null;
 	configured: boolean;
 	connected: boolean;
+	credential_error?: boolean;
 }
 
 export interface PrintJob {

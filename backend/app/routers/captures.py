@@ -1,6 +1,5 @@
 """Capture management endpoints."""
 
-import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,20 +10,9 @@ from app.config import settings
 from app.database import get_db
 from app.models import Capture, Profile
 from app.schemas import BulkDeleteRequest, CaptureRead
-
-logger = logging.getLogger(__name__)
+from app.services.files import safe_remove
 
 router = APIRouter(prefix="/api", tags=["captures"])
-
-
-def _safe_remove(path: str) -> None:
-    """Remove a file, logging (not raising) on failure so a single bad file
-    never aborts a delete that must still purge the DB rows."""
-    try:
-        if os.path.isfile(path):
-            os.remove(path)
-    except OSError:
-        logger.exception("Failed to remove file %s during delete", path)
 
 
 @router.get("/captures", response_model=list[CaptureRead])
@@ -95,7 +83,7 @@ def bulk_delete_captures(body: BulkDeleteRequest, db: Session = Depends(get_db))
         db.delete(capture)
     db.commit()
     for path in paths:
-        _safe_remove(path)
+        safe_remove(path)
 
 
 @router.delete("/captures/{capture_id}", status_code=204)
@@ -107,4 +95,4 @@ def delete_capture(capture_id: int, db: Session = Depends(get_db)):
     path = os.path.join(settings.DATA_DIR, capture.file_path)
     db.delete(capture)
     db.commit()
-    _safe_remove(path)
+    safe_remove(path)
