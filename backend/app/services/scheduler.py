@@ -5,6 +5,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
 
+from app.cron_utils import cron_trigger_kwargs
 from app.models import CleanupSchedule, Profile, TimelapseSchedule
 
 logger = logging.getLogger(__name__)
@@ -176,19 +177,19 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
             db.rollback()
             db.close()
 
-    parts = schedule.cron_expression.strip().split()
-    if len(parts) != 5:
-        logger.error("Invalid cron expression for schedule %d: %s", schedule.id, schedule.cron_expression)
+    try:
+        trigger_kwargs = cron_trigger_kwargs(schedule.cron_expression)
+    except ValueError as e:
+        logger.error(
+            "Invalid cron expression for schedule %d (%s): %s",
+            schedule.id, schedule.cron_expression, e,
+        )
         return
     job_id = f"timelapse_schedule_{schedule.id}"
     scheduler.add_job(
         _run_schedule,
         "cron",
-        minute=parts[0],
-        hour=parts[1],
-        day=parts[2],
-        month=parts[3],
-        day_of_week=parts[4],
+        **trigger_kwargs,
         id=job_id,
         replace_existing=True,
         args=[schedule.id, schedule.profile_id, schedule.preset],
@@ -231,19 +232,19 @@ def add_cleanup_schedule_job(schedule: CleanupSchedule) -> None:
             db.rollback()
             db.close()
 
-    parts = schedule.cron_expression.strip().split()
-    if len(parts) != 5:
-        logger.error("Invalid cron expression for cleanup schedule %d: %s", schedule.id, schedule.cron_expression)
+    try:
+        trigger_kwargs = cron_trigger_kwargs(schedule.cron_expression)
+    except ValueError as e:
+        logger.error(
+            "Invalid cron expression for cleanup schedule %d (%s): %s",
+            schedule.id, schedule.cron_expression, e,
+        )
         return
     job_id = f"cleanup_schedule_{schedule.id}"
     scheduler.add_job(
         _run_cleanup,
         "cron",
-        minute=parts[0],
-        hour=parts[1],
-        day=parts[2],
-        month=parts[3],
-        day_of_week=parts[4],
+        **trigger_kwargs,
         id=job_id,
         replace_existing=True,
         args=[schedule.id, schedule.profile_id],
