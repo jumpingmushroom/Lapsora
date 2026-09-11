@@ -31,6 +31,25 @@ def _safe_unlink(path: str) -> None:
 _ORPHAN_SWEEP_MIN_ROWS = 5
 
 
+def _timelapse_abs(path: str) -> str:
+    """Absolute path for a timelapse video or thumbnail as it is stored.
+
+    Timelapse rows already carry the DATA_DIR prefix -- the renderer builds the
+    output path with ``os.path.join(settings.DATA_DIR, "timelapses", ...)`` --
+    which is why the download endpoints open ``file_path`` directly. Capture
+    rows use the opposite convention and are stored relative to DATA_DIR.
+    Joining DATA_DIR onto a timelapse path therefore produces ``data/data/...``,
+    which never exists, and made every render look orphaned to the sweep below.
+    Resolve the stored form first and fall back to the joined form only for a
+    legacy row written the other way, so a convention mismatch can never delete
+    the record of a file that is still on disk.
+    """
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+    joined = os.path.join(settings.DATA_DIR, path)
+    return joined if os.path.exists(joined) else path
+
+
 def _collect_orphans(rows, base_name: str, to_abs, profile_id: int) -> list:
     """Return the ids in ``rows`` (``(id, file_path)`` tuples) whose backing
     file is missing — but only when the filesystem view is trustworthy.
@@ -153,14 +172,9 @@ def _run_profile_cleanup_sync(
         ).scalars().all()
 
         for tl in old_tl:
-            tl_abs = tl.file_path if os.path.isabs(tl.file_path) else os.path.join(settings.DATA_DIR, tl.file_path)
-            _safe_unlink(tl_abs)
+            _safe_unlink(_timelapse_abs(tl.file_path))
             if tl.thumbnail_path:
-                thumb_abs = (
-                    tl.thumbnail_path if os.path.isabs(tl.thumbnail_path)
-                    else os.path.join(settings.DATA_DIR, tl.thumbnail_path)
-                )
-                _safe_unlink(thumb_abs)
+                _safe_unlink(_timelapse_abs(tl.thumbnail_path))
             db.delete(tl)
             summary["timelapses_deleted"] += 1
 
@@ -193,15 +207,14 @@ def _run_profile_cleanup_sync(
         orphan_timelapse_ids = _collect_orphans(
             [(tid, fpath) for tid, fpath, _thumb in timelapse_rows],
             "timelapses",
-            lambda fp: fp if os.path.isabs(fp) else os.path.join(settings.DATA_DIR, fp),
+            _timelapse_abs,
             profile_id,
         )
         if orphan_timelapse_ids:
             orphan_set = set(orphan_timelapse_ids)
             for tid, _fpath, thumb in timelapse_rows:
                 if tid in orphan_set and thumb:
-                    thumb_abs = thumb if os.path.isabs(thumb) else os.path.join(settings.DATA_DIR, thumb)
-                    _safe_unlink(thumb_abs)
+                    _safe_unlink(_timelapse_abs(thumb))
             db.execute(delete(Timelapse).where(Timelapse.id.in_(orphan_timelapse_ids)))
             summary["orphan_records_cleaned"] += len(orphan_timelapse_ids)
 
