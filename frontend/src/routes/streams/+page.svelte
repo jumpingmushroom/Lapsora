@@ -2,13 +2,16 @@
 	import { api } from '$lib/api';
 	import type { Stream, TestResult, Go2rtcStreamInfo } from '$lib/types';
 	import StreamCard from '$lib/components/StreamCard.svelte';
+	import AddCameraWizard from '$lib/components/AddCameraWizard.svelte';
 
 	let streams = $state<Stream[]>([]);
 	let profileCounts = $state<Record<number, number>>({});
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Add stream modal
+	// The wizard is the default path; the single-step modal stays for people
+	// who just want a source and will configure the rest themselves.
+	let showWizard = $state(false);
 	let showAddModal = $state(false);
 	let newName = $state('');
 	let newUrl = $state('');
@@ -147,7 +150,7 @@
 	<div class="flex items-center justify-between">
 		<h1 class="text-3xl font-bold text-white">Cameras</h1>
 		<button
-			onclick={() => { showAddModal = true; }}
+			onclick={() => { showWizard = true; }}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
 			Add camera
@@ -163,7 +166,16 @@
 	{:else if streams.length === 0}
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
 			<p class="text-gray-400">No cameras yet.</p>
-			<p class="mt-1 text-sm text-gray-500">Add a camera to get started.</p>
+			<p class="mx-auto mt-1 max-w-sm text-sm text-gray-500">
+				Adding one takes three steps: point Lapsora at the camera, choose how often it
+				captures, and decide when it renders.
+			</p>
+			<button
+				onclick={() => { showWizard = true; }}
+				class="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+			>
+				Add your first camera
+			</button>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -197,13 +209,23 @@
 	{/if}
 </div>
 
-<!-- Add Stream Modal -->
+{#if showWizard}
+	<AddCameraWizard
+		onclose={() => { showWizard = false; }}
+		onadvanced={() => { showWizard = false; showAddModal = true; }}
+	/>
+{/if}
+
+<!-- Source-only dialog, reached from the wizard's "Advanced" link -->
 {#if showAddModal}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={() => { showAddModal = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mx-4 w-full max-w-md rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold text-gray-100">Add camera</h2>
+			<h2 class="mb-1 text-lg font-semibold text-gray-100">Add camera source</h2>
+			<p class="mb-4 text-xs text-gray-500">
+				Creates the camera only. It won't capture until you add a capture plan.
+			</p>
 
 			<!-- Source type tabs -->
 			<div class="mb-4 grid grid-cols-2 gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-0.5">
