@@ -173,7 +173,7 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		if (!p) return `Profile #${id}`;
+		if (!p) return `Plan #${id}`;
 		const s = streams.find((s) => s.id === p.stream_id);
 		return s ? `${s.name} — ${p.name}` : p.name;
 	}

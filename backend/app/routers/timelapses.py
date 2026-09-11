@@ -63,6 +63,8 @@ async def generate(
         period_start=body.period_start,
         period_end=body.period_end,
         fps=body.fps,
+        fps_mode=body.fps_mode,
+        render_target_seconds=body.render_target_seconds,
         format=body.format,
         timestamp_overlay=body.timestamp_overlay,
         weather_overlay=body.weather_overlay,

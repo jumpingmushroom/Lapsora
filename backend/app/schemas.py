@@ -293,6 +293,10 @@ class TimelapseRead(BaseModel):
 class TimelapseGenerate(BaseModel):
     period_start: datetime | None = None
     period_end: datetime | None = None
+    # "fixed" uses fps verbatim; "target_duration" derives fps from the frame
+    # count so the result runs ~render_target_seconds long.
+    fps_mode: Literal["fixed", "target_duration"] = "fixed"
+    render_target_seconds: int = Field(default=20, ge=1)
     fps: int = Field(default=24, ge=1, le=120)
     # Constrained: format is interpolated into the output filename, so an
     # unvalidated value could escape the output dir or pick a bogus extension.
@@ -332,6 +336,8 @@ class TimelapseScheduleCreate(BaseModel):
     # fps feeds 1.0/fps during encoding; 0 would raise ZeroDivisionError on
     # every scheduled run. Mirror TimelapseGenerate's bounds.
     fps: int = Field(default=24, ge=1, le=120)
+    fps_mode: Literal["fixed", "target_duration"] = "fixed"
+    render_target_seconds: int = Field(default=20, ge=1)
     format: str = "mp4"
     deflicker: str = "medium"
     lookback_hours: int | None = Field(default=None, ge=1)
@@ -364,6 +370,8 @@ class TimelapseScheduleUpdate(BaseModel):
     preset: str | None = None
     cron_expression: str | None = None
     fps: int | None = Field(default=None, ge=1, le=120)
+    fps_mode: Literal["fixed", "target_duration"] | None = None
+    render_target_seconds: int | None = Field(default=None, ge=1)
     format: str | None = None
     deflicker: str | None = None
     lookback_hours: int | None = Field(default=None, ge=1)
@@ -400,6 +408,8 @@ class TimelapseScheduleRead(BaseModel):
     preset: str | None
     cron_expression: str
     fps: int
+    fps_mode: str
+    render_target_seconds: int
     format: str
     deflicker: str
     lookback_hours: int | None

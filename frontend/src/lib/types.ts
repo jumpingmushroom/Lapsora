@@ -192,6 +192,8 @@ export interface TimelapseSchedule {
 	preset: string | null;
 	cron_expression: string;
 	fps: number;
+	fps_mode: string;
+	render_target_seconds: number;
 	format: string;
 	deflicker: string;
 	lookback_hours: number | null;
@@ -228,6 +230,8 @@ export interface TimelapseScheduleCreate {
 	preset?: string | null;
 	cron_expression?: string | null;
 	fps?: number;
+	fps_mode?: string;
+	render_target_seconds?: number;
 	format?: string;
 	deflicker?: string;
 	lookback_hours?: number | null;
@@ -260,6 +264,8 @@ export interface TimelapseScheduleUpdate {
 	preset?: string | null;
 	cron_expression?: string | null;
 	fps?: number;
+	fps_mode?: string;
+	render_target_seconds?: number;
 	format?: string;
 	deflicker?: string;
 	lookback_hours?: number | null;
@@ -321,6 +327,8 @@ export interface TimelapseGenerate {
 	period_start?: string;
 	period_end?: string;
 	fps?: number;
+	fps_mode?: string;
+	render_target_seconds?: number;
 	format?: string;
 	deflicker?: string;
 	timestamp_overlay?: boolean;
@@ -344,6 +352,43 @@ export interface TimelapseGenerate {
 	output_width?: number | null;
 	output_height?: number | null;
 	quality_preset?: string;
+}
+
+/**
+ * The render settings common to TimelapseGenerate and TimelapseScheduleCreate.
+ * RenderOptions.svelte owns one of these; both callers spread it into their
+ * payload, which is what keeps the two forms from drifting apart.
+ *
+ * logo_size and logo_opacity are wire-format fractions (0.12, 0.8) - the
+ * sliders present them as percentages.
+ */
+export interface RenderOptionsValue {
+	fps: number;
+	fps_mode: string;
+	render_target_seconds: number;
+	format: string;
+	deflicker: string;
+	motion_blur: string;
+	codec: string;
+	output_width: number | null;
+	output_height: number | null;
+	quality_preset: string;
+	timestamp_overlay: boolean;
+	weather_overlay: boolean;
+	weather_position: string;
+	weather_font_size: number;
+	weather_unit: string;
+	weather_style: string;
+	ha_overlay: boolean;
+	ha_overlay_position: string;
+	heatmap_overlay: boolean;
+	heatmap_mode: string;
+	heatmap_colormap: string;
+	heatmap_threshold: number;
+	logo_overlay: boolean;
+	logo_position: string;
+	logo_size: number;
+	logo_opacity: number;
 }
 
 export interface TestResult {
