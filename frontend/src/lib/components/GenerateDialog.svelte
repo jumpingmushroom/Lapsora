@@ -232,7 +232,7 @@
 			});
 			onclose();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Generation failed';
+			error = err instanceof Error ? err.message : 'Render failed';
 		} finally {
 			loading = false;
 		}
@@ -251,7 +251,7 @@
 		onkeydown={() => {}}
 	>
 		<div class="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg bg-gray-800 p-6">
-			<h2 class="mb-4 shrink-0 text-xl font-semibold text-gray-100">Generate Timelapse</h2>
+			<h2 class="mb-4 shrink-0 text-xl font-semibold text-gray-100">Render timelapse</h2>
 
 			{#if error}
 				<p class="mb-3 rounded-md bg-red-900/50 px-3 py-2 text-sm text-red-300">{error}</p>
@@ -259,7 +259,7 @@
 
 			<form onsubmit={handleSubmit} class="space-y-4 overflow-y-auto">
 				<div>
-					<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
+					<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
 					<select
 						id="gen-profile"
 						bind:value={selectedProfileId}
@@ -691,7 +691,7 @@
 						disabled={loading}
 						class="flex-1 rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
 					>
-						{loading ? 'Generating...' : 'Generate'}
+						{loading ? 'Rendering...' : 'Render'}
 					</button>
 				</div>
 			</form>

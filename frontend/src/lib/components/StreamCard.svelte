@@ -52,7 +52,7 @@
 	</div>
 
 	<div class="mt-2 flex items-center justify-between text-sm text-gray-400">
-		<span>{profileCount} profile{profileCount !== 1 ? 's' : ''}</span>
+		<span>{profileCount} capture plan{profileCount !== 1 ? 's' : ''}</span>
 		<span>Checked {timeAgo(stream.last_checked_at)}</span>
 	</div>
 </a>

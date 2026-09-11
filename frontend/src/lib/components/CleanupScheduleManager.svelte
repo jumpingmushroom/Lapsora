@@ -277,7 +277,7 @@
 			<div class="space-y-4 p-4">
 				<!-- Profile selector -->
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
+					<label class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
 					<select
 						bind:value={formProfileId}
 						disabled={!!editingId}

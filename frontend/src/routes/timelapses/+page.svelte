@@ -165,7 +165,7 @@
 			allProfileOptions = options;
 			showGenerate = true;
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to load profiles');
+			alert(err instanceof Error ? err.message : 'Failed to load capture plans');
 		}
 	}
 
@@ -218,7 +218,7 @@
 			onclick={openGenerate}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
-			Generate
+			Render now
 		</button>
 	</div>
 
@@ -233,7 +233,7 @@
 					</svg>
 					Position {job.position} in queue
 					{#if job.profile_id}
-						<span class="text-yellow-600">· Profile {job.profile_id}</span>
+						<span class="text-yellow-600">· Plan {job.profile_id}</span>
 					{/if}
 				</div>
 				<button
@@ -257,7 +257,7 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 					</svg>
-					Generating timelapse{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
+					Rendering{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
 				</div>
 				<button
 					onclick={() => api.cancelGeneration(gen.generation_id).catch(() => {})}
@@ -302,7 +302,7 @@
 					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 				</svg>
-				Generating timelapse...
+				Rendering timelapse...
 			</div>
 		</div>
 	{/if}
@@ -403,7 +403,7 @@
 	{:else if filteredTimelapses.length === 0}
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
 			<p class="text-gray-400">No timelapses found.</p>
-			<p class="mt-1 text-sm text-gray-500">Generate a timelapse from your captured frames.</p>
+			<p class="mt-1 text-sm text-gray-500">Render a timelapse from your captured frames.</p>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

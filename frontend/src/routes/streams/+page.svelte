@@ -96,7 +96,7 @@
 			loading = true;
 			await loadStreams();
 		} catch (err) {
-			addError = err instanceof Error ? err.message : 'Failed to create stream';
+			addError = err instanceof Error ? err.message : 'Failed to create camera';
 		} finally {
 			addLoading = false;
 		}
@@ -141,29 +141,29 @@
 	}
 </script>
 
-<svelte:head><title>Streams - Lapsora</title></svelte:head>
+<svelte:head><title>Cameras - Lapsora</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-3xl font-bold text-white">Streams</h1>
+		<h1 class="text-3xl font-bold text-white">Cameras</h1>
 		<button
 			onclick={() => { showAddModal = true; }}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
-			Add Stream
+			Add camera
 		</button>
 	</div>
 
 	{#if loading}
-		<p class="text-gray-400">Loading streams...</p>
+		<p class="text-gray-400">Loading cameras...</p>
 	{:else if error}
 		<div class="rounded-xl border border-red-800 bg-red-950/50 p-4">
-			<p class="text-sm text-red-400">Failed to load streams: {error}</p>
+			<p class="text-sm text-red-400">Failed to load cameras: {error}</p>
 		</div>
 	{:else if streams.length === 0}
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
-			<p class="text-gray-400">No streams configured yet.</p>
-			<p class="mt-1 text-sm text-gray-500">Add an RTSP stream to get started.</p>
+			<p class="text-gray-400">No cameras yet.</p>
+			<p class="mt-1 text-sm text-gray-500">Add a camera to get started.</p>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -203,7 +203,7 @@
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={() => { showAddModal = false; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mx-4 w-full max-w-md rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
-			<h2 class="mb-4 text-lg font-semibold text-gray-100">Add Stream</h2>
+			<h2 class="mb-4 text-lg font-semibold text-gray-100">Add camera</h2>
 
 			<!-- Source type tabs -->
 			<div class="mb-4 grid grid-cols-2 gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-0.5">
@@ -350,7 +350,7 @@
 						disabled={addLoading || (addSourceType === 'go2rtc' && !selectedGo2rtcName)}
 						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
 					>
-						{addLoading ? 'Adding...' : 'Add Stream'}
+						{addLoading ? 'Adding...' : 'Add camera'}
 					</button>
 				</div>
 			</form>
@@ -364,9 +364,9 @@
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onclick={() => { deleteTarget = null; }}>
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="mx-4 w-full max-w-sm rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
-			<h2 class="mb-2 text-lg font-semibold text-gray-100">Delete Stream</h2>
+			<h2 class="mb-2 text-lg font-semibold text-gray-100">Delete camera</h2>
 			<p class="mb-4 text-sm text-gray-400">
-				Are you sure you want to delete <strong class="text-gray-200">{deleteTarget.name}</strong>? This will also delete all associated profiles and captures.
+				Are you sure you want to delete <strong class="text-gray-200">{deleteTarget.name}</strong>? This will also delete all of its capture plans and captures.
 			</p>
 			<div class="flex justify-end gap-3">
 				<button

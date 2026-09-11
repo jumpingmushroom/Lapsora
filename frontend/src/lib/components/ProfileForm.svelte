@@ -413,7 +413,7 @@ let sun_events = $state<string[]>(
 					{/if}
 				</div>
 			{:else}
-				<p class="text-xs text-gray-500">Save the profile / open it from its stream to use the live test.</p>
+				<p class="text-xs text-gray-500">Save the capture plan / open it from its camera to use the live test.</p>
 			{/if}
 		{/if}
 	</div>
@@ -422,6 +422,6 @@ let sun_events = $state<string[]>(
 		type="submit"
 		class="w-full rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700"
 	>
-		{profile ? 'Update Profile' : 'Create Profile'}
+		{profile ? 'Update capture plan' : 'Create capture plan'}
 	</button>
 </form>

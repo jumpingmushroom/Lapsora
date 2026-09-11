@@ -325,7 +325,7 @@
 	async function triggerNow(id: number) {
 		try {
 			const result = await api.triggerTimelapseSchedule(id);
-			alert(result.message || 'Generation triggered');
+			alert(result.message || 'Render started');
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to trigger');
 		}
@@ -458,7 +458,7 @@
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if schedules.length === 0}
-		<p class="text-sm text-gray-500">No schedules configured. Add one to automate timelapse generation.</p>
+		<p class="text-sm text-gray-500">No schedules configured. Add one to render timelapses automatically.</p>
 	{:else}
 		<!-- Filter chips -->
 		<div class="mb-4 flex flex-wrap gap-2">
@@ -613,7 +613,7 @@
 			<div class="space-y-4 p-4 overflow-y-auto">
 				<!-- Profile selector -->
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
+					<label class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
 					<select
 						bind:value={formProfileId}
 						disabled={!!editingId}
