@@ -397,6 +397,22 @@ export interface TestResult {
 	details?: Record<string, unknown>;
 }
 
+/** A source to probe before saving it. StreamCreate minus the name. */
+export interface StreamTestRequest {
+	url?: string;
+	source_type?: string;
+	go2rtc_name?: string;
+	auth_type?: string;
+	auth_username?: string;
+	auth_secret?: string;
+	auth_header_name?: string;
+}
+
+export interface StreamTestResult extends TestResult {
+	/** base64 JPEG of a frame from the source, when one could be grabbed. */
+	preview?: string | null;
+}
+
 export interface StorageStats {
 	captures_count: number;
 	captures_size_bytes: number;

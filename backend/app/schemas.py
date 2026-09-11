@@ -25,6 +25,30 @@ class StreamCreate(BaseModel):
     auth_header_name: str | None = None
 
 
+class StreamTestRequest(BaseModel):
+    """A source to probe before it is saved.
+
+    Same shape as StreamCreate minus `name`, so the add-camera flow can test a
+    URL before the user has named anything.
+    """
+
+    url: str | None = None
+    source_type: SourceType = "rtsp"
+    go2rtc_name: str | None = None
+    auth_type: AuthType = "none"
+    auth_username: str | None = None
+    auth_secret: str | None = None
+    auth_header_name: str | None = None
+
+
+class StreamTestResult(BaseModel):
+    success: bool
+    message: str
+    details: dict | None = None
+    # base64 JPEG of a frame grabbed from the source, when one could be had.
+    preview: str | None = None
+
+
 class StreamUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
