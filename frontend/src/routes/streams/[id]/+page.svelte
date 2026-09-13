@@ -7,6 +7,7 @@
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
 	import CapturePreview from '$lib/components/CapturePreview.svelte';
+	import CameraDiagnostic from '$lib/components/CameraDiagnostic.svelte';
 
 	let id = $derived(Number($page.params.id));
 
@@ -84,6 +85,10 @@
 	let previewKey = $state(0);
 	let previewSrc = $derived(`${api.getStreamPreviewUrl(id)}?t=${previewKey}`);
 
+	// Anything that can change the capture chain bumps this, so the diagnostic
+	// re-answers instead of showing a stale verdict.
+	let diagnosticKey = $state(0);
+
 	// Live view (go2rtc)
 	let liveWsUrl = $state<string | null>(null);
 	let showLiveView = $state(false);
@@ -150,6 +155,7 @@
 			});
 			stream = updated;
 			newUrl = '';
+			diagnosticKey++;
 			saveMsg = 'Saved';
 			setTimeout(() => { saveMsg = ''; }, 2000);
 		} catch (err) {
@@ -187,6 +193,7 @@
 		try {
 			await api.createProfile(id, data as ProfileCreate);
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 			showProfileForm = false;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to create capture plan');
@@ -213,6 +220,7 @@
 		try {
 			await api.applyProfileTemplate(t.id, id);
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 			showTemplatePicker = false;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to apply preset');
@@ -227,6 +235,7 @@
 		try {
 			await api.updateProfile(editingProfile.id, data as ProfileUpdate);
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 			editingProfile = null;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to update capture plan');
@@ -242,6 +251,7 @@
 		try {
 			await api.deleteProfile(confirmDelete.id);
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 			confirmDelete = null;
 			replaceMode = false;
 			if (shouldReplace) {
@@ -276,6 +286,7 @@
 				ha_sensors: profile.ha_sensors
 			});
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to duplicate capture plan');
 		} finally {
@@ -291,6 +302,7 @@
 				await api.enableProfile(profile.id);
 			}
 			profiles = await api.getStreamProfiles(id);
+			diagnosticKey++;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to toggle capture plan');
 		}
@@ -318,6 +330,8 @@
 				{stream.enabled ? 'Enabled' : 'Disabled'}
 			</span>
 		</div>
+
+		<CameraDiagnostic streamId={id} refreshKey={diagnosticKey} />
 
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Live Preview -->
