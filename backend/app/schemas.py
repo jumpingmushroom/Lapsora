@@ -66,6 +66,10 @@ class StreamDiagnostics(BaseModel):
     status: str  # ok | idle | fail
     summary: str
     checks: list[DiagnosticCheck]
+    # The one-click fix, when there is one: add_plan | add_schedule |
+    # enable_camera. Named by the backend so a reworded summary cannot
+    # silently lose its button.
+    action: str | None = None
 
 
 class StreamUpdate(BaseModel):

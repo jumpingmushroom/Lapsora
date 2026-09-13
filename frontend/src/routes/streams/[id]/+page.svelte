@@ -198,6 +198,23 @@
 		activeMenu = null;
 	}
 
+	/** The diagnostic named a gap; open whatever closes it. */
+	async function runDiagnosticAction(action: string) {
+		if (action === 'add_plan') {
+			openPlanWizard();
+		} else if (action === 'add_schedule') {
+			openRenderWizardForCamera();
+		} else if (action === 'enable_camera') {
+			try {
+				stream = await api.updateStream(id, { enabled: true });
+				editEnabled = true;
+				diagnosticKey++;
+			} catch (err) {
+				alert(err instanceof Error ? err.message : 'Failed to enable camera');
+			}
+		}
+	}
+
 	function openRenderWizardForCamera() {
 		renderWizardDraft = defaultRenderDraft('repeat', profiles[0]?.id ?? 0);
 		renderWizardPlanFixed = false;
@@ -318,7 +335,7 @@
 			</span>
 		</div>
 
-		<CameraDiagnostic streamId={id} refreshKey={diagnosticKey} />
+		<CameraDiagnostic streamId={id} refreshKey={diagnosticKey} onaction={runDiagnosticAction} />
 
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Live Preview -->

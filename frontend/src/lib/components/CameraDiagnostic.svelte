@@ -1,14 +1,25 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import type { StreamDiagnostics } from '$lib/types';
+	import type { DiagnosticAction, StreamDiagnostics } from '$lib/types';
 
 	interface Props {
 		streamId: number;
 		/** Bump after anything that could change the chain (toggling a plan, saving). */
 		refreshKey?: number;
+		/** Runs the fix the diagnostic named. Omit to render the line read-only. */
+		onaction?: ((action: DiagnosticAction) => void) | null;
 	}
 
-	let { streamId, refreshKey = 0 }: Props = $props();
+	let { streamId, refreshKey = 0, onaction = null }: Props = $props();
+
+	// The button's wording, keyed by what the backend said is wrong. Naming the
+	// action there rather than matching on the summary means rewording a
+	// sentence cannot silently drop its button.
+	const ACTION_LABELS: Record<DiagnosticAction, string> = {
+		add_plan: 'Add a capture plan',
+		add_schedule: 'Set up a render schedule',
+		enable_camera: 'Enable this camera'
+	};
 
 	let data = $state<StreamDiagnostics | null>(null);
 	let failed = $state(false);
@@ -53,6 +64,12 @@
 	} as const;
 
 	let tone = $derived(data ? TONE[data.status] : null);
+	let actionLabel = $derived(data?.action ? ACTION_LABELS[data.action] : null);
+
+	function runAction() {
+		const action = data?.action;
+		if (action && onaction) onaction(action);
+	}
 </script>
 
 {#if data && tone}
@@ -87,6 +104,17 @@
 				{/each}
 			</ul>
 		</details>
+
+		{#if actionLabel && onaction}
+			<div class="mt-3 border-t border-gray-800 pt-3">
+				<button
+					onclick={runAction}
+					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+				>
+					{actionLabel}
+				</button>
+			</div>
+		{/if}
 	</div>
 {:else if failed}
 	<p class="text-xs text-gray-600">Could not load the capture status for this camera.</p>

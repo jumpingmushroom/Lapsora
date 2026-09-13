@@ -406,10 +406,14 @@ export interface DiagnosticCheck {
 }
 
 /** The capture chain for one camera, worst link first. */
+export type DiagnosticAction = 'add_plan' | 'add_schedule' | 'enable_camera';
+
 export interface StreamDiagnostics {
 	status: 'ok' | 'idle' | 'fail';
 	summary: string;
 	checks: DiagnosticCheck[];
+	/** The one-click fix, when there is one. */
+	action: DiagnosticAction | null;
 }
 
 export interface TestResult {
