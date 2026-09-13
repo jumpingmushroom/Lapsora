@@ -60,7 +60,7 @@
 		try {
 			templates = await api.getProfileTemplates();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Failed to load templates';
+			error = err instanceof Error ? err.message : 'Failed to load presets';
 		} finally {
 			loading = false;
 		}
@@ -102,7 +102,7 @@
 			newRenderFormat = 'mp4';
 			await load();
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to create template');
+			alert(err instanceof Error ? err.message : 'Failed to create preset');
 		} finally {
 			creating = false;
 		}
@@ -147,14 +147,14 @@
 			editingTemplate = null;
 			await load();
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to update template');
+			alert(err instanceof Error ? err.message : 'Failed to update preset');
 		} finally {
 			updating = false;
 		}
 	}
 
 	async function deleteTemplate(t: ProfileTemplate) {
-		if (!confirm(`Delete template "${t.name}"?`)) return;
+		if (!confirm(`Delete preset "${t.name}"?`)) return;
 		try {
 			await api.deleteProfileTemplate(t.id);
 			await load();
@@ -164,23 +164,23 @@
 	}
 </script>
 
-<svelte:head><title>Templates - Lapsora</title></svelte:head>
+<svelte:head><title>Plan presets - Lapsora</title></svelte:head>
 
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
-		<h1 class="text-3xl font-bold text-white">Profile Templates</h1>
+		<h1 class="text-3xl font-bold text-white">Plan presets</h1>
 		<button
 			onclick={() => { showCreateForm = !showCreateForm; editingTemplate = null; }}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
-			{showCreateForm ? 'Cancel' : 'Create Template'}
+			{showCreateForm ? 'Cancel' : 'New preset'}
 		</button>
 	</div>
 
 	{#if editingTemplate}
 		<div class="rounded-xl border border-blue-700 bg-gray-800 p-5">
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-100">Edit Template</h2>
+				<h2 class="text-lg font-semibold text-gray-100">Edit preset</h2>
 				<button onclick={() => { editingTemplate = null; }} class="text-sm text-gray-400 hover:text-gray-200">Cancel</button>
 			</div>
 			<form onsubmit={handleUpdate} class="space-y-4">
@@ -241,13 +241,13 @@
 					<span class="text-sm text-gray-300">HDR enabled</span>
 				</label>
 				<button type="submit" disabled={updating} class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
-					{updating ? 'Updating...' : 'Update Template'}
+					{updating ? 'Updating...' : 'Update preset'}
 				</button>
 			</form>
 		</div>
 	{:else if showCreateForm}
 		<div class="rounded-xl border border-gray-700 bg-gray-800 p-5">
-			<h2 class="mb-4 text-lg font-semibold text-gray-100">New Template</h2>
+			<h2 class="mb-4 text-lg font-semibold text-gray-100">New preset</h2>
 			<form onsubmit={handleCreate} class="space-y-4">
 				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 					<div>
@@ -306,14 +306,14 @@
 					<span class="text-sm text-gray-300">HDR enabled</span>
 				</label>
 				<button type="submit" disabled={creating} class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50">
-					{creating ? 'Creating...' : 'Create Template'}
+					{creating ? 'Creating...' : 'Create preset'}
 				</button>
 			</form>
 		</div>
 	{/if}
 
 	{#if loading}
-		<p class="text-gray-400">Loading templates...</p>
+		<p class="text-gray-400">Loading presets...</p>
 	{:else if error}
 		<div class="rounded-xl border border-red-800 bg-red-950/50 p-4">
 			<p class="text-sm text-red-400">{error}</p>
@@ -387,7 +387,7 @@
 		{/each}
 
 		{#if templates.length === 0}
-			<p class="text-gray-500">No templates yet.</p>
+			<p class="text-gray-500">No presets yet.</p>
 		{/if}
 	{/if}
 </div>

@@ -1,5 +1,6 @@
 """Stream management endpoints."""
 
+import logging
 import os
 import shutil
 
@@ -10,8 +11,16 @@ from sqlalchemy.orm import Session
 from app.config import encrypt, settings
 from app.database import get_db
 from app.models import Stream
-from app.schemas import StreamCreate, StreamRead, StreamUpdate
+from app.schemas import (
+    StreamCreate,
+    StreamRead,
+    StreamTestRequest,
+    StreamTestResult,
+    StreamUpdate,
+)
 from app.services import go2rtc, providers
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/streams", tags=["streams"])
 
@@ -30,6 +39,70 @@ async def discover_go2rtc_streams(db: Session = Depends(get_db)):
         return await go2rtc.list_streams(base_url)
     except Exception as exc:
         raise HTTPException(502, f"Failed to fetch go2rtc streams: {exc}")
+
+
+@router.post("/test", response_model=StreamTestResult)
+async def test_unsaved_source(body: StreamTestRequest, db: Session = Depends(get_db)):
+    """Probe a source that has not been saved yet, and return a frame from it.
+
+    The existing test/preview endpoints are both id-bound, so the only way to
+    find out whether a URL works was to save a camera, open it, and test there
+    — failure arrived after commitment rather than before it.
+
+    providers.test_source/grab_preview only read attributes off the object they
+    are handed, so a transient Stream that is never added to the session works
+    for both. Reachability is the same as create-then-test: no new capability,
+    just no row left behind when it fails.
+    """
+    import base64
+
+    stream = _build_transient_stream(body)
+
+    result = await providers.test_source(stream, db)
+    payload = {
+        "success": result.get("success", False),
+        "message": result.get("message", ""),
+        "details": result.get("details"),
+        "preview": None,
+    }
+    if not payload["success"]:
+        return payload
+
+    # A frame is a nicer confirmation than "connected", but a source can test
+    # clean and still refuse a still (a codec FFmpeg can probe but not decode),
+    # so a preview failure must not turn a passing test into a failing one.
+    try:
+        jpeg_bytes = await providers.grab_preview(stream, db)
+        payload["preview"] = base64.b64encode(jpeg_bytes).decode("ascii")
+    except Exception:
+        logger.info("Source tested OK but no preview frame could be grabbed")
+
+    return payload
+
+
+def _build_transient_stream(body: StreamTestRequest) -> Stream:
+    """Build an unsaved Stream from a test request, mirroring create_stream's
+    validation so Test and Add reject the same inputs."""
+    if body.source_type == "go2rtc":
+        if not body.go2rtc_name:
+            raise HTTPException(400, "go2rtc_name is required for go2rtc streams")
+        return Stream(
+            name="",
+            url=encrypt(""),
+            source_type="go2rtc",
+            go2rtc_name=body.go2rtc_name,
+        )
+    if not body.url:
+        raise HTTPException(400, "url is required for this source type")
+    return Stream(
+        name="",
+        url=encrypt(body.url),
+        source_type=body.source_type,
+        auth_type=body.auth_type or "none",
+        auth_username=body.auth_username,
+        auth_secret=encrypt(body.auth_secret) if body.auth_secret else None,
+        auth_header_name=body.auth_header_name,
+    )
 
 
 @router.post("/", response_model=StreamRead, status_code=201)

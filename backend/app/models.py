@@ -157,6 +157,10 @@ class TimelapseSchedule(Base):
     preset: Mapped[str | None] = mapped_column(Text, nullable=True)
     cron_expression: Mapped[str] = mapped_column(Text, nullable=False)
     fps: Mapped[int] = mapped_column(Integer, default=24)
+    fps_mode: Mapped[str] = mapped_column(Text, default="fixed", server_default="fixed")
+    render_target_seconds: Mapped[int] = mapped_column(
+        Integer, default=20, server_default="20"
+    )
     format: Mapped[str] = mapped_column(String, default="mp4")
     deflicker: Mapped[str] = mapped_column(Text, default="medium", server_default="medium")
     lookback_hours: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { formatDateTime, formatCronTime } from '$lib/utils';
-	import type { TimelapseSchedule, Profile, Stream } from '$lib/types';
+	import { defaultRenderOptions, renderOptionsFromSchedule } from '$lib/renderOptions';
+	import { activeSecondsPerDay, framesPerDay } from '$lib/estimates';
+	import type { TimelapseSchedule, Profile, Stream, RenderOptionsValue } from '$lib/types';
+	import RenderOptions from './RenderOptions.svelte';
 
 	let schedules = $state<TimelapseSchedule[]>([]);
 	let profiles = $state<Profile[]>([]);
@@ -15,93 +18,35 @@
 	let formPreset = $state<string | null>(null);
 	let formCron = $state('');
 	let formName = $state('');
-	let formFps = $state(24);
-	let formFormat = $state('mkv');
-	let formDeflicker = $state('medium');
-	let formMotionBlur = $state('off');
+	// Every render setting lives in one object, shared verbatim with the
+	// render dialog via RenderOptions. Keeping them apart is what let the two
+	// forms drift (mkv vs mp4 defaults, target-duration missing from one).
+	let formOptions = $state<RenderOptionsValue>(defaultRenderOptions());
 	let formLookbackHours = $state<number | null>(null);
-	let formTimestampOverlay = $state(false);
-	let formWeatherOverlay = $state(false);
-	let formWeatherPosition = $state('bottom-right');
-	let formHaOverlay = $state(false);
-	let formHaOverlayPosition = $state('top-left');
-	let formWeatherFontSize = $state(24);
-	let formWeatherUnit = $state('C');
-	let formWeatherStyle = $state('glass');
-	let formHeatmapOverlay = $state(false);
-	let formHeatmapMode = $state('cumulative');
-	let formHeatmapColormap = $state('jet');
-	let formHeatmapThreshold = $state(10);
-	let formLogoOverlay = $state(false);
-	let formLogoPosition = $state('bottom-right');
-	let formLogoSize = $state(12); // percent of frame width
-	let formLogoOpacity = $state(80); // percent
-	let logoExists = $state(false);
-	$effect(() => {
-		api.getLogo().then((r) => (logoExists = r.exists)).catch(() => {});
-	});
-	let formCodec = $state('auto');
-	let formResolutionPreset = $state('original');
-	let formOutputWidth = $state<number | null>(null);
-	let formOutputHeight = $state<number | null>(null);
-	let formQualityPreset = $state('medium');
 	let formCustom = $state(false);
 	let saving = $state(false);
 	let editingId = $state<number | null>(null);
-	let nvencAvailable = $state(false);
-
-	$effect(() => {
-		api.getSystemInfo().then((info) => {
-			nvencAvailable = info.nvenc_available;
-		}).catch(() => {});
-	});
 
 	let selectedFormProfile = $derived(profiles.find(p => p.id == formProfileId));
 	let formMaxWidth = $derived(selectedFormProfile?.resolution_width ?? Infinity);
 	let formMaxHeight = $derived(selectedFormProfile?.resolution_height ?? Infinity);
 
-	// Reset resolution when profile changes and current preset exceeds source
-	$effect(() => {
-		formProfileId;
-		const dims = RESOLUTION_PRESETS[formResolutionPreset];
-		if (dims && (dims[0] > formMaxWidth || dims[1] > formMaxHeight)) {
-			formResolutionPreset = 'original';
-			formOutputWidth = null;
-			formOutputHeight = null;
-		}
+	// A schedule has no fixed range, so the frame count is derived from the
+	// plan's interval and active hours over the lookback window. Marked
+	// approximate in the UI, because it assumes the camera never missed one.
+	let approxFrameCount = $derived.by(() => {
+		const plan = selectedFormProfile;
+		if (!plan || !formLookbackHours) return null;
+		const window = activeSecondsPerDay(
+			plan.capture_mode,
+			plan.active_start_time,
+			plan.active_end_time,
+			plan.sun_events ? plan.sun_events.split(',').filter(Boolean) : []
+		);
+		if (!window) return null;
+		const perDay = framesPerDay(window.seconds, plan.interval_seconds);
+		return Math.floor((perDay * formLookbackHours) / 24);
 	});
-
-	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
-		original: null,
-		'720p': [1280, 720],
-		'1080p': [1920, 1080],
-		'4k': [3840, 2160],
-		'8k': [7680, 4320]
-	};
-
-	function onFormResolutionChange() {
-		if (formResolutionPreset === 'custom') {
-			formOutputWidth = null;
-			formOutputHeight = null;
-		} else {
-			const dims = RESOLUTION_PRESETS[formResolutionPreset];
-			if (dims) {
-				formOutputWidth = dims[0];
-				formOutputHeight = dims[1];
-			} else {
-				formOutputWidth = null;
-				formOutputHeight = null;
-			}
-		}
-	}
-
-	function detectResolutionPreset(w: number | null, h: number | null): string {
-		if (!w || !h) return 'original';
-		for (const [key, dims] of Object.entries(RESOLUTION_PRESETS)) {
-			if (dims && dims[0] === w && dims[1] === h) return key;
-		}
-		return 'custom';
-	}
 
 	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
 
@@ -116,19 +61,15 @@
 		loading = true;
 		error = null;
 		try {
-			const [s, fetchedStreams] = await Promise.all([
+			// One profiles call rather than a per-camera fan-out, matching the
+			// pattern already used on the dashboard and cameras pages.
+			const [s, fetchedStreams, allProfiles] = await Promise.all([
 				api.getTimelapseSchedules(),
-				api.getStreams()
+				api.getStreams(),
+				api.getAllProfiles()
 			]);
 			schedules = s;
 			streams = fetchedStreams;
-			const allProfiles: Profile[] = [];
-			await Promise.all(
-				fetchedStreams.map(async (st) => {
-					const p = await api.getStreamProfiles(st.id);
-					allProfiles.push(...p);
-				})
-			);
 			profiles = allProfiles;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';
@@ -147,32 +88,8 @@
 		formPreset = null;
 		formCron = '';
 		formName = '';
-		formFps = 24;
-		formFormat = 'mkv';
-		formDeflicker = 'medium';
-		formMotionBlur = 'off';
+		formOptions = defaultRenderOptions();
 		formLookbackHours = null;
-		formTimestampOverlay = false;
-		formWeatherOverlay = false;
-		formWeatherPosition = 'bottom-right';
-		formHaOverlay = false;
-		formHaOverlayPosition = 'top-left';
-		formWeatherFontSize = 24;
-		formWeatherUnit = 'C';
-		formWeatherStyle = 'glass';
-		formHeatmapOverlay = false;
-		formHeatmapMode = 'cumulative';
-		formHeatmapColormap = 'jet';
-		formHeatmapThreshold = 10;
-		formLogoOverlay = false;
-		formLogoPosition = 'bottom-right';
-		formLogoSize = 12;
-		formLogoOpacity = 80;
-		formCodec = 'auto';
-		formResolutionPreset = 'original';
-		formOutputWidth = null;
-		formOutputHeight = null;
-		formQualityPreset = 'medium';
 		formCustom = false;
 		showForm = true;
 	}
@@ -181,32 +98,8 @@
 		editingId = schedule.id;
 		formProfileId = schedule.profile_id;
 		formName = schedule.name || '';
-		formFps = schedule.fps;
-		formFormat = schedule.format;
-		formDeflicker = schedule.deflicker || 'medium';
-		formMotionBlur = schedule.motion_blur || 'off';
+		formOptions = renderOptionsFromSchedule(schedule);
 		formLookbackHours = schedule.lookback_hours;
-		formTimestampOverlay = schedule.timestamp_overlay;
-		formWeatherOverlay = schedule.weather_overlay;
-		formWeatherPosition = schedule.weather_position;
-		formHaOverlay = schedule.ha_overlay ?? false;
-		formHaOverlayPosition = schedule.ha_overlay_position ?? 'top-left';
-		formWeatherFontSize = schedule.weather_font_size;
-		formWeatherUnit = schedule.weather_unit;
-		formWeatherStyle = schedule.weather_style ?? 'glass';
-		formHeatmapOverlay = schedule.heatmap_overlay;
-		formHeatmapMode = schedule.heatmap_mode;
-		formHeatmapColormap = schedule.heatmap_colormap;
-		formHeatmapThreshold = schedule.heatmap_threshold;
-		formLogoOverlay = schedule.logo_overlay ?? false;
-		formLogoPosition = schedule.logo_position ?? 'bottom-right';
-		formLogoSize = Math.round((schedule.logo_size ?? 0.12) * 100);
-		formLogoOpacity = Math.round((schedule.logo_opacity ?? 0.8) * 100);
-		formCodec = schedule.codec || 'auto';
-		formOutputWidth = schedule.output_width;
-		formOutputHeight = schedule.output_height;
-		formResolutionPreset = detectResolutionPreset(schedule.output_width, schedule.output_height);
-		formQualityPreset = schedule.quality_preset || 'medium';
 		if (schedule.preset && PRESETS[schedule.preset]) {
 			formPreset = schedule.preset;
 			formCron = PRESETS[schedule.preset].cron;
@@ -243,43 +136,19 @@
 		}
 		saving = true;
 		try {
-			const overlayFields = {
-				timestamp_overlay: formTimestampOverlay,
-				weather_overlay: formWeatherOverlay,
-				weather_position: formWeatherPosition,
-				ha_overlay: formHaOverlay,
-				ha_overlay_position: formHaOverlayPosition,
-				weather_font_size: formWeatherFontSize,
-				weather_unit: formWeatherUnit,
-				weather_style: formWeatherStyle,
-				heatmap_overlay: formHeatmapOverlay,
-				heatmap_mode: formHeatmapMode,
-				heatmap_colormap: formHeatmapColormap,
-			heatmap_threshold: formHeatmapThreshold,
-				logo_overlay: formLogoOverlay,
-				logo_position: formLogoPosition,
-				logo_size: formLogoSize / 100,
-				logo_opacity: formLogoOpacity / 100,
-				motion_blur: formMotionBlur,
-				codec: formCodec,
-				output_width: formOutputWidth,
-				output_height: formOutputHeight,
-				quality_preset: formQualityPreset
-			};
+			// Sent whole rather than pruned by format: a schedule is stored
+			// state, so what it holds should be exactly what the form showed.
 			if (editingId) {
 				await api.updateTimelapseSchedule(editingId, {
 					name: formName,
 					preset: formPreset,
 					cron_expression: formCustom ? formCron : undefined,
-					fps: formFps,
-					format: formFormat,
-					deflicker: formDeflicker,
 					// Send the value (incl. explicit null) so clearing the field
 					// actually clears it; `?? undefined` would be dropped by
 					// JSON.stringify and the backend's exclude_unset, silently
 					// keeping the old value.
 					lookback_hours: formLookbackHours,
-					...overlayFields
+					...formOptions
 				});
 			} else {
 				await api.createTimelapseSchedule({
@@ -287,11 +156,8 @@
 					name: formName,
 					preset: formPreset,
 					cron_expression: formCustom ? formCron : undefined,
-					fps: formFps,
-					format: formFormat,
-					deflicker: formDeflicker,
 					lookback_hours: formLookbackHours ?? undefined,
-					...overlayFields
+					...formOptions
 				});
 			}
 			showForm = false;
@@ -325,7 +191,7 @@
 	async function triggerNow(id: number) {
 		try {
 			const result = await api.triggerTimelapseSchedule(id);
-			alert(result.message || 'Generation triggered');
+			alert(result.message || 'Render started');
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to trigger');
 		}
@@ -353,7 +219,7 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		if (!p) return `Profile #${id}`;
+		if (!p) return `Plan #${id}`;
 		const s = streams.find((s) => s.id === p.stream_id);
 		return s ? `${s.name} — ${p.name}` : p.name;
 	}
@@ -367,7 +233,7 @@
 
 	function profileOnlyName(profileId: number): string {
 		const p = profiles.find((p) => p.id === profileId);
-		return p?.name ?? `Profile #${profileId}`;
+		return p?.name ?? `Plan #${profileId}`;
 	}
 
 	function frequencyLabel(schedule: TimelapseSchedule): string {
@@ -442,6 +308,8 @@
 	let hasActiveFilters = $derived(activeStreamFilters.size > 0 || activeProfileFilters.size > 0 || activeFreqFilters.size > 0);
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showForm) showForm = false; }} />
+
 <div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 	<div class="mb-4 flex items-center justify-between">
 		<h2 class="text-lg font-semibold text-white">Schedules</h2>
@@ -458,7 +326,7 @@
 	{:else if error}
 		<p class="text-sm text-red-400">{error}</p>
 	{:else if schedules.length === 0}
-		<p class="text-sm text-gray-500">No schedules configured. Add one to automate timelapse generation.</p>
+		<p class="text-sm text-gray-500">No schedules configured. Add one to render timelapses automatically.</p>
 	{:else}
 		<!-- Filter chips -->
 		<div class="mb-4 flex flex-wrap gap-2">
@@ -613,7 +481,7 @@
 			<div class="space-y-4 p-4 overflow-y-auto">
 				<!-- Profile selector -->
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
+					<label class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
 					<select
 						bind:value={formProfileId}
 						disabled={!!editingId}
@@ -691,346 +559,14 @@
 						/>
 					</div>
 
-					<div class="grid grid-cols-3 gap-3">
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
-							<input
-								type="number"
-								bind:value={formFps}
-								min="1"
-								max="60"
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							/>
-						</div>
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Format</label>
-							<select
-								bind:value={formFormat}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="mp4">MP4</option>
-								<option value="webm">WebM</option>
-								<option value="gif">GIF</option>
-								<option value="mkv">MKV</option>
-							</select>
-						</div>
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Deflicker</label>
-							<select
-								bind:value={formDeflicker}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="off">Off</option>
-								<option value="light">Light</option>
-								<option value="medium">Medium</option>
-								<option value="heavy">Heavy</option>
-							</select>
-						</div>
-					</div>
-
-					{#if formFormat !== 'gif'}
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Motion Blur</label>
-							<select
-								bind:value={formMotionBlur}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="off">Off</option>
-								<option value="low">Low</option>
-								<option value="medium">Medium</option>
-								<option value="high">High</option>
-							</select>
-						</div>
-					{/if}
-
-					{#if formFormat === 'mp4' || formFormat === 'mkv'}
-						<div>
-							<label class="mb-1 flex items-center gap-2 text-sm font-medium text-gray-300">
-								Codec
-								{#if nvencAvailable}
-									<span class="rounded bg-green-900/50 px-1.5 py-0.5 text-xs font-semibold text-green-300">GPU</span>
-								{/if}
-							</label>
-							<select
-								bind:value={formCodec}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="auto">Auto</option>
-								<option value="h264">H.264</option>
-								<option value="h265">H.265 (HEVC)</option>
-							</select>
-						</div>
-					{/if}
-
-					{#if formFormat !== 'gif'}
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Output Resolution</label>
-							<select
-								bind:value={formResolutionPreset}
-								onchange={onFormResolutionChange}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="original">Original</option>
-								{#each Object.entries(RESOLUTION_PRESETS) as [key, dims]}
-									{#if dims && dims[0] <= formMaxWidth && dims[1] <= formMaxHeight}
-										<option value={key}>{key}</option>
-									{/if}
-								{/each}
-								<option value="custom">Custom</option>
-							</select>
-						</div>
-
-						{#if formResolutionPreset === 'custom'}
-							<div class="grid grid-cols-2 gap-3">
-								<div>
-									<label class="mb-1 block text-sm font-medium text-gray-300">Width</label>
-									<input
-										type="number"
-										bind:value={formOutputWidth}
-										min="1"
-										max={formMaxWidth === Infinity ? undefined : formMaxWidth}
-										placeholder="Width"
-										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-									/>
-								</div>
-								<div>
-									<label class="mb-1 block text-sm font-medium text-gray-300">Height</label>
-									<input
-										type="number"
-										bind:value={formOutputHeight}
-										min="1"
-										max={formMaxHeight === Infinity ? undefined : formMaxHeight}
-										placeholder="Height"
-										class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-									/>
-								</div>
-							</div>
-						{/if}
-
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Quality</label>
-							<select
-								bind:value={formQualityPreset}
-								class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="low">Low</option>
-								<option value="medium">Medium</option>
-								<option value="high">High</option>
-								<option value="lossless">Lossless</option>
-							</select>
-						</div>
-					{/if}
-
-					<!-- Overlay options -->
-					<div class="flex items-center gap-3">
-						<input
-							id="sched-timestamp"
-							type="checkbox"
-							bind:checked={formTimestampOverlay}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-						/>
-						<label for="sched-timestamp" class="text-sm font-medium text-gray-300">Timestamp overlay</label>
-					</div>
-
-					<div class="flex items-center gap-3">
-						<input
-							id="sched-weather"
-							type="checkbox"
-							bind:checked={formWeatherOverlay}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-						/>
-						<label for="sched-weather" class="text-sm font-medium text-gray-300">Weather overlay</label>
-					</div>
-
-					{#if formWeatherOverlay}
-						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
-							<div>
-								<label for="sched-weather-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-								<select
-									id="sched-weather-pos"
-									bind:value={formWeatherPosition}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="top-left">Top Left</option>
-									<option value="top-right">Top Right</option>
-									<option value="bottom-left">Bottom Left</option>
-									<option value="bottom-right">Bottom Right</option>
-								</select>
-							</div>
-							<div>
-								<label for="sched-weather-style" class="mb-1 block text-sm font-medium text-gray-300">Style</label>
-								<select
-									id="sched-weather-style"
-									bind:value={formWeatherStyle}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="glass">Glass (default)</option>
-									<option value="badge">Badge</option>
-									<option value="strip">Strip</option>
-									<option value="minimal">Minimal</option>
-								</select>
-							</div>
-							<div>
-								<label for="sched-weather-size" class="mb-1 block text-sm font-medium text-gray-300">Font size</label>
-								<input
-									id="sched-weather-size"
-									type="number"
-									bind:value={formWeatherFontSize}
-									min="10"
-									max="72"
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-							</div>
-							<div>
-								<label class="mb-1 block text-sm font-medium text-gray-300">Unit</label>
-								<div class="flex gap-4">
-									<label class="flex items-center gap-2 text-sm text-gray-300">
-										<input type="radio" bind:group={formWeatherUnit} value="C" class="text-blue-500" />
-										°C
-									</label>
-									<label class="flex items-center gap-2 text-sm text-gray-300">
-										<input type="radio" bind:group={formWeatherUnit} value="F" class="text-blue-500" />
-										°F
-									</label>
-								</div>
-							</div>
-						</div>
-					{/if}
-
-					<div class="flex items-center gap-3">
-						<input
-							id="sched-ha-overlay"
-							type="checkbox"
-							bind:checked={formHaOverlay}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-						/>
-						<label for="sched-ha-overlay" class="text-sm font-medium text-gray-300">Home Assistant sensor overlay</label>
-					</div>
-
-					{#if formHaOverlay}
-						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
-							<div>
-								<label for="sched-ha-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-								<select
-									id="sched-ha-pos"
-									bind:value={formHaOverlayPosition}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="top-left">Top Left</option>
-									<option value="top-right">Top Right</option>
-									<option value="bottom-left">Bottom Left</option>
-									<option value="bottom-right">Bottom Right</option>
-								</select>
-							</div>
-						</div>
-					{/if}
-
-					<div class="flex items-center gap-3">
-						<input
-							id="sched-heatmap"
-							type="checkbox"
-							bind:checked={formHeatmapOverlay}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-						/>
-						<label for="sched-heatmap" class="text-sm font-medium text-gray-300">Activity heatmap overlay</label>
-					</div>
-
-					{#if formHeatmapOverlay}
-						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
-							<div>
-								<label for="sched-heatmap-mode" class="mb-1 block text-sm font-medium text-gray-300">Mode</label>
-								<select
-									id="sched-heatmap-mode"
-									bind:value={formHeatmapMode}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="cumulative">Cumulative</option>
-									<option value="sliding">Sliding window</option>
-								</select>
-							</div>
-							<div>
-								<label for="sched-heatmap-threshold" class="mb-1 block text-sm font-medium text-gray-300">Threshold: {formHeatmapThreshold}</label>
-								<input
-									id="sched-heatmap-threshold"
-									type="range"
-									bind:value={formHeatmapThreshold}
-									min="0"
-									max="50"
-									step="1"
-									class="w-full accent-blue-500"
-								/>
-								<p class="mt-0.5 text-xs text-gray-500">Filters noise — 0 = most sensitive, 50 = least sensitive</p>
-							</div>
-							<div>
-								<label for="sched-heatmap-colormap" class="mb-1 block text-sm font-medium text-gray-300">Colormap</label>
-								<select
-									id="sched-heatmap-colormap"
-									bind:value={formHeatmapColormap}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="jet">Jet</option>
-									<option value="inferno">Inferno</option>
-									<option value="viridis">Viridis</option>
-									<option value="turbo">Turbo</option>
-								</select>
-							</div>
-						</div>
-					{/if}
-
-					<div class="flex items-center gap-3">
-						<input
-							id="sched-logo"
-							type="checkbox"
-							bind:checked={formLogoOverlay}
-							class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-						/>
-						<label for="sched-logo" class="text-sm font-medium text-gray-300">Logo / watermark overlay</label>
-					</div>
-
-					{#if formLogoOverlay}
-						<div class="space-y-3 rounded-md border border-gray-700 bg-gray-800/50 p-3">
-							{#if !logoExists}
-								<p class="text-xs text-amber-400">No logo uploaded yet — add one in Settings → Branding.</p>
-							{/if}
-							<div>
-								<label for="sched-logo-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-								<select
-									id="sched-logo-pos"
-									bind:value={formLogoPosition}
-									class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								>
-									<option value="top-left">Top Left</option>
-									<option value="top-right">Top Right</option>
-									<option value="bottom-left">Bottom Left</option>
-									<option value="bottom-right">Bottom Right</option>
-								</select>
-							</div>
-							<div>
-								<label for="sched-logo-size" class="mb-1 block text-sm font-medium text-gray-300">Size: {formLogoSize}% of width</label>
-								<input
-									id="sched-logo-size"
-									type="range"
-									bind:value={formLogoSize}
-									min="2"
-									max="50"
-									step="1"
-									class="w-full accent-blue-500"
-								/>
-							</div>
-							<div>
-								<label for="sched-logo-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {formLogoOpacity}%</label>
-								<input
-									id="sched-logo-opacity"
-									type="range"
-									bind:value={formLogoOpacity}
-									min="10"
-									max="100"
-									step="1"
-									class="w-full accent-blue-500"
-								/>
-							</div>
-						</div>
-					{/if}
+					<RenderOptions
+						bind:value={formOptions}
+						maxWidth={formMaxWidth}
+						maxHeight={formMaxHeight}
+						idPrefix="sched"
+						frameCount={approxFrameCount}
+						frameCountApproximate={true}
+					/>
 				{/if}
 			</div>
 			{#if formPreset || formCustom}

@@ -30,19 +30,15 @@
 		loading = true;
 		error = null;
 		try {
-			const [s, fetchedStreams] = await Promise.all([
+			// One profiles call rather than a per-camera fan-out, matching the
+			// pattern already used on the dashboard and cameras pages.
+			const [s, fetchedStreams, allProfiles] = await Promise.all([
 				api.getCleanupSchedules(),
-				api.getStreams()
+				api.getStreams(),
+				api.getAllProfiles()
 			]);
 			schedules = s;
 			streams = fetchedStreams;
-			const allProfiles: Profile[] = [];
-			await Promise.all(
-				fetchedStreams.map(async (st) => {
-					const p = await api.getStreamProfiles(st.id);
-					allProfiles.push(...p);
-				})
-			);
 			profiles = allProfiles;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';
@@ -173,11 +169,13 @@
 
 	function profileName(id: number): string {
 		const p = profiles.find((p) => p.id === id);
-		if (!p) return `Profile #${id}`;
+		if (!p) return `Plan #${id}`;
 		const s = streams.find((s) => s.id === p.stream_id);
 		return s ? `${s.name} — ${p.name}` : p.name;
 	}
 </script>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showForm) showForm = false; }} />
 
 <div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 	<div class="mb-4 flex items-center justify-between">
@@ -277,7 +275,7 @@
 			<div class="space-y-4 p-4">
 				<!-- Profile selector -->
 				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
+					<label class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
 					<select
 						bind:value={formProfileId}
 						disabled={!!editingId}

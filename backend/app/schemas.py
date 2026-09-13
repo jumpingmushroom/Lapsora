@@ -25,6 +25,30 @@ class StreamCreate(BaseModel):
     auth_header_name: str | None = None
 
 
+class StreamTestRequest(BaseModel):
+    """A source to probe before it is saved.
+
+    Same shape as StreamCreate minus `name`, so the add-camera flow can test a
+    URL before the user has named anything.
+    """
+
+    url: str | None = None
+    source_type: SourceType = "rtsp"
+    go2rtc_name: str | None = None
+    auth_type: AuthType = "none"
+    auth_username: str | None = None
+    auth_secret: str | None = None
+    auth_header_name: str | None = None
+
+
+class StreamTestResult(BaseModel):
+    success: bool
+    message: str
+    details: dict | None = None
+    # base64 JPEG of a frame grabbed from the source, when one could be had.
+    preview: str | None = None
+
+
 class StreamUpdate(BaseModel):
     name: str | None = None
     url: str | None = None
@@ -293,6 +317,10 @@ class TimelapseRead(BaseModel):
 class TimelapseGenerate(BaseModel):
     period_start: datetime | None = None
     period_end: datetime | None = None
+    # "fixed" uses fps verbatim; "target_duration" derives fps from the frame
+    # count so the result runs ~render_target_seconds long.
+    fps_mode: Literal["fixed", "target_duration"] = "fixed"
+    render_target_seconds: int = Field(default=20, ge=1)
     fps: int = Field(default=24, ge=1, le=120)
     # Constrained: format is interpolated into the output filename, so an
     # unvalidated value could escape the output dir or pick a bogus extension.
@@ -332,6 +360,8 @@ class TimelapseScheduleCreate(BaseModel):
     # fps feeds 1.0/fps during encoding; 0 would raise ZeroDivisionError on
     # every scheduled run. Mirror TimelapseGenerate's bounds.
     fps: int = Field(default=24, ge=1, le=120)
+    fps_mode: Literal["fixed", "target_duration"] = "fixed"
+    render_target_seconds: int = Field(default=20, ge=1)
     format: str = "mp4"
     deflicker: str = "medium"
     lookback_hours: int | None = Field(default=None, ge=1)
@@ -364,6 +394,8 @@ class TimelapseScheduleUpdate(BaseModel):
     preset: str | None = None
     cron_expression: str | None = None
     fps: int | None = Field(default=None, ge=1, le=120)
+    fps_mode: Literal["fixed", "target_duration"] | None = None
+    render_target_seconds: int | None = Field(default=None, ge=1)
     format: str | None = None
     deflicker: str | None = None
     lookback_hours: int | None = Field(default=None, ge=1)
@@ -400,6 +432,8 @@ class TimelapseScheduleRead(BaseModel):
     preset: str | None
     cron_expression: str
     fps: int
+    fps_mode: str
+    render_target_seconds: int
     format: str
     deflicker: str
     lookback_hours: int | None
@@ -574,6 +608,19 @@ class CaptureActivityPoint(BaseModel):
     profile_id: int
     date: str
     count: int
+
+
+class CaptureCountRead(BaseModel):
+    """How many frames a plan holds, optionally within a range.
+
+    Feeds two things the UI could not previously answer: how long a render
+    will actually be, and roughly how large one frame is for this plan (the
+    only honest basis for a disk estimate).
+    """
+
+    count: int
+    total_bytes: int
+    avg_bytes: int | None = None
 
 
 class ProfileStoragePoint(BaseModel):

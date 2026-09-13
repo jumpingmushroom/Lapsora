@@ -303,7 +303,7 @@
 				}}
 				class="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-300"
 			>
-				<option value="">All Profiles</option>
+				<option value="">All capture plans</option>
 				{#each profiles as p}
 					<option value={p.id} selected={selectedProfileId === p.id}>{profileName(p.id)}</option>
 				{/each}
@@ -333,7 +333,7 @@
 
 			<div class="rounded-lg border border-gray-800 bg-gray-900 p-4">
 				<div class="mb-3 flex items-center justify-between">
-					<h2 class="text-lg font-semibold text-white">Storage by Profile</h2>
+					<h2 class="text-lg font-semibold text-white">Storage by capture plan</h2>
 					<select
 						bind:value={storageDays}
 						class="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-sm text-gray-300"
@@ -408,7 +408,7 @@
 			{@const unhealthy = streams.filter(s => s.health_status === 'unhealthy').length}
 			{@const unknown = streams.filter(s => s.health_status !== 'healthy' && s.health_status !== 'unhealthy').length}
 			<div class="rounded-lg border border-gray-800 bg-gray-900 p-4">
-				<h2 class="mb-3 text-lg font-semibold text-white">Stream Health</h2>
+				<h2 class="mb-3 text-lg font-semibold text-white">Camera health</h2>
 				<div class="mb-4 flex items-center gap-4 text-sm">
 					<span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full bg-green-500"></span> {healthy} healthy</span>
 					<span class="flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full bg-red-500"></span> {unhealthy} unhealthy</span>
@@ -418,7 +418,7 @@
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="border-b border-gray-800 text-gray-400">
-								<th class="pb-2 pr-4">Stream</th>
+								<th class="pb-2 pr-4">Camera</th>
 								<th class="pb-2 pr-4">Status</th>
 								<th class="pb-2 pr-4">Failures</th>
 								<th class="pb-2 pr-4">Last Checked</th>

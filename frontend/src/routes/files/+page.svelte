@@ -233,7 +233,7 @@
 			}}
 			class="rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 		>
-			<option value="">Select a stream...</option>
+			<option value="">Select a camera…</option>
 			{#each streams as stream}
 				<option value={stream.id} selected={stream.id === selectedStreamId}>{stream.name}</option>
 			{/each}
@@ -260,10 +260,10 @@
 	{/if}
 
 	{#if loading}
-		<p class="text-gray-400">Loading streams...</p>
+		<p class="text-gray-400">Loading cameras...</p>
 	{:else if !selectedStreamId}
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
-			<p class="text-gray-400">Select a stream to browse its files.</p>
+			<p class="text-gray-400">Select a camera to browse its files.</p>
 		</div>
 	{:else if loadingMedia}
 		<p class="text-gray-400">Loading files...</p>
@@ -278,7 +278,7 @@
 			<h2 class="mb-4 text-xl font-semibold text-white">Snapshots</h2>
 			{#if captures.length === 0}
 				<div class="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
-					<p class="text-gray-400">No snapshots found for this stream.</p>
+					<p class="text-gray-400">No snapshots found for this camera.</p>
 				</div>
 			{:else}
 				<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -346,7 +346,7 @@
 			<h2 class="mb-4 text-xl font-semibold text-white">Videos</h2>
 			{#if timelapses.length === 0}
 				<div class="rounded-xl border border-gray-800 bg-gray-900 p-6 text-center">
-					<p class="text-gray-400">No timelapse videos found for this stream.</p>
+					<p class="text-gray-400">No timelapse videos found for this camera.</p>
 				</div>
 			{:else}
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -490,7 +490,7 @@
 		<div class="mx-4 w-full max-w-sm rounded-xl bg-gray-900 p-6 shadow-xl" onclick={(e) => e.stopPropagation()}>
 			<h3 class="mb-2 text-lg font-semibold text-white">Confirm Delete</h3>
 			<p class="mb-4 text-sm text-gray-400">
-				Are you sure you want to delete this {deleteTarget.type}? This cannot be undone.
+				Are you sure you want to delete this {deleteTarget.type === 'capture' ? 'snapshot' : 'video'}? This cannot be undone.
 			</p>
 			<div class="flex justify-end gap-3">
 				<button

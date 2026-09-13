@@ -357,8 +357,8 @@
 
 	const eventLabels: Record<string, string> = {
 		capture_failure: 'Capture failure',
-		stream_unhealthy: 'Stream unhealthy',
-		stream_recovered: 'Stream recovered',
+		stream_unhealthy: 'Camera unhealthy',
+		stream_recovered: 'Camera recovered',
 		timelapse_started: 'Timelapse started',
 		timelapse_complete: 'Timelapse complete',
 		timelapse_failure: 'Timelapse failure',
@@ -525,7 +525,7 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<h2 class="mb-4 text-xl font-semibold text-white">Health Monitoring</h2>
 				<p class="mb-4 text-sm text-gray-400">
-					Configure how often streams are checked and when they're marked as unhealthy.
+					Configure how often cameras are checked and when they're marked as unhealthy.
 				</p>
 
 				<div class="mb-4 grid grid-cols-3 gap-4">
@@ -620,7 +620,7 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<h2 class="mb-4 text-xl font-semibold text-white">Branding</h2>
 				<p class="mb-4 text-sm text-gray-400">
-					Upload a logo to watermark onto generated timelapses. PNG with transparency works best. Enable it per-timelapse in the generate dialog or a schedule, where you pick the corner, size, and opacity.
+					Upload a logo to watermark onto generated timelapses. PNG with transparency works best. Enable it per-render in the render dialog or a schedule, where you pick the corner, size, and opacity.
 				</p>
 
 				<div class="flex items-center gap-4">
@@ -658,7 +658,7 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<h2 class="mb-4 text-xl font-semibold text-white">Capture Gap Alerting</h2>
 				<p class="mb-4 text-sm text-gray-400">
-					Alert when no frame is captured within 3× a profile's configured interval. Checks run every 60 minutes.
+					Alert when no frame is captured within 3× a capture plan's configured interval. Checks run every 60 minutes.
 				</p>
 				<label class="mb-4 flex items-center gap-3">
 					<input
@@ -681,7 +681,7 @@
 			<section class="rounded-xl border border-gray-800 bg-gray-900 p-6">
 				<h2 class="mb-4 text-xl font-semibold text-white">Data Cleanup</h2>
 				<p class="mb-4 text-sm text-gray-400">
-					Configure per-profile cleanup schedules to automatically remove old captures and timelapses.
+					Configure per-plan cleanup schedules to automatically remove old captures and timelapses.
 				</p>
 				<CleanupScheduleManager />
 			</section>

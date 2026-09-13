@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { localToUtcNaive } from '$lib/utils';
-
+	import { renderOptionsForProfile, renderOptionsPayload } from '$lib/renderOptions';
+	import type { Profile, RenderOptionsValue } from '$lib/types';
+	import RenderOptions from './RenderOptions.svelte';
 
 	interface Props {
 		profileOptions: { id: number; label: string; resolution_width: number | null; resolution_height: number | null }[];
@@ -102,85 +104,55 @@
 		}
 		return computePresetRange(selectedPreset)?.end ?? '';
 	});
-	let fps = $state(24);
-	let format = $state('mkv');
-	let deflicker = $state('medium');
-	let motion_blur = $state('off');
-	let timestamp_overlay = $state(false);
-	let weather_overlay = $state(false);
-	let weather_position = $state('bottom-right');
-	let ha_overlay = $state(false);
-	let ha_overlay_position = $state('top-left');
-	let weather_font_size = $state(24);
-	let weather_unit = $state('C');
-	let weather_style = $state('glass');
-	let heatmap_overlay = $state(false);
-	let heatmap_mode = $state('cumulative');
-	let heatmap_colormap = $state('jet');
-	let heatmap_threshold = $state(10);
-	let logo_overlay = $state(false);
-	let logo_position = $state('bottom-right');
-	let logo_size = $state(12); // percent of frame width
-	let logo_opacity = $state(80); // percent
-	let logoExists = $state(false);
-	$effect(() => {
-		if (open) {
-			api.getLogo().then((r) => (logoExists = r.exists)).catch(() => {});
-		}
-	});
-	let codec = $state('auto');
-	let resolution_preset = $state('original');
-	let output_width = $state<number | null>(null);
-	let output_height = $state<number | null>(null);
-	let quality_preset = $state('medium');
+
+	let options = $state<RenderOptionsValue>(renderOptionsForProfile(undefined));
 	let loading = $state(false);
 	let error = $state('');
-	let nvencAvailable = $state(false);
 
+	// The actual number of frames in the chosen range, so an empty range says so
+	// before you start a render rather than producing a two-frame video.
+	let frameCount = $state<number | null>(null);
 	$effect(() => {
-		api.getSystemInfo().then((info) => {
-			nvencAvailable = info.nvenc_available;
-		}).catch(() => {});
+		const id = selectedProfileId;
+		const start = period_start;
+		const end = period_end;
+		if (!id) {
+			frameCount = null;
+			return;
+		}
+		let cancelled = false;
+		// Debounced: the custom date inputs fire on every keystroke.
+		const timer = setTimeout(() => {
+			api.countCaptures(id, start || undefined, end || undefined)
+				.then((r) => { if (!cancelled) frameCount = r.count; })
+				.catch(() => { if (!cancelled) frameCount = null; });
+		}, 250);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
 	});
 
 	let selectedProfile = $derived(profileOptions.find(p => p.id === selectedProfileId));
 	let maxWidth = $derived(selectedProfile?.resolution_width ?? Infinity);
 	let maxHeight = $derived(selectedProfile?.resolution_height ?? Infinity);
 
-	// Reset resolution when profile changes and current preset exceeds source
+	// Seed the render settings from the chosen plan's own defaults, which it
+	// carries from the plan preset it was created from. Re-seeded when the plan
+	// changes, since a different plan can encode a different intent.
+	let seededFor = $state<number | null>(null);
 	$effect(() => {
-		selectedProfileId;
-		const dims = RESOLUTION_PRESETS[resolution_preset];
-		if (dims && (dims[0] > maxWidth || dims[1] > maxHeight)) {
-			resolution_preset = 'original';
-			output_width = null;
-			output_height = null;
-		}
+		const id = selectedProfileId;
+		if (!id || seededFor === id) return;
+		seededFor = id;
+		api.getProfile(id)
+			.then((profile: Profile) => {
+				if (selectedProfileId === id) options = renderOptionsForProfile(profile);
+			})
+			.catch(() => {
+				if (selectedProfileId === id) options = renderOptionsForProfile(undefined);
+			});
 	});
-
-	const RESOLUTION_PRESETS: Record<string, [number, number] | null> = {
-		original: null,
-		'720p': [1280, 720],
-		'1080p': [1920, 1080],
-		'4k': [3840, 2160],
-		'8k': [7680, 4320]
-	};
-
-	function onResolutionChange() {
-		if (resolution_preset === 'custom') {
-			output_width = null;
-			output_height = null;
-		} else {
-			const dims = RESOLUTION_PRESETS[resolution_preset];
-			if (dims) {
-				output_width = dims[0];
-				output_height = dims[1];
-			} else {
-				output_width = null;
-				output_height = null;
-			}
-		}
-	}
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
@@ -205,34 +177,11 @@
 			await api.generateTimelapse(selectedProfileId, {
 				period_start: period_start || undefined,
 				period_end: period_end || undefined,
-				fps,
-				format,
-				deflicker,
-			motion_blur: format !== 'gif' ? motion_blur : undefined,
-				timestamp_overlay,
-			weather_overlay,
-			weather_position: weather_overlay ? weather_position : undefined,
-			weather_font_size: weather_overlay ? weather_font_size : undefined,
-			weather_unit: weather_overlay ? weather_unit : undefined,
-			weather_style: weather_overlay ? weather_style : undefined,
-			ha_overlay,
-			ha_overlay_position: ha_overlay ? ha_overlay_position : undefined,
-			heatmap_overlay,
-			heatmap_mode: heatmap_overlay ? heatmap_mode : undefined,
-			heatmap_colormap: heatmap_overlay ? heatmap_colormap : undefined,
-		heatmap_threshold: heatmap_overlay ? heatmap_threshold : undefined,
-			logo_overlay,
-			logo_position: logo_overlay ? logo_position : undefined,
-			logo_size: logo_overlay ? logo_size / 100 : undefined,
-			logo_opacity: logo_overlay ? logo_opacity / 100 : undefined,
-			codec: (format === 'mp4' || format === 'mkv') ? codec : undefined,
-			output_width: output_width || undefined,
-			output_height: output_height || undefined,
-			quality_preset: format !== 'gif' ? quality_preset : undefined
+				...renderOptionsPayload(options)
 			});
 			onclose();
 		} catch (err) {
-			error = err instanceof Error ? err.message : 'Generation failed';
+			error = err instanceof Error ? err.message : 'Render failed';
 		} finally {
 			loading = false;
 		}
@@ -243,6 +192,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && open) onclose(); }} />
+
 {#if open}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div
@@ -251,432 +202,87 @@
 		onkeydown={() => {}}
 	>
 		<div class="flex max-h-[90vh] w-full max-w-md flex-col rounded-lg bg-gray-800 p-6">
-			<h2 class="mb-4 shrink-0 text-xl font-semibold text-gray-100">Generate Timelapse</h2>
+			<h2 class="mb-4 shrink-0 text-xl font-semibold text-gray-100">Render timelapse</h2>
 
 			{#if error}
 				<p class="mb-3 rounded-md bg-red-900/50 px-3 py-2 text-sm text-red-300">{error}</p>
 			{/if}
 
 			<form onsubmit={handleSubmit} class="space-y-4 overflow-y-auto">
-				<div>
-					<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Profile</label>
-					<select
-						id="gen-profile"
-						bind:value={selectedProfileId}
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						{#each profileOptions as opt}
-							<option value={opt.id}>{opt.label}</option>
-						{/each}
-					</select>
-				</div>
-
-				<div>
-					<label class="mb-1.5 block text-sm font-medium text-gray-300">Time Range</label>
-					<div class="flex flex-wrap gap-1.5">
-						{#each PRESETS as preset}
-							<button
-								type="button"
-								onclick={() => { selectedPreset = preset.key; }}
-								class="rounded-full px-3 py-1 text-xs font-medium transition-colors {
-									selectedPreset === preset.key
-										? 'bg-blue-600 text-white'
-										: 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-								}"
+				<RenderOptions bind:value={options} {maxWidth} {maxHeight} idPrefix="gen" {frameCount}>
+					{#snippet basics()}
+						<div>
+							<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
+							<select
+								id="gen-profile"
+								bind:value={selectedProfileId}
+								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 							>
-								{preset.label}
-							</button>
-						{/each}
-					</div>
-				</div>
+								{#each profileOptions as opt}
+									<option value={opt.id}>{opt.label}</option>
+								{/each}
+							</select>
+						</div>
 
-				{#if selectedPreset === 'custom'}
-					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
 						<div>
-							<label for="gen-start-date" class="mb-1 block text-sm font-medium text-gray-300">Start</label>
-							<div class="flex gap-2">
-								<input
-									id="gen-start-date"
-									type="date"
-									bind:value={customStartDate}
-									class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-								<input
-									id="gen-start-time"
-									type="text"
-									bind:value={customStartTime}
-									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
+							<span class="mb-1.5 block text-sm font-medium text-gray-300">Time range</span>
+							<div class="flex flex-wrap gap-1.5">
+								{#each PRESETS as preset}
+									<button
+										type="button"
+										onclick={() => { selectedPreset = preset.key; }}
+										class="rounded-full px-3 py-1 text-xs font-medium transition-colors {
+											selectedPreset === preset.key
+												? 'bg-blue-600 text-white'
+												: 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+										}"
+									>
+										{preset.label}
+									</button>
+								{/each}
 							</div>
 						</div>
-						<div>
-							<label for="gen-end-date" class="mb-1 block text-sm font-medium text-gray-300">End</label>
-							<div class="flex gap-2">
-								<input
-									id="gen-end-date"
-									type="date"
-									bind:value={customEndDate}
-									class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-								<input
-									id="gen-end-time"
-									type="text"
-									bind:value={customEndTime}
-									class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
+
+						{#if selectedPreset === 'custom'}
+							<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
+								<div>
+									<label for="gen-start-date" class="mb-1 block text-sm font-medium text-gray-300">Start</label>
+									<div class="flex gap-2">
+										<input
+											id="gen-start-date"
+											type="date"
+											bind:value={customStartDate}
+											class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										/>
+										<input
+											id="gen-start-time"
+											type="text"
+											bind:value={customStartTime}
+											class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										/>
+									</div>
+								</div>
+								<div>
+									<label for="gen-end-date" class="mb-1 block text-sm font-medium text-gray-300">End</label>
+									<div class="flex gap-2">
+										<input
+											id="gen-end-date"
+											type="date"
+											bind:value={customEndDate}
+											class="flex-1 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										/>
+										<input
+											id="gen-end-time"
+											type="text"
+											bind:value={customEndTime}
+											class="w-28 rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+										/>
+									</div>
+								</div>
 							</div>
-						</div>
-					</div>
-				{/if}
-
-				<div>
-					<label for="gen-fps" class="mb-1 block text-sm font-medium text-gray-300">FPS</label>
-					<input
-						id="gen-fps"
-						type="number"
-						bind:value={fps}
-						min="1"
-						max="60"
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					/>
-				</div>
-
-				<div>
-					<label for="gen-format" class="mb-1 block text-sm font-medium text-gray-300">Format</label>
-					<select
-						id="gen-format"
-						bind:value={format}
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						<option value="mp4">MP4</option>
-						<option value="webm">WebM</option>
-						<option value="gif">GIF</option>
-						<option value="mkv">MKV</option>
-					</select>
-				</div>
-
-				{#if format === 'mp4' || format === 'mkv'}
-					<div>
-						<label for="gen-codec" class="mb-1 flex items-center gap-2 text-sm font-medium text-gray-300">
-						Codec
-						{#if nvencAvailable}
-							<span class="rounded bg-green-900/50 px-1.5 py-0.5 text-xs font-semibold text-green-300">GPU</span>
 						{/if}
-					</label>
-						<select
-							id="gen-codec"
-							bind:value={codec}
-							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="auto">Auto</option>
-							<option value="h264">H.264</option>
-							<option value="h265">H.265 (HEVC)</option>
-						</select>
-					</div>
-				{/if}
-
-				{#if format !== 'gif'}
-					<div>
-						<label for="gen-resolution" class="mb-1 block text-sm font-medium text-gray-300">Output Resolution</label>
-						<select
-							id="gen-resolution"
-							bind:value={resolution_preset}
-							onchange={onResolutionChange}
-							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="original">Original</option>
-							{#each Object.entries(RESOLUTION_PRESETS) as [key, dims]}
-								{#if dims && dims[0] <= maxWidth && dims[1] <= maxHeight}
-									<option value={key}>{key}</option>
-								{/if}
-							{/each}
-							<option value="custom">Custom</option>
-						</select>
-					</div>
-
-					{#if resolution_preset === 'custom'}
-						<div class="grid grid-cols-2 gap-3">
-							<div>
-								<label for="gen-out-w" class="mb-1 block text-sm font-medium text-gray-300">Width</label>
-								<input
-									id="gen-out-w"
-									type="number"
-									bind:value={output_width}
-									min="1"
-									max={maxWidth === Infinity ? undefined : maxWidth}
-									placeholder="Width"
-									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-							</div>
-							<div>
-								<label for="gen-out-h" class="mb-1 block text-sm font-medium text-gray-300">Height</label>
-								<input
-									id="gen-out-h"
-									type="number"
-									bind:value={output_height}
-									min="1"
-									max={maxHeight === Infinity ? undefined : maxHeight}
-									placeholder="Height"
-									class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-								/>
-							</div>
-						</div>
-					{/if}
-
-					<div>
-						<label for="gen-quality" class="mb-1 block text-sm font-medium text-gray-300">Quality</label>
-						<select
-							id="gen-quality"
-							bind:value={quality_preset}
-							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="low">Low</option>
-							<option value="medium">Medium</option>
-							<option value="high">High</option>
-							<option value="lossless">Lossless</option>
-						</select>
-					</div>
-				{/if}
-
-				<div>
-					<label for="gen-deflicker" class="mb-1 block text-sm font-medium text-gray-300">Deflicker</label>
-					<select
-						id="gen-deflicker"
-						bind:value={deflicker}
-						class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-					>
-						<option value="off">Off</option>
-						<option value="light">Light</option>
-						<option value="medium">Medium</option>
-						<option value="heavy">Heavy</option>
-					</select>
-				</div>
-
-				{#if format !== 'gif'}
-					<div>
-						<label for="gen-motion-blur" class="mb-1 block text-sm font-medium text-gray-300">Motion Blur</label>
-						<select
-							id="gen-motion-blur"
-							bind:value={motion_blur}
-							class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						>
-							<option value="off">Off</option>
-							<option value="low">Low</option>
-							<option value="medium">Medium</option>
-							<option value="high">High</option>
-						</select>
-					</div>
-				{/if}
-
-				<div class="flex items-center gap-3">
-					<input
-						id="gen-overlay"
-						type="checkbox"
-						bind:checked={timestamp_overlay}
-						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-					/>
-					<label for="gen-overlay" class="text-sm font-medium text-gray-300">Timestamp overlay</label>
-				</div>
-
-				<div class="flex items-center gap-3">
-					<input
-						id="gen-weather"
-						type="checkbox"
-						bind:checked={weather_overlay}
-						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-					/>
-					<label for="gen-weather" class="text-sm font-medium text-gray-300">Weather overlay</label>
-				</div>
-
-				{#if weather_overlay}
-					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
-						<div>
-							<label for="gen-weather-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-							<select
-								id="gen-weather-pos"
-								bind:value={weather_position}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="top-left">Top Left</option>
-								<option value="top-right">Top Right</option>
-								<option value="bottom-left">Bottom Left</option>
-								<option value="bottom-right">Bottom Right</option>
-							</select>
-						</div>
-						<div>
-							<label for="gen-weather-style" class="mb-1 block text-sm font-medium text-gray-300">Style</label>
-							<select
-								id="gen-weather-style"
-								bind:value={weather_style}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="glass">Glass (default)</option>
-								<option value="badge">Badge</option>
-								<option value="strip">Strip</option>
-								<option value="minimal">Minimal</option>
-							</select>
-						</div>
-						<div>
-							<label for="gen-weather-size" class="mb-1 block text-sm font-medium text-gray-300">Font size</label>
-							<input
-								id="gen-weather-size"
-								type="number"
-								bind:value={weather_font_size}
-								min="10"
-								max="72"
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							/>
-						</div>
-						<div>
-							<label class="mb-1 block text-sm font-medium text-gray-300">Unit</label>
-							<div class="flex gap-4">
-								<label class="flex items-center gap-2 text-sm text-gray-300">
-									<input type="radio" bind:group={weather_unit} value="C" class="text-blue-500" />
-									°C
-								</label>
-								<label class="flex items-center gap-2 text-sm text-gray-300">
-									<input type="radio" bind:group={weather_unit} value="F" class="text-blue-500" />
-									°F
-								</label>
-							</div>
-						</div>
-					</div>
-				{/if}
-
-				<div class="flex items-center gap-3">
-					<input
-						id="gen-ha-overlay"
-						type="checkbox"
-						bind:checked={ha_overlay}
-						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-					/>
-					<label for="gen-ha-overlay" class="text-sm font-medium text-gray-300">Home Assistant sensor overlay</label>
-				</div>
-
-				{#if ha_overlay}
-					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
-						<div>
-							<label for="gen-ha-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-							<select
-								id="gen-ha-pos"
-								bind:value={ha_overlay_position}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="top-left">Top Left</option>
-								<option value="top-right">Top Right</option>
-								<option value="bottom-left">Bottom Left</option>
-								<option value="bottom-right">Bottom Right</option>
-							</select>
-						</div>
-					</div>
-				{/if}
-
-				<div class="flex items-center gap-3">
-					<input
-						id="gen-heatmap"
-						type="checkbox"
-						bind:checked={heatmap_overlay}
-						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-					/>
-					<label for="gen-heatmap" class="text-sm font-medium text-gray-300">Activity heatmap overlay</label>
-				</div>
-
-				{#if heatmap_overlay}
-					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
-						<div>
-							<label for="gen-heatmap-mode" class="mb-1 block text-sm font-medium text-gray-300">Mode</label>
-							<select
-								id="gen-heatmap-mode"
-								bind:value={heatmap_mode}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="cumulative">Cumulative</option>
-								<option value="sliding">Sliding window</option>
-							</select>
-						</div>
-						<div>
-							<label for="gen-heatmap-threshold" class="mb-1 block text-sm font-medium text-gray-300">Threshold: {heatmap_threshold}</label>
-							<input
-								id="gen-heatmap-threshold"
-								type="range"
-								bind:value={heatmap_threshold}
-								min="0"
-								max="50"
-								step="1"
-								class="w-full accent-blue-500"
-							/>
-							<p class="mt-0.5 text-xs text-gray-500">Filters noise — 0 = most sensitive, 50 = least sensitive</p>
-						</div>
-						<div>
-						<label for="gen-heatmap-colormap" class="mb-1 block text-sm font-medium text-gray-300">Colormap</label>
-							<select
-								id="gen-heatmap-colormap"
-								bind:value={heatmap_colormap}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="jet">Jet</option>
-								<option value="inferno">Inferno</option>
-								<option value="viridis">Viridis</option>
-								<option value="turbo">Turbo</option>
-							</select>
-						</div>
-					</div>
-				{/if}
-
-				<div class="flex items-center gap-3">
-					<input
-						id="gen-logo"
-						type="checkbox"
-						bind:checked={logo_overlay}
-						class="h-4 w-4 rounded border-gray-600 bg-gray-900 text-blue-500 focus:ring-blue-500"
-					/>
-					<label for="gen-logo" class="text-sm font-medium text-gray-300">Logo / watermark overlay</label>
-				</div>
-
-				{#if logo_overlay}
-					<div class="space-y-3 rounded-md border border-gray-700 bg-gray-900 p-3">
-						{#if !logoExists}
-							<p class="text-xs text-amber-400">No logo uploaded yet — add one in Settings → Branding.</p>
-						{/if}
-						<div>
-							<label for="gen-logo-pos" class="mb-1 block text-sm font-medium text-gray-300">Position</label>
-							<select
-								id="gen-logo-pos"
-								bind:value={logo_position}
-								class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-							>
-								<option value="top-left">Top Left</option>
-								<option value="top-right">Top Right</option>
-								<option value="bottom-left">Bottom Left</option>
-								<option value="bottom-right">Bottom Right</option>
-							</select>
-						</div>
-						<div>
-							<label for="gen-logo-size" class="mb-1 block text-sm font-medium text-gray-300">Size: {logo_size}% of width</label>
-							<input
-								id="gen-logo-size"
-								type="range"
-								bind:value={logo_size}
-								min="2"
-								max="50"
-								step="1"
-								class="w-full accent-blue-500"
-							/>
-						</div>
-						<div>
-							<label for="gen-logo-opacity" class="mb-1 block text-sm font-medium text-gray-300">Opacity: {logo_opacity}%</label>
-							<input
-								id="gen-logo-opacity"
-								type="range"
-								bind:value={logo_opacity}
-								min="10"
-								max="100"
-								step="1"
-								class="w-full accent-blue-500"
-							/>
-						</div>
-					</div>
-				{/if}
+					{/snippet}
+				</RenderOptions>
 
 				<div class="flex gap-3">
 					<button
@@ -691,7 +297,7 @@
 						disabled={loading}
 						class="flex-1 rounded-md bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
 					>
-						{loading ? 'Generating...' : 'Generate'}
+						{loading ? 'Rendering...' : 'Render'}
 					</button>
 				</div>
 			</form>

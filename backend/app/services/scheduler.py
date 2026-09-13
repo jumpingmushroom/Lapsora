@@ -143,6 +143,8 @@ def add_timelapse_schedule_job(schedule: TimelapseSchedule) -> None:
                 period_start=start,
                 period_end=end,
                 fps=sched.fps,
+                fps_mode=sched.fps_mode,
+                render_target_seconds=sched.render_target_seconds,
                 format=sched.format,
                 deflicker=sched.deflicker,
                 timestamp_overlay=sched.timestamp_overlay,

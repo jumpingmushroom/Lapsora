@@ -177,7 +177,7 @@
 			await api.deleteStream(id);
 			goto('/streams');
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to delete stream');
+			alert(err instanceof Error ? err.message : 'Failed to delete camera');
 			deletingStream = false;
 		}
 	}
@@ -189,7 +189,7 @@
 			profiles = await api.getStreamProfiles(id);
 			showProfileForm = false;
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to create profile');
+			alert(err instanceof Error ? err.message : 'Failed to create capture plan');
 		} finally {
 			profileLoading = false;
 		}
@@ -215,7 +215,7 @@
 			profiles = await api.getStreamProfiles(id);
 			showTemplatePicker = false;
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to apply template');
+			alert(err instanceof Error ? err.message : 'Failed to apply preset');
 		} finally {
 			profileLoading = false;
 		}
@@ -229,7 +229,7 @@
 			profiles = await api.getStreamProfiles(id);
 			editingProfile = null;
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to update profile');
+			alert(err instanceof Error ? err.message : 'Failed to update capture plan');
 		} finally {
 			profileLoading = false;
 		}
@@ -248,7 +248,7 @@
 				openTemplatePicker();
 			}
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to delete profile');
+			alert(err instanceof Error ? err.message : 'Failed to delete capture plan');
 		} finally {
 			profileLoading = false;
 		}
@@ -277,7 +277,7 @@
 			});
 			profiles = await api.getStreamProfiles(id);
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to duplicate profile');
+			alert(err instanceof Error ? err.message : 'Failed to duplicate capture plan');
 		} finally {
 			profileLoading = false;
 		}
@@ -292,15 +292,15 @@
 			}
 			profiles = await api.getStreamProfiles(id);
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to toggle profile');
+			alert(err instanceof Error ? err.message : 'Failed to toggle capture plan');
 		}
 	}
 </script>
 
-<svelte:head><title>{stream?.name ?? 'Stream'} - Lapsora</title></svelte:head>
+<svelte:head><title>{stream?.name ?? 'Camera'} - Lapsora</title></svelte:head>
 
 {#if loading}
-	<p class="text-gray-400">Loading stream...</p>
+	<p class="text-gray-400">Loading camera...</p>
 {:else if error}
 	<div class="rounded-xl border border-red-800 bg-red-950/50 p-4">
 		<p class="text-sm text-red-400">{error}</p>
@@ -375,7 +375,7 @@
 							onload={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '1'; }}
 						/>
 					</div>
-					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 5 seconds</p>
+					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 15 seconds</p>
 				{/if}
 			</div>
 
@@ -455,7 +455,7 @@
 					{#if confirmDeleteStream}
 						<div class="flex items-center justify-between rounded-lg border border-red-800 bg-red-950/50 p-3">
 							<p class="text-sm text-gray-300">
-								Delete <strong class="text-white">{stream.name}</strong>? All profiles, captures, timelapses and schedules are permanently removed.
+								Delete <strong class="text-white">{stream.name}</strong>? All capture plans, captures, timelapses and schedules are permanently removed.
 							</p>
 							<div class="flex shrink-0 gap-2">
 								<button onclick={() => { confirmDeleteStream = false; }} class="rounded px-3 py-1 text-xs font-medium text-gray-400 hover:text-gray-200">Cancel</button>
@@ -467,7 +467,7 @@
 							onclick={() => { confirmDeleteStream = true; }}
 							class="text-sm font-medium text-red-400 hover:text-red-300"
 						>
-							Delete stream
+							Delete camera
 						</button>
 					{/if}
 					<p class="mt-3 text-xs text-gray-600">
@@ -480,13 +480,13 @@
 		<!-- Profiles -->
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-100">Profiles</h2>
+				<h2 class="text-lg font-semibold text-gray-100">Capture plans</h2>
 				<div class="flex gap-2">
 					<button
 						onclick={openTemplatePicker}
 						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 					>
-						{showTemplatePicker ? 'Cancel' : 'From Template'}
+						{showTemplatePicker ? 'Cancel' : 'From preset'}
 					</button>
 					<button
 						onclick={() => { showProfileForm = !showProfileForm; showTemplatePicker = false; editingProfile = null; }}
@@ -536,7 +536,7 @@
 						{/each}
 					</div>
 					{#if filteredTemplates.length === 0}
-						<p class="text-sm text-gray-500">No templates available.</p>
+						<p class="text-sm text-gray-500">No presets available.</p>
 					{/if}
 				</div>
 			{/if}
@@ -544,7 +544,7 @@
 			{#if editingProfile}
 				<div class="mb-4 rounded-lg border border-blue-700 bg-gray-800 p-4">
 					<div class="mb-3 flex items-center justify-between">
-						<h3 class="text-sm font-semibold text-gray-200">Edit Profile</h3>
+						<h3 class="text-sm font-semibold text-gray-200">Edit capture plan</h3>
 						<button onclick={() => { editingProfile = null; }} class="text-xs text-gray-400 hover:text-gray-200">Cancel</button>
 					</div>
 					{#key editingProfile.id}
@@ -570,7 +570,7 @@
 			{/if}
 
 			{#if profiles.length === 0}
-				<p class="text-sm text-gray-500">No profiles yet. Add one to start capturing.</p>
+				<p class="text-sm text-gray-500">No capture plans yet. Add one to start capturing.</p>
 			{:else}
 				<div class="space-y-2">
 					{#each profiles as profile}
@@ -592,7 +592,7 @@
 									<span class="rounded bg-blue-900 px-1.5 py-0.5 text-xs font-medium text-blue-300" title={haSensorsOf(profile).map((s) => s.label).join(', ')}>HA</span>
 								{/if}
 								{#if profile.auto_disabled}
-									<span class="rounded bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-300" title="Automatically disabled due to stream health issues">Auto</span>
+									<span class="rounded bg-orange-900 px-1.5 py-0.5 text-xs font-medium text-orange-300" title="Automatically disabled due to camera health issues">Auto</span>
 								{/if}
 							</div>
 							<div class="flex items-center gap-2">

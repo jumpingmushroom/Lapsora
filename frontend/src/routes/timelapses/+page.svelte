@@ -101,6 +101,10 @@
 		loadPrintJobs();
 	});
 
+	$effect(() => {
+		loadProfileOptions().catch(() => {});
+	});
+
 	// Fetch active generations and queue on mount (survives page navigation)
 	$effect(() => {
 		api.getActiveGenerations().then((gens) => {
@@ -150,22 +154,31 @@
 			: timelapses
 	);
 
+	async function loadProfileOptions() {
+		// One streams call + one profiles call, counted client-side, instead of a
+		// per-camera profile fetch fan-out.
+		const [streams, profiles] = await Promise.all([api.getStreams(), api.getAllProfiles()]);
+		const cameraName = new Map(streams.map((s) => [s.id, s.name]));
+		allProfileOptions = profiles.map((p) => ({
+			id: p.id,
+			label: `${cameraName.get(p.stream_id) ?? 'Unknown camera'} — ${p.name}`,
+			resolution_width: p.resolution_width ?? null,
+			resolution_height: p.resolution_height ?? null
+		}));
+	}
+
+	/** Queue cards arrive with only a profile id; give them the plan's name. */
+	function planLabel(profileId: number): string {
+		return allProfileOptions.find((o) => o.id === profileId)?.label ?? `Plan #${profileId}`;
+	}
+
 	async function openGenerate() {
 		try {
-			const streams = await api.getStreams();
-			const options: { id: number; label: string; resolution_width: number | null; resolution_height: number | null }[] = [];
-			await Promise.all(
-				streams.map(async (s) => {
-					const profiles = await api.getStreamProfiles(s.id);
-					for (const p of profiles) {
-						options.push({ id: p.id, label: `${s.name} — ${p.name}`, resolution_width: p.resolution_width ?? null, resolution_height: p.resolution_height ?? null });
-					}
-				})
-			);
-			allProfileOptions = options;
+			// Refresh on open: a plan may have been added since page load.
+			await loadProfileOptions();
 			showGenerate = true;
 		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to load profiles');
+			alert(err instanceof Error ? err.message : 'Failed to load capture plans');
 		}
 	}
 
@@ -211,6 +224,16 @@
 
 <svelte:head><title>Timelapses - Lapsora</title></svelte:head>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		// Innermost first, so Escape peels one layer at a time.
+		if (printDeleteTarget) printDeleteTarget = null;
+		else if (deleteTarget) deleteTarget = null;
+		else if (selectedTimelapse) selectedTimelapse = null;
+	}}
+/>
+
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-3xl font-bold text-white">Timelapses</h1>
@@ -218,7 +241,7 @@
 			onclick={openGenerate}
 			class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500"
 		>
-			Generate
+			Render now
 		</button>
 	</div>
 
@@ -233,7 +256,7 @@
 					</svg>
 					Position {job.position} in queue
 					{#if job.profile_id}
-						<span class="text-yellow-600">· Profile {job.profile_id}</span>
+						<span class="text-yellow-600">· {planLabel(job.profile_id)}</span>
 					{/if}
 				</div>
 				<button
@@ -257,7 +280,7 @@
 						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 					</svg>
-					Generating timelapse{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
+					Rendering{gen.frame_count ? ` — ${gen.frame_count} frames` : ''}
 				</div>
 				<button
 					onclick={() => api.cancelGeneration(gen.generation_id).catch(() => {})}
@@ -302,7 +325,7 @@
 					<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
 					<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
 				</svg>
-				Generating timelapse...
+				Rendering timelapse...
 			</div>
 		</div>
 	{/if}
@@ -403,7 +426,7 @@
 	{:else if filteredTimelapses.length === 0}
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
 			<p class="text-gray-400">No timelapses found.</p>
-			<p class="mt-1 text-sm text-gray-500">Generate a timelapse from your captured frames.</p>
+			<p class="mt-1 text-sm text-gray-500">Render a timelapse from your captured frames.</p>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

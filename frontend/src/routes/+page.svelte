@@ -72,11 +72,11 @@
 
 	<div>
 		<div class="mb-4 flex items-center justify-between">
-			<h2 class="text-xl font-semibold text-gray-100">Streams</h2>
+			<h2 class="text-xl font-semibold text-gray-100">Cameras</h2>
 			<a href="/streams" class="text-sm text-blue-400 hover:text-blue-300">View all</a>
 		</div>
 		{#if streams.length === 0}
-			<p class="text-sm text-gray-500">No streams configured.</p>
+			<p class="text-sm text-gray-500">No cameras yet.</p>
 		{:else}
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 				{#each streams as stream}
@@ -92,7 +92,7 @@
 			<a href="/timelapses" class="text-sm text-blue-400 hover:text-blue-300">View all</a>
 		</div>
 		{#if timelapses.length === 0}
-			<p class="text-sm text-gray-500">No timelapses generated yet.</p>
+			<p class="text-sm text-gray-500">No timelapses rendered yet.</p>
 		{:else}
 			<div class="space-y-2">
 				{#each timelapses as tl}
