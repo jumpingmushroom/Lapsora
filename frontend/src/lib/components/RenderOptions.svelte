@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import type { RenderOptionsValue } from '$lib/types';
+	import { renderEstimate, formatCount, formatRenderLength } from '$lib/estimates';
 
 	interface Props {
 		/** Bound render settings, in wire format. */
@@ -12,6 +13,10 @@
 		idPrefix: string;
 		/** Rendered inside Basics, above the length controls (e.g. a time range). */
 		basics?: import('svelte').Snippet;
+		/** Frames this render will consume. null hides the length preview. */
+		frameCount?: number | null;
+		/** True when frameCount is derived rather than counted. */
+		frameCountApproximate?: boolean;
 	}
 
 	let {
@@ -19,8 +24,16 @@
 		maxWidth = Infinity,
 		maxHeight = Infinity,
 		idPrefix,
-		basics
+		basics,
+		frameCount = null,
+		frameCountApproximate = false
 	}: Props = $props();
+
+	let estimate = $derived(
+		frameCount === null
+			? null
+			: renderEstimate(frameCount, value.fps_mode, value.fps, value.render_target_seconds)
+	);
 
 	const RESOLUTION_PRESETS: Record<string, [number, number]> = {
 		'720p': [1280, 720],
@@ -137,7 +150,21 @@
 			{/if}
 		</div>
 
-		{#if value.fps_mode === 'target_duration'}
+		{#if estimate && frameCount !== null}
+			<p class="rounded-md border border-gray-700 bg-gray-900/60 px-3 py-2 text-xs text-gray-300">
+				{frameCountApproximate ? '~' : ''}<span class="font-semibold text-gray-100">{formatCount(frameCount)}</span>
+				frames →
+				<span class="font-semibold text-gray-100">{formatRenderLength(estimate.durationSeconds)}</span>
+				at {estimate.fps} fps
+				{#if frameCountApproximate}
+					<span class="text-gray-500">(estimated from the capture interval)</span>
+				{/if}
+			</p>
+		{:else if frameCount === 0}
+			<p class="rounded-md border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+				No frames in this range — there would be nothing to render.
+			</p>
+		{:else if value.fps_mode === 'target_duration'}
 			<p class="text-xs text-gray-500">
 				Frame rate is chosen when the render runs, so the result lands near
 				{value.render_target_seconds}s however many frames the range holds.

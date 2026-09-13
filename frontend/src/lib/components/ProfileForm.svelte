@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Profile, ProfileCreate, ProfileUpdate, HAEntity, HASensor } from '$lib/types';
 	import { api } from '$lib/api';
+	import CaptureEstimate from './CaptureEstimate.svelte';
 
 	interface Props {
 		profile?: Profile | null;
@@ -151,6 +152,18 @@ let sun_events = $state<string[]>(
 			min="1"
 			class="w-full rounded-md border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
 		/>
+		<div class="mt-2">
+			<CaptureEstimate
+				intervalSeconds={interval_seconds}
+				captureMode={capture_mode}
+				activeStart={active_start_time}
+				activeEnd={active_end_time}
+				sunEvents={sun_events}
+				resolutionWidth={resolution_width}
+				resolutionHeight={resolution_height}
+				profileId={profile?.id ?? null}
+			/>
+		</div>
 	</div>
 
 	<div>

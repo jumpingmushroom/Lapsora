@@ -610,6 +610,19 @@ class CaptureActivityPoint(BaseModel):
     count: int
 
 
+class CaptureCountRead(BaseModel):
+    """How many frames a plan holds, optionally within a range.
+
+    Feeds two things the UI could not previously answer: how long a render
+    will actually be, and roughly how large one frame is for this plan (the
+    only honest basis for a disk estimate).
+    """
+
+    count: int
+    total_bytes: int
+    avg_bytes: int | None = None
+
+
 class ProfileStoragePoint(BaseModel):
     profile_id: int
     date: str

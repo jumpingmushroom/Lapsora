@@ -3,6 +3,7 @@
 	import { api } from '$lib/api';
 	import { formatInterval, formatCronTime } from '$lib/utils';
 	import type { Go2rtcStreamInfo, ProfileTemplate, StreamTestResult } from '$lib/types';
+	import CaptureEstimate from './CaptureEstimate.svelte';
 
 	interface Props {
 		onclose: () => void;
@@ -103,6 +104,38 @@
 	let planComplete = $derived(
 		useCustomPlan ? planName.trim().length > 0 : selectedPresetId !== null
 	);
+
+	// The test frame doubles as the basis for step 2's storage estimate — it is
+	// the only real measurement available before the camera exists.
+	let sampleBytes = $derived.by(() => {
+		const b64 = testResult?.preview;
+		if (!b64) return null;
+		const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+		return Math.floor((b64.length * 3) / 4) - padding;
+	});
+
+	let sampleDims = $derived.by(() => {
+		const res = testResult?.details?.resolution;
+		if (typeof res !== 'string') return null;
+		const m = /^(\d+)x(\d+)$/.exec(res);
+		return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
+	});
+
+	let selectedPreset = $derived(presets.find((p) => p.id === selectedPresetId));
+
+	let planIntervalSeconds = $derived(
+		useCustomPlan ? planInterval : (selectedPreset?.interval_seconds ?? 0)
+	);
+	let planDims = $derived.by(() => {
+		if (useCustomPlan) {
+			const dims = RESOLUTIONS[planResolution].dims;
+			return dims ? { w: dims[0], h: dims[1] } : null;
+		}
+		if (selectedPreset?.resolution_width && selectedPreset?.resolution_height) {
+			return { w: selectedPreset.resolution_width, h: selectedPreset.resolution_height };
+		}
+		return null;
+	});
 
 	let categories = $derived([...new Set(presets.map((p) => p.category))].sort());
 	let visiblePresets = $derived(
@@ -501,6 +534,17 @@
 						<p class="text-xs text-gray-500">
 							HDR, IR-only capture, active hours and sensor overlays can be set on the camera once it exists.
 						</p>
+					{/if}
+
+					{#if planIntervalSeconds > 0}
+						<CaptureEstimate
+							intervalSeconds={planIntervalSeconds}
+							resolutionWidth={planDims?.w ?? null}
+							resolutionHeight={planDims?.h ?? null}
+							{sampleBytes}
+							sampleWidth={sampleDims?.w ?? null}
+							sampleHeight={sampleDims?.h ?? null}
+						/>
 					{/if}
 				</div>
 			{:else}

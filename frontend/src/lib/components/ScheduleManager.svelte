@@ -2,6 +2,7 @@
 	import { api } from '$lib/api';
 	import { formatDateTime, formatCronTime } from '$lib/utils';
 	import { defaultRenderOptions, renderOptionsFromSchedule } from '$lib/renderOptions';
+	import { activeSecondsPerDay, framesPerDay } from '$lib/estimates';
 	import type { TimelapseSchedule, Profile, Stream, RenderOptionsValue } from '$lib/types';
 	import RenderOptions from './RenderOptions.svelte';
 
@@ -29,6 +30,23 @@
 	let selectedFormProfile = $derived(profiles.find(p => p.id == formProfileId));
 	let formMaxWidth = $derived(selectedFormProfile?.resolution_width ?? Infinity);
 	let formMaxHeight = $derived(selectedFormProfile?.resolution_height ?? Infinity);
+
+	// A schedule has no fixed range, so the frame count is derived from the
+	// plan's interval and active hours over the lookback window. Marked
+	// approximate in the UI, because it assumes the camera never missed one.
+	let approxFrameCount = $derived.by(() => {
+		const plan = selectedFormProfile;
+		if (!plan || !formLookbackHours) return null;
+		const window = activeSecondsPerDay(
+			plan.capture_mode,
+			plan.active_start_time,
+			plan.active_end_time,
+			plan.sun_events ? plan.sun_events.split(',').filter(Boolean) : []
+		);
+		if (!window) return null;
+		const perDay = framesPerDay(window.seconds, plan.interval_seconds);
+		return Math.floor((perDay * formLookbackHours) / 24);
+	});
 
 	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
 
@@ -548,6 +566,8 @@
 						maxWidth={formMaxWidth}
 						maxHeight={formMaxHeight}
 						idPrefix="sched"
+						frameCount={approxFrameCount}
+						frameCountApproximate={true}
 					/>
 				{/if}
 			</div>

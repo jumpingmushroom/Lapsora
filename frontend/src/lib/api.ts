@@ -1,4 +1,4 @@
-import type { Stream, StreamCreate, StreamUpdate, StreamTestRequest, StreamTestResult, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity, PrusaLinkConfig, PrintJob } from './types';
+import type { CaptureCount, Stream, StreamCreate, StreamUpdate, StreamTestRequest, StreamTestResult, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity, PrusaLinkConfig, PrintJob } from './types';
 
 const BASE = '/api';
 
@@ -62,6 +62,13 @@ export const api = {
 
 	// Captures
 	getProfileCaptures: (profileId: number, limit = 50, offset = 0) => request<Capture[]>(`/profiles/${profileId}/captures?limit=${limit}&offset=${offset}`),
+	countCaptures: (profileId: number, start?: string, end?: string) => {
+		const qs = new URLSearchParams();
+		if (start) qs.set('start', start);
+		if (end) qs.set('end', end);
+		const suffix = qs.toString() ? `?${qs}` : '';
+		return request<CaptureCount>(`/profiles/${profileId}/captures/count${suffix}`);
+	},
 	getCaptures: (params?: { stream_id?: number; profile_id?: number; limit?: number; offset?: number }) => {
 		const sp = new URLSearchParams();
 		if (params?.stream_id !== undefined) sp.set('stream_id', String(params.stream_id));

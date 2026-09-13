@@ -391,6 +391,13 @@ export interface RenderOptionsValue {
 	logo_opacity: number;
 }
 
+export interface CaptureCount {
+	count: number;
+	total_bytes: number;
+	/** null when no capture in range recorded a size — means "no data", not zero. */
+	avg_bytes: number | null;
+}
+
 export interface TestResult {
 	success: boolean;
 	message: string;

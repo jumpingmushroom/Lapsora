@@ -109,6 +109,30 @@
 	let loading = $state(false);
 	let error = $state('');
 
+	// The actual number of frames in the chosen range, so an empty range says so
+	// before you start a render rather than producing a two-frame video.
+	let frameCount = $state<number | null>(null);
+	$effect(() => {
+		const id = selectedProfileId;
+		const start = period_start;
+		const end = period_end;
+		if (!id) {
+			frameCount = null;
+			return;
+		}
+		let cancelled = false;
+		// Debounced: the custom date inputs fire on every keystroke.
+		const timer = setTimeout(() => {
+			api.countCaptures(id, start || undefined, end || undefined)
+				.then((r) => { if (!cancelled) frameCount = r.count; })
+				.catch(() => { if (!cancelled) frameCount = null; });
+		}, 250);
+		return () => {
+			cancelled = true;
+			clearTimeout(timer);
+		};
+	});
+
 	let selectedProfile = $derived(profileOptions.find(p => p.id === selectedProfileId));
 	let maxWidth = $derived(selectedProfile?.resolution_width ?? Infinity);
 	let maxHeight = $derived(selectedProfile?.resolution_height ?? Infinity);
@@ -183,7 +207,7 @@
 			{/if}
 
 			<form onsubmit={handleSubmit} class="space-y-4 overflow-y-auto">
-				<RenderOptions bind:value={options} {maxWidth} {maxHeight} idPrefix="gen">
+				<RenderOptions bind:value={options} {maxWidth} {maxHeight} idPrefix="gen" {frameCount}>
 					{#snippet basics()}
 						<div>
 							<label for="gen-profile" class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>

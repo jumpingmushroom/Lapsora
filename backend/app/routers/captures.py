@@ -1,15 +1,17 @@
 """Capture management endpoints."""
 
 import os
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models import Capture, Profile
-from app.schemas import BulkDeleteRequest, CaptureRead
+from app.schemas import BulkDeleteRequest, CaptureCountRead, CaptureRead
 from app.services.files import safe_remove
 
 router = APIRouter(prefix="/api", tags=["captures"])
@@ -55,6 +57,40 @@ def list_captures(
         .offset(offset)
         .limit(limit)
         .all()
+    )
+
+
+@router.get(
+    "/profiles/{profile_id}/captures/count", response_model=CaptureCountRead
+)
+def count_captures(
+    profile_id: int,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    db: Session = Depends(get_db),
+):
+    """Count (and total the size of) a plan's frames, optionally in a range.
+
+    Cheap enough to call while a form is open: it aggregates in SQLite rather
+    than shipping rows. avg_bytes is None when no capture in range recorded a
+    size, so callers can tell "no data" from "zero bytes" and omit the estimate
+    rather than inventing one.
+    """
+    q = db.query(
+        func.count(Capture.id),
+        func.coalesce(func.sum(Capture.file_size), 0),
+        func.count(Capture.file_size),
+    ).filter(Capture.profile_id == profile_id)
+    if start is not None:
+        q = q.filter(Capture.captured_at >= start)
+    if end is not None:
+        q = q.filter(Capture.captured_at <= end)
+
+    count, total_bytes, sized_count = q.one()
+    return CaptureCountRead(
+        count=count,
+        total_bytes=total_bytes,
+        avg_bytes=round(total_bytes / sized_count) if sized_count else None,
     )
 
 
