@@ -146,6 +146,14 @@
 
 <svelte:head><title>Cameras - Lapsora</title></svelte:head>
 
+<svelte:window
+	onkeydown={(e) => {
+		if (e.key !== 'Escape') return;
+		if (deleteTarget) deleteTarget = null;
+		else if (showAddModal) showAddModal = false;
+	}}
+/>
+
 <div class="space-y-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-3xl font-bold text-white">Cameras</h1>

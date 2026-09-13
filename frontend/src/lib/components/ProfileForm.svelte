@@ -182,6 +182,7 @@ let sun_events = $state<string[]>(
 		</select>
 	</div>
 
+	{#if resolution_preset === 'custom'}
 	<div class="grid grid-cols-2 gap-4">
 		<div>
 			<label for="res-w" class="mb-1 block text-sm font-medium text-gray-300">Width</label>
@@ -204,6 +205,8 @@ let sun_events = $state<string[]>(
 			/>
 		</div>
 	</div>
+	<p class="-mt-2 text-xs text-gray-500">Leave both blank to capture at the camera's own resolution.</p>
+	{/if}
 
 	<div>
 		<label for="quality" class="mb-1 block text-sm font-medium text-gray-300">Quality: {quality}</label>

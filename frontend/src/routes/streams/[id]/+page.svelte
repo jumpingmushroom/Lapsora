@@ -375,7 +375,7 @@
 							onload={(e) => { (e.currentTarget as HTMLImageElement).style.opacity = '1'; }}
 						/>
 					</div>
-					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 5 seconds</p>
+					<p class="mt-2 text-xs text-gray-500">Auto-refreshes every 15 seconds</p>
 				{/if}
 			</div>
 

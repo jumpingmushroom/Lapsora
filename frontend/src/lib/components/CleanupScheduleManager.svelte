@@ -30,19 +30,15 @@
 		loading = true;
 		error = null;
 		try {
-			const [s, fetchedStreams] = await Promise.all([
+			// One profiles call rather than a per-camera fan-out, matching the
+			// pattern already used on the dashboard and cameras pages.
+			const [s, fetchedStreams, allProfiles] = await Promise.all([
 				api.getCleanupSchedules(),
-				api.getStreams()
+				api.getStreams(),
+				api.getAllProfiles()
 			]);
 			schedules = s;
 			streams = fetchedStreams;
-			const allProfiles: Profile[] = [];
-			await Promise.all(
-				fetchedStreams.map(async (st) => {
-					const p = await api.getStreamProfiles(st.id);
-					allProfiles.push(...p);
-				})
-			);
 			profiles = allProfiles;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Failed to load';
@@ -178,6 +174,8 @@
 		return s ? `${s.name} — ${p.name}` : p.name;
 	}
 </script>
+
+<svelte:window onkeydown={(e) => { if (e.key === 'Escape' && showForm) showForm = false; }} />
 
 <div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 	<div class="mb-4 flex items-center justify-between">
