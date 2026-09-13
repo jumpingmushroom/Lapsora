@@ -49,6 +49,25 @@ class StreamTestResult(BaseModel):
     preview: str | None = None
 
 
+class DiagnosticCheck(BaseModel):
+    key: str
+    state: str  # ok | warn | fail | idle
+    label: str
+    detail: str = ""
+
+
+class StreamDiagnostics(BaseModel):
+    """The capture chain for one camera, worst link first.
+
+    `summary` is the sentence the camera page leads with: the first thing
+    actually stopping this camera, or confirmation that it is working.
+    """
+
+    status: str  # ok | idle | fail
+    summary: str
+    checks: list[DiagnosticCheck]
+
+
 class StreamUpdate(BaseModel):
     name: str | None = None
     url: str | None = None

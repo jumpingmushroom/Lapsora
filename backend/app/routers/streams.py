@@ -13,12 +13,13 @@ from app.database import get_db
 from app.models import Stream
 from app.schemas import (
     StreamCreate,
+    StreamDiagnostics,
     StreamRead,
     StreamTestRequest,
     StreamTestResult,
     StreamUpdate,
 )
-from app.services import go2rtc, providers
+from app.services import diagnostics, go2rtc, providers
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +250,15 @@ async def ir_test_stream(stream_id: int, db: Session = Depends(get_db)):
         "chroma": round(chroma, 1),
         "preview": base64.b64encode(jpeg_bytes).decode("ascii"),
     }
+
+
+@router.get("/{stream_id}/diagnostics", response_model=StreamDiagnostics)
+def get_stream_diagnostics(stream_id: int, db: Session = Depends(get_db)):
+    """Why this camera is or isn't capturing, in one sentence plus the chain."""
+    stream = db.get(Stream, stream_id)
+    if not stream:
+        raise HTTPException(404, "Stream not found")
+    return diagnostics.build_diagnostics(stream, db)
 
 
 @router.get("/{stream_id}/live-url")

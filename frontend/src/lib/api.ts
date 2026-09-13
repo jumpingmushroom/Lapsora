@@ -1,4 +1,4 @@
-import type { CaptureCount, Stream, StreamCreate, StreamUpdate, StreamTestRequest, StreamTestResult, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity, PrusaLinkConfig, PrintJob } from './types';
+import type { CaptureCount, StreamDiagnostics, Stream, StreamCreate, StreamUpdate, StreamTestRequest, StreamTestResult, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, ProfileTemplateCreate, Capture, Timelapse, TimelapseGenerate, TimelapseSchedule, TimelapseScheduleCreate, TimelapseScheduleUpdate, CleanupSchedule, CleanupScheduleCreate, CleanupScheduleUpdate, TestResult, StorageStats, Notification, NotificationURL, HealthConfig, NotificationEventsConfig, LocationConfig, CaptureGapConfig, TimeFormatConfig, StatsSummary, StorageTrendPoint, CaptureActivityPoint, ProfileStoragePoint, Go2rtcConfig, Go2rtcStreamInfo, TimelapseSummary, HomeAssistantConfig, HAEntity, PrusaLinkConfig, PrintJob } from './types';
 
 const BASE = '/api';
 
@@ -33,6 +33,7 @@ export const api = {
 	updateStream: (id: number, data: StreamUpdate) => request<Stream>(`/streams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 	deleteStream: (id: number) => request<void>(`/streams/${id}`, { method: 'DELETE' }),
 	testStream: (id: number) => request<TestResult>(`/streams/${id}/test`, { method: 'POST' }),
+	getStreamDiagnostics: (id: number) => request<StreamDiagnostics>(`/streams/${id}/diagnostics`),
 	testSource: (data: StreamTestRequest) => request<StreamTestResult>('/streams/test', { method: 'POST', body: JSON.stringify(data) }),
 	getStreamPreviewUrl: (id: number) => `${BASE}/streams/${id}/preview`,
 	discoverGo2rtcStreams: () => request<Go2rtcStreamInfo[]>('/streams/go2rtc/discover'),

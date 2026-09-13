@@ -398,6 +398,20 @@ export interface CaptureCount {
 	avg_bytes: number | null;
 }
 
+export interface DiagnosticCheck {
+	key: string;
+	state: 'ok' | 'warn' | 'fail' | 'idle';
+	label: string;
+	detail: string;
+}
+
+/** The capture chain for one camera, worst link first. */
+export interface StreamDiagnostics {
+	status: 'ok' | 'idle' | 'fail';
+	summary: string;
+	checks: DiagnosticCheck[];
+}
+
 export interface TestResult {
 	success: boolean;
 	message: string;
