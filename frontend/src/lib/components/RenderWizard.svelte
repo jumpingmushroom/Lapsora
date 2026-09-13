@@ -25,6 +25,8 @@
 		planFixed?: boolean;
 		/** Restrict the branch choice; omit to offer both. */
 		lockMode?: RenderMode | null;
+		/** Narrow the plan picker, e.g. to one camera's plans. */
+		allowedProfileIds?: number[] | null;
 		onclose: () => void;
 		ondone: () => void;
 	}
@@ -35,6 +37,7 @@
 		scheduleId = null,
 		planFixed = false,
 		lockMode = null,
+		allowedProfileIds = null,
 		onclose,
 		ondone
 	}: Props = $props();
@@ -52,8 +55,8 @@
 		Promise.all([api.getStreams(), api.getAllProfiles()])
 			.then(([s, p]) => {
 				streams = s;
-				profiles = p;
-				if (!d.profileId && p.length) d.profileId = p[0].id;
+				profiles = allowedProfileIds ? p.filter((x) => allowedProfileIds.includes(x.id)) : p;
+				if (!d.profileId && profiles.length) d.profileId = profiles[0].id;
 			})
 			.catch(() => {});
 	});

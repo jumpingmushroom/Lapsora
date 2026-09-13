@@ -10,6 +10,7 @@
 	import CameraDiagnostic from '$lib/components/CameraDiagnostic.svelte';
 	import AddCapturePlanWizard from '$lib/components/AddCapturePlanWizard.svelte';
 	import RenderWizard from '$lib/components/RenderWizard.svelte';
+	import CameraRenderSchedules from '$lib/components/CameraRenderSchedules.svelte';
 	import { defaultRenderDraft } from '$lib/renderDraft';
 	import type { RenderDraft } from '$lib/renderDraft';
 
@@ -186,10 +187,20 @@
 	// Renders for a specific plan, opened from its menu — the plan is implied,
 	// so the wizard skips straight to the schedule question.
 	let renderWizardDraft = $state<RenderDraft | null>(null);
+	// Set when the wizard was opened for one specific plan; null when the
+	// camera's plans should all be offered.
+	let renderWizardPlanFixed = $state(false);
+	let scheduleKey = $state(0);
 
 	function openRenderWizard(profile: Profile) {
 		renderWizardDraft = defaultRenderDraft('repeat', profile.id);
+		renderWizardPlanFixed = true;
 		activeMenu = null;
+	}
+
+	function openRenderWizardForCamera() {
+		renderWizardDraft = defaultRenderDraft('repeat', profiles[0]?.id ?? 0);
+		renderWizardPlanFixed = false;
 	}
 
 	function openPlanWizard() {
@@ -200,6 +211,9 @@
 	async function reloadPlans() {
 		profiles = await api.getStreamProfiles(id);
 		diagnosticKey++;
+		// The plan wizard can create a schedule on its way out, so the
+		// schedules list has to re-ask too.
+		scheduleKey++;
 	}
 
 	async function handleUpdateProfile(data: ProfileCreate | ProfileUpdate) {
@@ -576,6 +590,12 @@
 			{/if}
 		</div>
 
+		<CameraRenderSchedules
+			{profiles}
+			refreshKey={scheduleKey}
+			onadd={openRenderWizardForCamera}
+		/>
+
 		<!-- Recent Captures -->
 		{#if captures.length > 0}
 			<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
@@ -608,10 +628,11 @@
 		{#if renderWizardDraft}
 			<RenderWizard
 				draft={renderWizardDraft}
-				planFixed={true}
+				planFixed={renderWizardPlanFixed}
 				lockMode="repeat"
+				allowedProfileIds={profiles.map((p) => p.id)}
 				onclose={() => { renderWizardDraft = null; }}
-				ondone={() => { diagnosticKey++; }}
+				ondone={() => { diagnosticKey++; scheduleKey++; }}
 			/>
 		{/if}
 
