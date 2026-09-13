@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { api } from '$lib/api';
 	import { formatDateTime, formatCronTime } from '$lib/utils';
-	import { defaultRenderOptions, renderOptionsFromSchedule } from '$lib/renderOptions';
-	import { activeSecondsPerDay, framesPerDay } from '$lib/estimates';
-	import type { TimelapseSchedule, Profile, Stream, RenderOptionsValue } from '$lib/types';
-	import RenderOptions from './RenderOptions.svelte';
+	import { defaultRenderDraft, renderDraftFromSchedule } from '$lib/renderDraft';
+	import type { RenderDraft } from '$lib/renderDraft';
+	import type { TimelapseSchedule, Profile, Stream } from '$lib/types';
+	import RenderWizard from './RenderWizard.svelte';
 
 	let schedules = $state<TimelapseSchedule[]>([]);
 	let profiles = $state<Profile[]>([]);
@@ -12,49 +12,19 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 
-	// Add form state
+	// The form is the shared render wizard; this component only decides
+	// which draft to open it with.
 	let showForm = $state(false);
-	let formProfileId = $state<number | null>(null);
-	let formPreset = $state<string | null>(null);
-	let formCron = $state('');
-	let formName = $state('');
-	// Every render setting lives in one object, shared verbatim with the
-	// render dialog via RenderOptions. Keeping them apart is what let the two
-	// forms drift (mkv vs mp4 defaults, target-duration missing from one).
-	let formOptions = $state<RenderOptionsValue>(defaultRenderOptions());
-	let formLookbackHours = $state<number | null>(null);
-	let formCustom = $state(false);
-	let saving = $state(false);
 	let editingId = $state<number | null>(null);
+	let formDraft = $state<RenderDraft>(defaultRenderDraft('repeat'));
 
-	let selectedFormProfile = $derived(profiles.find(p => p.id == formProfileId));
-	let formMaxWidth = $derived(selectedFormProfile?.resolution_width ?? Infinity);
-	let formMaxHeight = $derived(selectedFormProfile?.resolution_height ?? Infinity);
-
-	// A schedule has no fixed range, so the frame count is derived from the
-	// plan's interval and active hours over the lookback window. Marked
-	// approximate in the UI, because it assumes the camera never missed one.
-	let approxFrameCount = $derived.by(() => {
-		const plan = selectedFormProfile;
-		if (!plan || !formLookbackHours) return null;
-		const window = activeSecondsPerDay(
-			plan.capture_mode,
-			plan.active_start_time,
-			plan.active_end_time,
-			plan.sun_events ? plan.sun_events.split(',').filter(Boolean) : []
-		);
-		if (!window) return null;
-		const perDay = framesPerDay(window.seconds, plan.interval_seconds);
-		return Math.floor((perDay * formLookbackHours) / 24);
-	});
-
-	const PRESET_LOOKBACK: Record<string, number> = { daily: 24, weekly: 168, monthly: 730, yearly: 8760 };
-
-	const PRESETS: Record<string, { label: string; cron: string; descriptionFn: () => string }> = {
-		daily: { label: 'Daily', cron: '5 0 * * *', descriptionFn: () => `Every day at ${formatCronTime(0, 5)}` },
-		weekly: { label: 'Weekly', cron: '30 0 * * 0', descriptionFn: () => `Sunday at ${formatCronTime(0, 30)}` },
-		monthly: { label: 'Monthly', cron: '0 1 1 * *', descriptionFn: () => `1st of month at ${formatCronTime(1, 0)}` },
-		yearly: { label: 'Yearly', cron: '0 2 1 1 *', descriptionFn: () => `Jan 1 at ${formatCronTime(2, 0)}` }
+	// Descriptions stay here (they are list copy); the cron values themselves
+	// live in renderDraft.ts so the wizard and this list cannot disagree.
+	const PRESETS: Record<string, { label: string; descriptionFn: () => string }> = {
+		daily: { label: 'Daily', descriptionFn: () => `Every day at ${formatCronTime(0, 5)}` },
+		weekly: { label: 'Weekly', descriptionFn: () => `Sunday at ${formatCronTime(0, 30)}` },
+		monthly: { label: 'Monthly', descriptionFn: () => `1st of month at ${formatCronTime(1, 0)}` },
+		yearly: { label: 'Yearly', descriptionFn: () => `Jan 1 at ${formatCronTime(2, 0)}` }
 	};
 
 	async function load() {
@@ -84,89 +54,14 @@
 
 	function openForm() {
 		editingId = null;
-		formProfileId = profiles.length > 0 ? profiles[0].id : null;
-		formPreset = null;
-		formCron = '';
-		formName = '';
-		formOptions = defaultRenderOptions();
-		formLookbackHours = null;
-		formCustom = false;
+		formDraft = defaultRenderDraft('repeat', profiles.length ? profiles[0].id : 0);
 		showForm = true;
 	}
 
 	function openEdit(schedule: TimelapseSchedule) {
 		editingId = schedule.id;
-		formProfileId = schedule.profile_id;
-		formName = schedule.name || '';
-		formOptions = renderOptionsFromSchedule(schedule);
-		formLookbackHours = schedule.lookback_hours;
-		if (schedule.preset && PRESETS[schedule.preset]) {
-			formPreset = schedule.preset;
-			formCron = PRESETS[schedule.preset].cron;
-			formCustom = false;
-		} else {
-			formPreset = null;
-			formCron = schedule.cron_expression;
-			formCustom = true;
-		}
+		formDraft = renderDraftFromSchedule(schedule);
 		showForm = true;
-	}
-
-	function selectPreset(key: string) {
-		formPreset = key;
-		formCron = PRESETS[key].cron;
-		formName = PRESETS[key].label;
-		formLookbackHours = PRESET_LOOKBACK[key] ?? null;
-		formCustom = false;
-	}
-
-	function selectCustom() {
-		formPreset = null;
-		formCron = '';
-		formName = 'Custom';
-		formLookbackHours = null;
-		formCustom = true;
-	}
-
-	async function saveSchedule() {
-		if (!formProfileId) return;
-		if (!formPreset && !formCron) {
-			alert('Please select a preset or enter a cron expression');
-			return;
-		}
-		saving = true;
-		try {
-			// Sent whole rather than pruned by format: a schedule is stored
-			// state, so what it holds should be exactly what the form showed.
-			if (editingId) {
-				await api.updateTimelapseSchedule(editingId, {
-					name: formName,
-					preset: formPreset,
-					cron_expression: formCustom ? formCron : undefined,
-					// Send the value (incl. explicit null) so clearing the field
-					// actually clears it; `?? undefined` would be dropped by
-					// JSON.stringify and the backend's exclude_unset, silently
-					// keeping the old value.
-					lookback_hours: formLookbackHours,
-					...formOptions
-				});
-			} else {
-				await api.createTimelapseSchedule({
-					profile_id: formProfileId,
-					name: formName,
-					preset: formPreset,
-					cron_expression: formCustom ? formCron : undefined,
-					lookback_hours: formLookbackHours ?? undefined,
-					...formOptions
-				});
-			}
-			showForm = false;
-			await load();
-		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to save');
-		} finally {
-			saving = false;
-		}
 	}
 
 	async function toggleEnabled(schedule: TimelapseSchedule) {
@@ -464,128 +359,13 @@
 	{/if}
 </div>
 
-<!-- Add Schedule Modal -->
 {#if showForm}
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick={() => { showForm = false; }}>
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="mx-4 w-full max-w-lg rounded-xl bg-gray-900 shadow-xl max-h-[90vh] flex flex-col" onclick={(e) => e.stopPropagation()}>
-			<div class="flex items-center justify-between border-b border-gray-800 p-4 shrink-0">
-				<h2 class="text-lg font-semibold text-gray-100">{editingId ? 'Edit Schedule' : 'Add Schedule'}</h2>
-				<button onclick={() => { showForm = false; }} class="text-gray-400 hover:text-gray-200">
-					<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-					</svg>
-				</button>
-			</div>
-			<div class="space-y-4 p-4 overflow-y-auto">
-				<!-- Profile selector -->
-				<div>
-					<label class="mb-1 block text-sm font-medium text-gray-300">Capture plan</label>
-					<select
-						bind:value={formProfileId}
-						disabled={!!editingId}
-						class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-					>
-						{#each streams as stream}
-							<optgroup label={stream.name}>
-								{#each profiles.filter(p => p.stream_id === stream.id) as p}
-									<option value={p.id}>{p.name}</option>
-								{/each}
-							</optgroup>
-						{/each}
-					</select>
-				</div>
-
-				<!-- Preset buttons -->
-				<div>
-					<label class="mb-2 block text-sm font-medium text-gray-300">Schedule Type</label>
-					<div class="grid grid-cols-5 gap-2">
-						{#each Object.entries(PRESETS) as [key, info]}
-							<button
-								onclick={() => selectPreset(key)}
-								class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors {formPreset === key ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}"
-							>
-								{info.label}
-							</button>
-						{/each}
-						<button
-							onclick={selectCustom}
-							class="rounded-lg border px-3 py-2 text-sm font-medium transition-colors {formCustom ? 'border-blue-500 bg-blue-600 text-white' : 'border-gray-700 bg-gray-800 text-gray-300 hover:border-gray-600'}"
-						>
-							Custom
-						</button>
-					</div>
-				</div>
-
-				{#if formCustom}
-					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-300">Cron Expression</label>
-						<input
-							type="text"
-							bind:value={formCron}
-							placeholder="*/5 * * * *"
-							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-						<p class="mt-1 text-xs text-gray-500">Format: minute hour day month weekday</p>
-					</div>
-				{/if}
-
-				{#if formPreset || formCustom}
-					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-300">Lookback Window (hours)</label>
-						<input
-							type="number"
-							bind:value={formLookbackHours}
-							min="1"
-							placeholder={formPreset ? String(PRESET_LOOKBACK[formPreset] ?? '') : 'e.g. 1 for hourly'}
-							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							{#if formLookbackHours}
-								Captures from the last {formLookbackHours}h ({formLookbackHours >= 24 ? `${Math.round(formLookbackHours / 24)} days` : `${formLookbackHours} hours`})
-							{:else}
-								How far back to include captures
-							{/if}
-						</p>
-					</div>
-
-					<div>
-						<label class="mb-1 block text-sm font-medium text-gray-300">Name</label>
-						<input
-							type="text"
-							bind:value={formName}
-							class="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-						/>
-					</div>
-
-					<RenderOptions
-						bind:value={formOptions}
-						maxWidth={formMaxWidth}
-						maxHeight={formMaxHeight}
-						idPrefix="sched"
-						frameCount={approxFrameCount}
-						frameCountApproximate={true}
-					/>
-				{/if}
-			</div>
-			{#if formPreset || formCustom}
-				<div class="flex justify-end gap-2 border-t border-gray-800 p-4 shrink-0">
-					<button
-						onclick={() => { showForm = false; }}
-						class="rounded-lg border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
-					>
-						Cancel
-					</button>
-					<button
-						onclick={saveSchedule}
-						disabled={saving}
-						class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-500 disabled:opacity-50"
-					>
-						{saving ? 'Saving...' : 'Save Schedule'}
-					</button>
-				</div>
-			{/if}
-		</div>
-	</div>
+	<RenderWizard
+		draft={formDraft}
+		mode={editingId ? 'edit' : 'create'}
+		scheduleId={editingId}
+		lockMode="repeat"
+		onclose={() => { showForm = false; }}
+		ondone={load}
+	/>
 {/if}

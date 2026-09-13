@@ -3,7 +3,9 @@
 	import type { Timelapse, PrintJob } from '$lib/types';
 	import { formatDate, formatDateTime, formatFinishedAt, formatDuration, formatBytes } from '$lib/utils';
 	import TimelapsePlayer from '$lib/components/TimelapsePlayer.svelte';
-	import GenerateDialog from '$lib/components/GenerateDialog.svelte';
+	import RenderWizard from '$lib/components/RenderWizard.svelte';
+	import { defaultRenderDraft } from '$lib/renderDraft';
+	import type { RenderDraft } from '$lib/renderDraft';
 	import ScheduleManager from '$lib/components/ScheduleManager.svelte';
 
 	let timelapses = $state<Timelapse[]>([]);
@@ -20,8 +22,9 @@
 	// Player modal
 	let selectedTimelapse = $state<Timelapse | null>(null);
 
-	// Generate dialog
+	// Render dialog
 	let showGenerate = $state(false);
+	let renderDraft = $state<RenderDraft>(defaultRenderDraft('once'));
 	let allProfileOptions = $state<{ id: number; label: string; resolution_width: number | null; resolution_height: number | null }[]>([]);
 
 	// Generation progress — keyed by generation_id
@@ -176,6 +179,7 @@
 		try {
 			// Refresh on open: a plan may have been added since page load.
 			await loadProfileOptions();
+			renderDraft = defaultRenderDraft('once', allProfileOptions[0]?.id ?? 0);
 			showGenerate = true;
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to load capture plans');
@@ -523,12 +527,13 @@
 	</div>
 {/if}
 
-<!-- Generate Dialog -->
+<!-- Render dialog: the one-shot branch of the shared render wizard -->
 {#if showGenerate}
-	<GenerateDialog
-		profileOptions={allProfileOptions}
-		open={true}
+	<RenderWizard
+		draft={renderDraft}
+		lockMode="once"
 		onclose={() => { showGenerate = false; }}
+		ondone={() => { loadTimelapses(); }}
 	/>
 {/if}
 

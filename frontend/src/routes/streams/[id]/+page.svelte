@@ -9,6 +9,9 @@
 	import CapturePreview from '$lib/components/CapturePreview.svelte';
 	import CameraDiagnostic from '$lib/components/CameraDiagnostic.svelte';
 	import AddCapturePlanWizard from '$lib/components/AddCapturePlanWizard.svelte';
+	import RenderWizard from '$lib/components/RenderWizard.svelte';
+	import { defaultRenderDraft } from '$lib/renderDraft';
+	import type { RenderDraft } from '$lib/renderDraft';
 
 	let id = $derived(Number($page.params.id));
 
@@ -178,6 +181,15 @@
 			alert(err instanceof Error ? err.message : 'Failed to delete camera');
 			deletingStream = false;
 		}
+	}
+
+	// Renders for a specific plan, opened from its menu — the plan is implied,
+	// so the wizard skips straight to the schedule question.
+	let renderWizardDraft = $state<RenderDraft | null>(null);
+
+	function openRenderWizard(profile: Profile) {
+		renderWizardDraft = defaultRenderDraft('repeat', profile.id);
+		activeMenu = null;
 	}
 
 	function openPlanWizard() {
@@ -543,6 +555,10 @@
 												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
 											>Duplicate</button>
 											<button
+												onclick={() => openRenderWizard(profile)}
+												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
+											>Add render schedule</button>
+											<button
 												onclick={() => { confirmDelete = profile; replaceMode = true; editingProfile = null; activeMenu = null; }}
 												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
 											>Replace</button>
@@ -587,6 +603,16 @@
 					{/each}
 				</div>
 			</div>
+		{/if}
+
+		{#if renderWizardDraft}
+			<RenderWizard
+				draft={renderWizardDraft}
+				planFixed={true}
+				lockMode="repeat"
+				onclose={() => { renderWizardDraft = null; }}
+				ondone={() => { diagnosticKey++; }}
+			/>
 		{/if}
 
 		{#if showPlanWizard}
