@@ -27,16 +27,7 @@ router = APIRouter(prefix="/api/cleanup-schedules", tags=["cleanup-schedules"])
 
 def _validate_cron(expr: str) -> None:
     try:
-        parts = expr.strip().split()
-        if len(parts) != 5:
-            raise ValueError("Cron expression must have 5 fields")
-        CronTrigger(
-            minute=parts[0],
-            hour=parts[1],
-            day=parts[2],
-            month=parts[3],
-            day_of_week=parts[4],
-        )
+        CronTrigger(**cron_trigger_kwargs(expr))
     except Exception as e:
         raise HTTPException(422, f"Invalid cron expression: {e}") from e
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cron_utils import cron_trigger_kwargs
 from app.database import get_db
 from app.models import Profile, TimelapseSchedule
 from app.schemas import (
@@ -37,16 +38,7 @@ PRESET_LOOKBACK = {"daily": 24, "weekly": 168, "monthly": 730, "yearly": 8760}
 def _validate_cron(expr: str) -> None:
     """Validate a cron expression by trying to build a trigger."""
     try:
-        parts = expr.strip().split()
-        if len(parts) != 5:
-            raise ValueError("Cron expression must have 5 fields")
-        CronTrigger(
-            minute=parts[0],
-            hour=parts[1],
-            day=parts[2],
-            month=parts[3],
-            day_of_week=parts[4],
-        )
+        CronTrigger(**cron_trigger_kwargs(expr))
     except Exception as e:
         raise HTTPException(422, f"Invalid cron expression: {e}") from e
 
