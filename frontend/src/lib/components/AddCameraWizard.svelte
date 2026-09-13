@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import { formatInterval, formatCronTime } from '$lib/utils';
-	import type { Go2rtcStreamInfo, ProfileTemplate, StreamTestResult } from '$lib/types';
-	import CaptureEstimate from './CaptureEstimate.svelte';
+	import { defaultCapturePlanDraft, capturePlanComplete, capturePlanPayload } from '$lib/capturePlan';
+	import type { CapturePlanDraft } from '$lib/capturePlan';
+	import type { Go2rtcStreamInfo, StreamTestResult } from '$lib/types';
+	import CapturePlanStep from './CapturePlanStep.svelte';
+	import RenderScheduleStep from './RenderScheduleStep.svelte';
 
 	interface Props {
 		onclose: () => void;
@@ -41,23 +43,6 @@
 		}
 	];
 
-	const INTERVALS = [10, 30, 60, 300, 900, 3600];
-
-	const RESOLUTIONS: { label: string; dims: [number, number] | null }[] = [
-		{ label: 'Source resolution', dims: null },
-		{ label: '720p', dims: [1280, 720] },
-		{ label: '1080p', dims: [1920, 1080] },
-		{ label: '4K', dims: [3840, 2160] }
-	];
-
-	// Cron values must match the backend's PRESET_CRONS, or the schedule the
-	// wizard creates would describe itself differently from every other one.
-	const SCHEDULES = [
-		{ value: 'daily', title: 'Every day', detail: () => `at ${formatCronTime(0, 5)}` },
-		{ value: 'weekly', title: 'Every week', detail: () => `Sunday at ${formatCronTime(0, 30)}` },
-		{ value: 'none', title: "I'll render manually", detail: () => 'Set one up later from Timelapses' }
-	];
-
 	let step = $state(1);
 
 	// --- step 1: source ---
@@ -78,15 +63,7 @@
 	let testResult = $state<StreamTestResult | null>(null);
 
 	// --- step 2: capture plan ---
-	let presets = $state<ProfileTemplate[]>([]);
-	let presetsLoaded = $state(false);
-	let presetCategory = $state<string | null>(null);
-	let selectedPresetId = $state<number | null>(null);
-	let useCustomPlan = $state(false);
-	let planName = $state('');
-	let planInterval = $state(300);
-	let planResolution = $state(0);
-	let planQuality = $state(85);
+	let plan = $state<CapturePlanDraft>(defaultCapturePlanDraft());
 
 	// --- step 3: render ---
 	let scheduleChoice = $state('daily');
@@ -101,9 +78,7 @@
 	let sourceComplete = $derived(
 		name.trim().length > 0 && (needsUrl ? url.trim().length > 0 : go2rtcName.length > 0)
 	);
-	let planComplete = $derived(
-		useCustomPlan ? planName.trim().length > 0 : selectedPresetId !== null
-	);
+	let planComplete = $derived(capturePlanComplete(plan));
 
 	// The test frame doubles as the basis for step 2's storage estimate — it is
 	// the only real measurement available before the camera exists.
@@ -120,27 +95,6 @@
 		const m = /^(\d+)x(\d+)$/.exec(res);
 		return m ? { w: Number(m[1]), h: Number(m[2]) } : null;
 	});
-
-	let selectedPreset = $derived(presets.find((p) => p.id === selectedPresetId));
-
-	let planIntervalSeconds = $derived(
-		useCustomPlan ? planInterval : (selectedPreset?.interval_seconds ?? 0)
-	);
-	let planDims = $derived.by(() => {
-		if (useCustomPlan) {
-			const dims = RESOLUTIONS[planResolution].dims;
-			return dims ? { w: dims[0], h: dims[1] } : null;
-		}
-		if (selectedPreset?.resolution_width && selectedPreset?.resolution_height) {
-			return { w: selectedPreset.resolution_width, h: selectedPreset.resolution_height };
-		}
-		return null;
-	});
-
-	let categories = $derived([...new Set(presets.map((p) => p.category))].sort());
-	let visiblePresets = $derived(
-		presetCategory ? presets.filter((p) => p.category === presetCategory) : presets
-	);
 
 	function sourcePayload() {
 		if (sourceType === 'go2rtc') {
@@ -190,17 +144,9 @@
 		}
 	}
 
-	async function goToPlanStep() {
+	function goToPlanStep() {
 		step = 2;
-		if (!planName) planName = name;
-		if (!presetsLoaded) {
-			presetsLoaded = true;
-			try {
-				presets = await api.getProfileTemplates();
-			} catch {
-				presets = [];
-			}
-		}
+		if (!plan.name) plan.name = name;
 	}
 
 	async function finish() {
@@ -211,21 +157,10 @@
 			const stream = await api.createStream({ name, ...sourcePayload() });
 			streamId = stream.id;
 
-			let profileId: number;
-			if (useCustomPlan) {
-				const dims = RESOLUTIONS[planResolution].dims;
-				const profile = await api.createProfile(streamId, {
-					name: planName,
-					interval_seconds: planInterval,
-					resolution_width: dims ? dims[0] : null,
-					resolution_height: dims ? dims[1] : null,
-					quality: planQuality
-				});
-				profileId = profile.id;
-			} else {
-				const profile = await api.applyProfileTemplate(selectedPresetId!, streamId, planName);
-				profileId = profile.id;
-			}
+			const profile = plan.custom
+				? await api.createProfile(streamId, capturePlanPayload(plan))
+				: await api.applyProfileTemplate(plan.presetId!, streamId, plan.name);
+			const profileId = profile.id;
 
 			if (scheduleChoice !== 'none') {
 				await api.createTimelapseSchedule({
@@ -438,136 +373,16 @@
 					{/if}
 				</div>
 			{:else if step === 2}
-				<p class="text-sm text-gray-400">
-					A capture plan decides how often {name || 'this camera'} takes a frame. Nothing is captured without one.
-				</p>
-
-				{#if categories.length > 1}
-					<div class="flex flex-wrap gap-1.5">
-						<button
-							type="button"
-							onclick={() => { presetCategory = null; }}
-							class="rounded-full px-3 py-1 text-xs font-medium transition-colors {presetCategory === null ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}"
-						>All</button>
-						{#each categories as cat}
-							<button
-								type="button"
-								onclick={() => { presetCategory = cat; }}
-								class="rounded-full px-3 py-1 text-xs font-medium transition-colors {presetCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}"
-							>{cat}</button>
-						{/each}
-					</div>
-				{/if}
-
-				<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-					{#each visiblePresets as preset}
-						<button
-							type="button"
-							onclick={() => { selectedPresetId = preset.id; useCustomPlan = false; }}
-							class="flex flex-col items-start rounded-lg border p-3 text-left transition-colors {
-								!useCustomPlan && selectedPresetId === preset.id
-									? 'border-blue-500 bg-blue-950/40'
-									: 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
-							}"
-						>
-							<span class="text-sm font-medium text-gray-100">{preset.name}</span>
-							{#if preset.description}
-								<span class="mt-0.5 text-xs text-gray-500">{preset.description}</span>
-							{/if}
-							<span class="mt-1.5 flex flex-wrap gap-1">
-								<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{formatInterval(preset.interval_seconds)}</span>
-								{#if preset.resolution_width && preset.resolution_height}
-									<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{preset.resolution_width}x{preset.resolution_height}</span>
-								{/if}
-								{#if preset.hdr_enabled}
-									<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
-								{/if}
-							</span>
-						</button>
-					{/each}
-
-					<button
-						type="button"
-						onclick={() => { useCustomPlan = true; selectedPresetId = null; }}
-						class="flex flex-col items-start rounded-lg border border-dashed p-3 text-left transition-colors {
-							useCustomPlan ? 'border-blue-500 bg-blue-950/40' : 'border-gray-700 hover:border-gray-600'
-						}"
-					>
-						<span class="text-sm font-medium text-gray-100">Custom</span>
-						<span class="mt-0.5 text-xs text-gray-500">Set the interval yourself</span>
-					</button>
-				</div>
-
-				<div class="space-y-3 rounded-lg border border-gray-800 bg-gray-800/40 p-3">
-					<div>
-						<label for="wiz-plan-name" class={labelClass}>Plan name</label>
-						<input id="wiz-plan-name" type="text" bind:value={planName} placeholder="e.g. Front Yard" class={fieldClass} />
-					</div>
-
-					{#if useCustomPlan}
-						<div>
-							<span class={labelClass}>Capture a frame every</span>
-							<div class="flex flex-wrap gap-1.5">
-								{#each INTERVALS as seconds}
-									<button
-										type="button"
-										onclick={() => { planInterval = seconds; }}
-										class="rounded-full px-3 py-1 text-xs font-medium transition-colors {planInterval === seconds ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}"
-									>{formatInterval(seconds)}</button>
-								{/each}
-							</div>
-						</div>
-						<div class="grid grid-cols-2 gap-3">
-							<div>
-								<label for="wiz-plan-res" class={labelClass}>Resolution</label>
-								<select id="wiz-plan-res" bind:value={planResolution} class={fieldClass}>
-									{#each RESOLUTIONS as res, i}
-										<option value={i}>{res.label}</option>
-									{/each}
-								</select>
-							</div>
-							<div>
-								<label for="wiz-plan-quality" class={labelClass}>Quality: {planQuality}</label>
-								<input id="wiz-plan-quality" type="range" min="1" max="100" bind:value={planQuality} class="mt-2 w-full accent-blue-500" />
-							</div>
-						</div>
-						<p class="text-xs text-gray-500">
-							HDR, IR-only capture, active hours and sensor overlays can be set on the camera once it exists.
-						</p>
-					{/if}
-
-					{#if planIntervalSeconds > 0}
-						<CaptureEstimate
-							intervalSeconds={planIntervalSeconds}
-							resolutionWidth={planDims?.w ?? null}
-							resolutionHeight={planDims?.h ?? null}
-							{sampleBytes}
-							sampleWidth={sampleDims?.w ?? null}
-							sampleHeight={sampleDims?.h ?? null}
-						/>
-					{/if}
-				</div>
+				<CapturePlanStep
+					bind:value={plan}
+					cameraName={name}
+					{sampleBytes}
+					sampleWidth={sampleDims?.w ?? null}
+					sampleHeight={sampleDims?.h ?? null}
+					idPrefix="wiz-plan"
+				/>
 			{:else}
-				<p class="text-sm text-gray-400">
-					Rendering turns the captured frames into a video. You can change or add schedules later.
-				</p>
-
-				<div class="space-y-2">
-					{#each SCHEDULES as choice}
-						<button
-							type="button"
-							onclick={() => { scheduleChoice = choice.value; }}
-							class="flex w-full flex-col items-start rounded-lg border p-3 text-left transition-colors {
-								scheduleChoice === choice.value
-									? 'border-blue-500 bg-blue-950/40'
-									: 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
-							}"
-						>
-							<span class="text-sm font-medium text-gray-100">{choice.title}</span>
-							<span class="mt-0.5 text-xs text-gray-500">{choice.detail()}</span>
-						</button>
-					{/each}
-				</div>
+				<RenderScheduleStep bind:value={scheduleChoice} />
 
 				{#if createError}
 					<p class="rounded-lg border border-red-800 bg-red-950/50 px-3 py-2 text-sm text-red-300">{createError}</p>

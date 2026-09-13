@@ -2,12 +2,17 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { api } from '$lib/api';
-	import type { Stream, Profile, ProfileCreate, ProfileUpdate, ProfileTemplate, Capture, TestResult, HASensor } from '$lib/types';
+	import type { Stream, Profile, ProfileCreate, ProfileUpdate, Capture, TestResult, HASensor } from '$lib/types';
 	import { formatInterval, formatDateTime, timeAgo, healthDotClass } from '$lib/utils';
 	import ProfileForm from '$lib/components/ProfileForm.svelte';
 	import MsePlayer from '$lib/components/MsePlayer.svelte';
 	import CapturePreview from '$lib/components/CapturePreview.svelte';
 	import CameraDiagnostic from '$lib/components/CameraDiagnostic.svelte';
+	import AddCapturePlanWizard from '$lib/components/AddCapturePlanWizard.svelte';
+	import RenderWizard from '$lib/components/RenderWizard.svelte';
+	import CameraRenderSchedules from '$lib/components/CameraRenderSchedules.svelte';
+	import { defaultRenderDraft } from '$lib/renderDraft';
+	import type { RenderDraft } from '$lib/renderDraft';
 
 	let id = $derived(Number($page.params.id));
 
@@ -62,8 +67,8 @@
 	let confirmDeleteStream = $state(false);
 	let deletingStream = $state(false);
 
-	// Profile form
-	let showProfileForm = $state(false);
+	// Creating a plan is a guided flow; editing one stays a direct form.
+	let showPlanWizard = $state(false);
 	let profileLoading = $state(false);
 
 	// Profile actions
@@ -71,15 +76,6 @@
 	let confirmDelete = $state<Profile | null>(null);
 	let activeMenu = $state<number | null>(null);
 	let replaceMode = $state(false);
-
-	// Template picker
-	let showTemplatePicker = $state(false);
-	let templates = $state<ProfileTemplate[]>([]);
-	let templateCategory = $state<string | null>(null);
-	let templateCategories = $derived([...new Set(templates.map((t) => t.category))].sort());
-	let filteredTemplates = $derived(
-		templateCategory ? templates.filter((t) => t.category === templateCategory) : templates
-	);
 
 	// Preview
 	let previewKey = $state(0);
@@ -188,45 +184,53 @@
 		}
 	}
 
-	async function handleCreateProfile(data: ProfileCreate | ProfileUpdate) {
-		profileLoading = true;
-		try {
-			await api.createProfile(id, data as ProfileCreate);
-			profiles = await api.getStreamProfiles(id);
-			diagnosticKey++;
-			showProfileForm = false;
-		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to create capture plan');
-		} finally {
-			profileLoading = false;
-		}
+	// Renders for a specific plan, opened from its menu — the plan is implied,
+	// so the wizard skips straight to the schedule question.
+	let renderWizardDraft = $state<RenderDraft | null>(null);
+	// Set when the wizard was opened for one specific plan; null when the
+	// camera's plans should all be offered.
+	let renderWizardPlanFixed = $state(false);
+	let scheduleKey = $state(0);
+
+	function openRenderWizard(profile: Profile) {
+		renderWizardDraft = defaultRenderDraft('repeat', profile.id);
+		renderWizardPlanFixed = true;
+		activeMenu = null;
 	}
 
-	async function openTemplatePicker() {
-		showTemplatePicker = true;
-		showProfileForm = false;
-		editingProfile = null;
-		if (templates.length === 0) {
+	/** The diagnostic named a gap; open whatever closes it. */
+	async function runDiagnosticAction(action: string) {
+		if (action === 'add_plan') {
+			openPlanWizard();
+		} else if (action === 'add_schedule') {
+			openRenderWizardForCamera();
+		} else if (action === 'enable_camera') {
 			try {
-				templates = await api.getProfileTemplates();
-			} catch {
-				templates = [];
+				stream = await api.updateStream(id, { enabled: true });
+				editEnabled = true;
+				diagnosticKey++;
+			} catch (err) {
+				alert(err instanceof Error ? err.message : 'Failed to enable camera');
 			}
 		}
 	}
 
-	async function applyTemplate(t: ProfileTemplate) {
-		profileLoading = true;
-		try {
-			await api.applyProfileTemplate(t.id, id);
-			profiles = await api.getStreamProfiles(id);
-			diagnosticKey++;
-			showTemplatePicker = false;
-		} catch (err) {
-			alert(err instanceof Error ? err.message : 'Failed to apply preset');
-		} finally {
-			profileLoading = false;
-		}
+	function openRenderWizardForCamera() {
+		renderWizardDraft = defaultRenderDraft('repeat', profiles[0]?.id ?? 0);
+		renderWizardPlanFixed = false;
+	}
+
+	function openPlanWizard() {
+		showPlanWizard = true;
+		editingProfile = null;
+	}
+
+	async function reloadPlans() {
+		profiles = await api.getStreamProfiles(id);
+		diagnosticKey++;
+		// The plan wizard can create a schedule on its way out, so the
+		// schedules list has to re-ask too.
+		scheduleKey++;
 	}
 
 	async function handleUpdateProfile(data: ProfileCreate | ProfileUpdate) {
@@ -255,7 +259,7 @@
 			confirmDelete = null;
 			replaceMode = false;
 			if (shouldReplace) {
-				openTemplatePicker();
+				openPlanWizard();
 			}
 		} catch (err) {
 			alert(err instanceof Error ? err.message : 'Failed to delete capture plan');
@@ -331,7 +335,7 @@
 			</span>
 		</div>
 
-		<CameraDiagnostic streamId={id} refreshKey={diagnosticKey} />
+		<CameraDiagnostic streamId={id} refreshKey={diagnosticKey} onaction={runDiagnosticAction} />
 
 		<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
 			<!-- Live Preview -->
@@ -491,69 +495,17 @@
 			</div>
 		</div>
 
-		<!-- Profiles -->
+		<!-- Capture plans -->
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 			<div class="mb-4 flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-gray-100">Capture plans</h2>
-				<div class="flex gap-2">
-					<button
-						onclick={openTemplatePicker}
-						class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
-					>
-						{showTemplatePicker ? 'Cancel' : 'From preset'}
-					</button>
-					<button
-						onclick={() => { showProfileForm = !showProfileForm; showTemplatePicker = false; editingProfile = null; }}
-						class="rounded-lg border border-gray-600 px-3 py-1.5 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800"
-					>
-						{showProfileForm ? 'Cancel' : 'Custom'}
-					</button>
-				</div>
+				<button
+					onclick={openPlanWizard}
+					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
+				>
+					Add capture plan
+				</button>
 			</div>
-
-			{#if showTemplatePicker}
-				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
-					<div class="mb-3 flex flex-wrap gap-1.5">
-						<button
-							onclick={() => { templateCategory = null; }}
-							class="rounded px-2 py-1 text-xs font-medium transition-colors {templateCategory === null ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-gray-200'}"
-						>All</button>
-						{#each templateCategories as cat}
-							<button
-								onclick={() => { templateCategory = cat; }}
-								class="rounded px-2 py-1 text-xs font-medium transition-colors {templateCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:text-gray-200'}"
-							>{cat}</button>
-						{/each}
-					</div>
-					<div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-						{#each filteredTemplates as t}
-							<button
-								onclick={() => applyTemplate(t)}
-								disabled={profileLoading}
-								class="flex flex-col items-start rounded-lg border border-gray-600 p-3 text-left transition-colors hover:border-blue-500 hover:bg-gray-700 disabled:opacity-50"
-							>
-								<span class="text-sm font-medium text-gray-100">{t.name}</span>
-								{#if t.description}
-									<span class="mt-0.5 text-xs text-gray-500">{t.description}</span>
-								{/if}
-								<div class="mt-1.5 flex flex-wrap gap-1">
-									<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{formatInterval(t.interval_seconds)}</span>
-									{#if t.resolution_width && t.resolution_height}
-										<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">{t.resolution_width}x{t.resolution_height}</span>
-									{/if}
-									<span class="rounded bg-gray-900 px-1.5 py-0.5 text-xs text-gray-400">Q{t.quality}</span>
-									{#if t.hdr_enabled}
-										<span class="rounded bg-yellow-900 px-1.5 py-0.5 text-xs font-medium text-yellow-300">HDR</span>
-									{/if}
-								</div>
-							</button>
-						{/each}
-					</div>
-					{#if filteredTemplates.length === 0}
-						<p class="text-sm text-gray-500">No presets available.</p>
-					{/if}
-				</div>
-			{/if}
 
 			{#if editingProfile}
 				<div class="mb-4 rounded-lg border border-blue-700 bg-gray-800 p-4">
@@ -564,10 +516,6 @@
 					{#key editingProfile.id}
 						<ProfileForm profile={editingProfile} streamId={id} onsubmit={handleUpdateProfile} />
 					{/key}
-				</div>
-			{:else if showProfileForm}
-				<div class="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
-					<ProfileForm streamId={id} onsubmit={handleCreateProfile} />
 				</div>
 			{/if}
 
@@ -630,13 +578,17 @@
 										<div class="fixed inset-0 z-10" onclick={() => { activeMenu = null; }}></div>
 										<div class="absolute right-0 z-20 mt-1 w-36 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-lg">
 											<button
-												onclick={() => { editingProfile = profile; showProfileForm = false; showTemplatePicker = false; confirmDelete = null; activeMenu = null; }}
+												onclick={() => { editingProfile = profile; confirmDelete = null; activeMenu = null; }}
 												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
 											>Edit</button>
 											<button
 												onclick={() => { handleDuplicateProfile(profile); }}
 												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
 											>Duplicate</button>
+											<button
+												onclick={() => openRenderWizard(profile)}
+												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
+											>Add render schedule</button>
 											<button
 												onclick={() => { confirmDelete = profile; replaceMode = true; editingProfile = null; activeMenu = null; }}
 												class="block w-full px-3 py-1.5 text-left text-sm text-gray-300 hover:bg-gray-700"
@@ -654,6 +606,12 @@
 				</div>
 			{/if}
 		</div>
+
+		<CameraRenderSchedules
+			{profiles}
+			refreshKey={scheduleKey}
+			onadd={openRenderWizardForCamera}
+		/>
 
 		<!-- Recent Captures -->
 		{#if captures.length > 0}
@@ -682,6 +640,26 @@
 					{/each}
 				</div>
 			</div>
+		{/if}
+
+		{#if renderWizardDraft}
+			<RenderWizard
+				draft={renderWizardDraft}
+				planFixed={renderWizardPlanFixed}
+				lockMode="repeat"
+				allowedProfileIds={profiles.map((p) => p.id)}
+				onclose={() => { renderWizardDraft = null; }}
+				ondone={() => { diagnosticKey++; scheduleKey++; }}
+			/>
+		{/if}
+
+		{#if showPlanWizard}
+			<AddCapturePlanWizard
+				streamId={id}
+				cameraName={stream.name}
+				onclose={() => { showPlanWizard = false; }}
+				oncreated={reloadPlans}
+			/>
 		{/if}
 
 		{#if previewOpen}

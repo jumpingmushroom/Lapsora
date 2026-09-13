@@ -69,7 +69,11 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
     # --- link 1: the camera itself ---
     if not stream.enabled:
         checks.append(_check("camera", "fail", "Camera is disabled", "Enable it to resume capturing."))
-        return _assemble(checks, "Nothing is capturing: this camera is disabled.")
+        return _assemble(
+            checks,
+            "Nothing is capturing: this camera is disabled.",
+            action="enable_camera",
+        )
     checks.append(_check("camera", "ok", "Camera is enabled"))
 
     # --- link 2: the source ---
@@ -105,7 +109,11 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         checks.append(
             _check("plan", "fail", "No capture plan", "A camera captures nothing until it has one.")
         )
-        return _assemble(checks, "Nothing is capturing: this camera has no capture plan yet.")
+        return _assemble(
+            checks,
+            "Nothing is capturing: this camera has no capture plan yet.",
+            action="add_plan",
+        )
 
     active = [p for p in profiles if p.enabled and not p.auto_disabled]
     auto_off = [p for p in profiles if p.auto_disabled]
@@ -294,10 +302,22 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         checks,
         f"Capturing{tail}, but nothing renders automatically: there is no render schedule.",
         status="idle",
+        action="add_schedule",
     )
 
 
-def _assemble(checks: list[dict], summary: str, status: str | None = None) -> dict:
+def _assemble(
+    checks: list[dict],
+    summary: str,
+    status: str | None = None,
+    action: str | None = None,
+) -> dict:
+    """`action` names the one-click fix, where there is one.
+
+    Naming it here rather than letting the UI match on the summary text keeps
+    the two from drifting: a reworded sentence would otherwise silently lose
+    its button.
+    """
     if status is None:
         status = "fail" if any(c["state"] == "fail" for c in checks) else "ok"
-    return {"status": status, "summary": summary, "checks": checks}
+    return {"status": status, "summary": summary, "checks": checks, "action": action}

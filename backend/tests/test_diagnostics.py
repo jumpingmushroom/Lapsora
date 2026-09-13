@@ -321,3 +321,44 @@ def test_a_missing_capture_job_names_the_plan(db, monkeypatch):
     assert result["status"] == "fail"
     assert "Yard" in result["summary"]
     assert "not registered" in result["summary"]
+
+
+# --- the one-click fix each gap implies -------------------------------------
+
+
+def test_missing_plan_offers_adding_one(db):
+    stream = _camera(db)
+    assert build_diagnostics(stream, db)["action"] == "add_plan"
+
+
+def test_disabled_camera_offers_enabling_it(db):
+    stream = _camera(db, enabled=False)
+    assert build_diagnostics(stream, db)["action"] == "enable_camera"
+
+
+def test_capturing_without_a_schedule_offers_adding_one(db, running_scheduler, in_window):
+    stream = _camera(db)
+    plan = _plan(db, stream, interval_seconds=60)
+    now = datetime.now(UTC)
+    _frame(db, plan, now - timedelta(seconds=10))
+
+    assert build_diagnostics(stream, db, now=now)["action"] == "add_schedule"
+
+
+def test_a_working_camera_offers_nothing(db, running_scheduler, in_window):
+    stream = _camera(db)
+    plan = _plan(db, stream, interval_seconds=60)
+    now = datetime.now(UTC)
+    _frame(db, plan, now - timedelta(seconds=10))
+    db.add(TimelapseSchedule(profile_id=plan.id, cron_expression="5 0 * * *", enabled=True))
+    db.commit()
+
+    assert build_diagnostics(stream, db, now=now)["action"] is None
+
+
+def test_faults_with_no_one_click_fix_offer_nothing(db, running_scheduler, in_window):
+    """An unreachable source needs a human, not a button."""
+    stream = _camera(db, health_status="unhealthy", consecutive_failures=3)
+    _plan(db, stream)
+
+    assert build_diagnostics(stream, db)["action"] is None
