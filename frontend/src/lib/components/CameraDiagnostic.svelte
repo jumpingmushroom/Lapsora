@@ -18,7 +18,8 @@
 	const ACTION_LABELS: Record<DiagnosticAction, string> = {
 		add_plan: 'Add a capture plan',
 		add_schedule: 'Set up a render schedule',
-		enable_camera: 'Enable this camera'
+		enable_camera: 'Enable this camera',
+		open_printer_settings: 'Open printer settings'
 	};
 
 	let data = $state<StreamDiagnostics | null>(null);

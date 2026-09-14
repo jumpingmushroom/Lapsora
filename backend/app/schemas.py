@@ -98,6 +98,10 @@ class StreamRead(BaseModel):
     health_status: str
     consecutive_failures: int
     last_checked_at: datetime | None
+    # True when the printer integration films this camera. Lets the camera page
+    # render printer mode without fetching the settings endpoint to find out
+    # what it is looking at.
+    printer_bound: bool = False
     created_at: datetime
     updated_at: datetime
 

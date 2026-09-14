@@ -26,6 +26,19 @@ async def reachable(key: str, probe: Callable[[], Awaitable[bool]], ttl: float =
     return result
 
 
+def peek(key: str) -> bool | None:
+    """Last cached result, or None when there is no fresh one.
+
+    For sync callers that want to report last-known reachability without
+    probing. None means "not known", which is different from "unreachable" and
+    must be presented that way.
+    """
+    hit = _cache.get(key)
+    if not hit or (time.monotonic() - hit[0]) >= CACHE_TTL:
+        return None
+    return hit[1]
+
+
 def invalidate(key: str) -> None:
     """Drop a cached result so the next read re-probes (call after saving config)."""
     _cache.pop(key, None)

@@ -11,6 +11,7 @@
 	import AddCapturePlanWizard from '$lib/components/AddCapturePlanWizard.svelte';
 	import RenderWizard from '$lib/components/RenderWizard.svelte';
 	import CameraRenderSchedules from '$lib/components/CameraRenderSchedules.svelte';
+	import CameraPrints from '$lib/components/CameraPrints.svelte';
 	import { defaultRenderDraft } from '$lib/renderDraft';
 	import type { RenderDraft } from '$lib/renderDraft';
 
@@ -192,6 +193,11 @@
 	let renderWizardPlanFixed = $state(false);
 	let scheduleKey = $state(0);
 
+	// A printer-bound camera leads with its prints: they are what it is for.
+	// Capture plans stay available below, so an ordinary timelapse of the
+	// printer is still possible alongside the per-print videos.
+	let printerBound = $derived(stream?.printer_bound === true);
+
 	function openRenderWizard(profile: Profile) {
 		renderWizardDraft = defaultRenderDraft('repeat', profile.id);
 		renderWizardPlanFixed = true;
@@ -200,7 +206,9 @@
 
 	/** The diagnostic named a gap; open whatever closes it. */
 	async function runDiagnosticAction(action: string) {
-		if (action === 'add_plan') {
+		if (action === 'open_printer_settings') {
+			goto('/settings');
+		} else if (action === 'add_plan') {
 			openPlanWizard();
 		} else if (action === 'add_schedule') {
 			openRenderWizardForCamera();
@@ -495,10 +503,16 @@
 			</div>
 		</div>
 
+		{#if printerBound}
+			<CameraPrints streamId={id} refreshKey={diagnosticKey} />
+		{/if}
+
 		<!-- Capture plans -->
 		<div class="rounded-xl border border-gray-800 bg-gray-900 p-5">
 			<div class="mb-4 flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-100">Capture plans</h2>
+				<h2 class="text-lg font-semibold text-gray-100">
+					{printerBound ? 'Other capture plans' : 'Capture plans'}
+				</h2>
 				<button
 					onclick={openPlanWizard}
 					class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-500"
@@ -607,11 +621,13 @@
 			{/if}
 		</div>
 
-		<CameraRenderSchedules
-			{profiles}
-			refreshKey={scheduleKey}
-			onadd={openRenderWizardForCamera}
-		/>
+		{#if !printerBound || profiles.length > 0}
+			<CameraRenderSchedules
+				{profiles}
+				refreshKey={scheduleKey}
+				onadd={openRenderWizardForCamera}
+			/>
+		{/if}
 
 		<!-- Recent Captures -->
 		{#if captures.length > 0}

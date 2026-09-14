@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func
 
-from app.models import Capture, Profile, Stream, TimelapseSchedule
+from app.models import Capture, PrintJob, Profile, Stream, TimelapseSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +101,12 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         checks.append(_check("source", "ok", "Source is reachable"))
     else:
         checks.append(_check("source", "warn", "Source has not been checked yet"))
+
+    # --- printer-bound cameras answer a different chain from here on ---
+    from app.services import prusalink
+
+    if prusalink.bound_stream_id(db) == stream.id:
+        return _printer_diagnostics(stream, db, now, checks)
 
     # --- link 3: a capture plan exists ---
     profiles = db.query(Profile).filter(Profile.stream_id == stream.id).all()
@@ -304,6 +310,127 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         status="idle",
         action="add_schedule",
     )
+
+
+def _printer_diagnostics(
+    stream: Stream, db, now: datetime, checks: list[dict]
+) -> dict:
+    """The chain for a camera the printer films.
+
+    A print is an external event, not a schedule, so the questions after
+    "is the source reachable" are different ones: is the integration on, can we
+    hear the printer, is it printing, are frames landing. Between prints this
+    camera is idle — it is waiting, not broken, and the generic chain calling
+    that a failure is what prompted this.
+    """
+    from app.services import health_status, prusalink
+
+    cfg = prusalink.get_config(db)
+    configured = cfg is not None
+
+    if not configured or not cfg.get("enabled", True):
+        checks.append(
+            _check(
+                "printer",
+                "idle",
+                "Printer integration is off",
+                "Prints are not being filmed.",
+            )
+        )
+        return _assemble(
+            checks,
+            "The printer integration is switched off, so prints aren't being filmed.",
+            status="idle",
+            action="open_printer_settings",
+        )
+
+    # Last known reachability. None means nothing has probed recently, which is
+    # not the same as unreachable and must not be reported as a failure.
+    reachable = health_status.peek("prusalink")
+    if reachable is False:
+        checks.append(
+            _check(
+                "printer",
+                "fail",
+                "Printer is unreachable",
+                "Lapsora won't know when a print starts.",
+            )
+        )
+        return _assemble(
+            checks,
+            "Can't reach the printer. Lapsora won't know when a print starts.",
+            action="open_printer_settings",
+        )
+
+    checks.append(
+        _check(
+            "printer",
+            "ok" if reachable else "warn",
+            "Printer connected" if reachable else "Printer not checked recently",
+        )
+    )
+
+    open_print = (
+        db.query(PrintJob)
+        .filter(PrintJob.stream_id == stream.id, PrintJob.status == "printing")
+        .order_by(PrintJob.id.desc())
+        .first()
+    )
+
+    if open_print is None:
+        checks.append(_check("print", "idle", "No print running"))
+        return _assemble(
+            checks,
+            "Waiting for the next print to start.",
+            status="idle",
+        )
+
+    name = open_print.gcode_name or "an untitled print"
+    started = _humanise((now - _as_utc(open_print.started_at)).total_seconds())
+    checks.append(_check("print", "ok", f"Filming {name}", f"Started {started}."))
+
+    # A print that is running but producing nothing is the one real failure
+    # this chain can report, and the one worth interrupting someone for.
+    profile = (
+        db.query(Profile)
+        .filter(Profile.stream_id == stream.id, Profile.managed_by == "prusalink")
+        .first()
+    )
+    last = None
+    if profile:
+        last = (
+            db.query(func.max(Capture.captured_at))
+            .filter(Capture.profile_id == profile.id)
+            .scalar()
+        )
+
+    if profile and last is not None:
+        gap = (now - _as_utc(last)).total_seconds()
+        if gap > profile.interval_seconds * GAP_MULTIPLIER:
+            checks.append(
+                _check("frames", "fail", "Frames are overdue", f"Last frame {_humanise(gap)}.")
+            )
+            return _assemble(
+                checks,
+                f"Filming {name}, but the last frame was {_humanise(gap)}.",
+            )
+        checks.append(_check("frames", "ok", "Frames are landing", f"Last frame {_humanise(gap)}."))
+    else:
+        checks.append(_check("frames", "warn", "No frames captured yet"))
+
+    summary = f"Filming {name} — started {started}."
+    if not cfg.get("generate_on_finish", True):
+        checks.append(
+            _check("render", "idle", "Auto-render is off", "The print won't be rendered when it finishes.")
+        )
+        return _assemble(
+            checks,
+            summary + " Prints are filmed but not rendered automatically.",
+            status="idle",
+        )
+
+    checks.append(_check("render", "ok", "Renders when the print finishes"))
+    return _assemble(checks, summary, status="ok")
 
 
 def _assemble(

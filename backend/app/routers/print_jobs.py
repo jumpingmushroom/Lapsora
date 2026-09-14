@@ -12,10 +12,16 @@ router = APIRouter(prefix="/api/print-jobs", tags=["print-jobs"])
 
 
 @router.get("", response_model=list[PrintJobRead])
-def list_print_jobs(limit: int = 100, db: Session = Depends(get_db)):
+def list_print_jobs(
+    stream_id: int | None = None,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+):
+    q = db.query(PrintJob)
+    if stream_id is not None:
+        q = q.filter(PrintJob.stream_id == stream_id)
     return (
-        db.query(PrintJob)
-        .order_by(PrintJob.id.desc())
+        q.order_by(PrintJob.id.desc())
         .limit(max(1, min(limit, 500)))
         .all()
     )
