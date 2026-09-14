@@ -139,6 +139,24 @@
 		if (!d.name.trim()) d.name = 'Custom';
 	}
 
+	// Where the period boundary can land for this plan. A schedule preset is
+	// shifted to midday automatically when the default would cut a capture
+	// window in half; a plan capturing round the clock has no clean boundary at
+	// all, and is told so rather than given a cron that is no better.
+	let boundary = $state<{ splits_at_default: boolean; captures_continuously: boolean } | null>(null);
+	$effect(() => {
+		const id = d.profileId;
+		if (!id || d.mode !== 'repeat') {
+			boundary = null;
+			return;
+		}
+		let cancelled = false;
+		api.getRenderBoundary(id)
+			.then((b) => { if (!cancelled) boundary = b; })
+			.catch(() => { if (!cancelled) boundary = null; });
+		return () => { cancelled = true; };
+	});
+
 	let validationError = $derived(renderDraftError(d));
 
 	async function submit() {
@@ -340,6 +358,18 @@
 							<input id="rw-cron" type="text" bind:value={d.cron} placeholder="*/5 * * * *" class={fieldClass} />
 							<p class="mt-1 text-xs text-gray-500">Format: minute hour day month weekday</p>
 						</div>
+					{/if}
+
+					{#if boundary?.captures_continuously}
+						<p class="rounded-lg border border-amber-800 bg-amber-950/40 px-3 py-2 text-xs text-amber-300">
+							This plan captures around the clock, so any render boundary cuts a session
+							somewhere. Pick a time that suits you — there is no better one.
+						</p>
+					{:else if boundary?.splits_at_default && d.schedulePreset && !d.cronCustom}
+						<p class="rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2 text-xs text-gray-400">
+							This plan captures overnight, so the render runs at midday — that keeps
+							each night whole instead of splitting it across two videos.
+						</p>
 					{/if}
 
 					{#if d.schedulePreset || d.cronCustom}

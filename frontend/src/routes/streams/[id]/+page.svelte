@@ -212,6 +212,14 @@
 			openPlanWizard();
 		} else if (action === 'add_schedule') {
 			openRenderWizardForCamera();
+		} else if (action === 'fix_schedule_boundary') {
+			try {
+				await api.realignSchedules(id);
+				diagnosticKey++;
+				scheduleKey++;
+			} catch (err) {
+				alert(err instanceof Error ? err.message : 'Failed to move the schedule');
+			}
 		} else if (action === 'enable_camera') {
 			try {
 				stream = await api.updateStream(id, { enabled: true });

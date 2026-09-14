@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api } from '$lib/api';
-	import { formatDateTime, formatCronTime } from '$lib/utils';
-	import { defaultRenderDraft, renderDraftFromSchedule } from '$lib/renderDraft';
+	import { formatDateTime } from '$lib/utils';
+	import { defaultRenderDraft, renderDraftFromSchedule, describeSchedule } from '$lib/renderDraft';
 	import type { RenderDraft } from '$lib/renderDraft';
 	import type { TimelapseSchedule, Profile, Stream } from '$lib/types';
 	import RenderWizard from './RenderWizard.svelte';
@@ -18,13 +18,11 @@
 	let editingId = $state<number | null>(null);
 	let formDraft = $state<RenderDraft>(defaultRenderDraft('repeat'));
 
-	// Descriptions stay here (they are list copy); the cron values themselves
-	// live in renderDraft.ts so the wizard and this list cannot disagree.
-	const PRESETS: Record<string, { label: string; descriptionFn: () => string }> = {
-		daily: { label: 'Daily', descriptionFn: () => `Every day at ${formatCronTime(0, 5)}` },
-		weekly: { label: 'Weekly', descriptionFn: () => `Sunday at ${formatCronTime(0, 30)}` },
-		monthly: { label: 'Monthly', descriptionFn: () => `1st of month at ${formatCronTime(1, 0)}` },
-		yearly: { label: 'Yearly', descriptionFn: () => `Jan 1 at ${formatCronTime(2, 0)}` }
+	const PRESET_LABELS: Record<string, string> = {
+		daily: 'Daily',
+		weekly: 'Weekly',
+		monthly: 'Monthly',
+		yearly: 'Yearly'
 	};
 
 	async function load() {
@@ -101,10 +99,7 @@
 	}
 
 	function describeCron(schedule: TimelapseSchedule): string {
-		if (schedule.preset && PRESETS[schedule.preset]) {
-			return PRESETS[schedule.preset].descriptionFn();
-		}
-		return schedule.cron_expression;
+		return describeSchedule(schedule.cron_expression, schedule.period_label);
 	}
 
 	function formatNextRun(iso: string | null): string {
@@ -132,7 +127,8 @@
 	}
 
 	function frequencyLabel(schedule: TimelapseSchedule): string {
-		if (schedule.preset && PRESETS[schedule.preset]) return PRESETS[schedule.preset].label;
+		if (schedule.period_label === 'nightly') return 'Nightly';
+		if (schedule.preset && PRESET_LABELS[schedule.preset]) return PRESET_LABELS[schedule.preset];
 		return 'Custom';
 	}
 

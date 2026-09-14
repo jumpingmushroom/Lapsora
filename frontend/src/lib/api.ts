@@ -63,6 +63,8 @@ export const api = {
 
 	// Captures
 	getProfileCaptures: (profileId: number, limit = 50, offset = 0) => request<Capture[]>(`/profiles/${profileId}/captures?limit=${limit}&offset=${offset}`),
+	realignSchedules: (streamId: number) => request<{ moved: { id: number; cron_expression: string }[] }>(`/timelapse-schedules/realign?stream_id=${streamId}`, { method: 'POST' }),
+	getRenderBoundary: (profileId: number) => request<{ splits_at_default: boolean; captures_continuously: boolean }>(`/profiles/${profileId}/render-boundary`),
 	countCaptures: (profileId: number, start?: string, end?: string) => {
 		const qs = new URLSearchParams();
 		if (start) qs.set('start', start);
