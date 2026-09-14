@@ -7,6 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.cron_utils import cron_trigger_kwargs
 from app.database import get_db
 from app.models import CleanupSchedule, Profile
 from app.schemas import (
@@ -27,8 +28,12 @@ router = APIRouter(prefix="/api/cleanup-schedules", tags=["cleanup-schedules"])
 
 def _validate_cron(expr: str) -> None:
     try:
-        CronTrigger(**cron_trigger_kwargs(expr))
-    except Exception as e:
+        kwargs = cron_trigger_kwargs(expr)
+    except ValueError as e:
+        raise HTTPException(422, f"Invalid cron expression: {e}") from e
+    try:
+        CronTrigger(**kwargs)
+    except ValueError as e:
         raise HTTPException(422, f"Invalid cron expression: {e}") from e
 
 
