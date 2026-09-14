@@ -19,16 +19,29 @@ from app.schemas import (
     StreamTestResult,
     StreamUpdate,
 )
-from app.services import diagnostics, go2rtc, providers
+from app.services import diagnostics, go2rtc, providers, prusalink
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/streams", tags=["streams"])
 
 
+def _mark_printer_bound(streams: list[Stream], db: Session) -> list[Stream]:
+    """Tag which camera the printer films.
+
+    Set on the instance rather than stored: it is derived from the PrusaLink
+    config, and a non-column attribute on a SQLAlchemy object is never
+    persisted but is readable by Pydantic's from_attributes.
+    """
+    bound = prusalink.bound_stream_id(db)
+    for stream in streams:
+        stream.printer_bound = bound is not None and stream.id == bound
+    return streams
+
+
 @router.get("/", response_model=list[StreamRead])
 def list_streams(db: Session = Depends(get_db)):
-    return db.query(Stream).order_by(Stream.id).all()
+    return _mark_printer_bound(db.query(Stream).order_by(Stream.id).all(), db)
 
 
 @router.get("/go2rtc/discover")
@@ -133,7 +146,7 @@ def create_stream(body: StreamCreate, db: Session = Depends(get_db)):
     db.add(stream)
     db.commit()
     db.refresh(stream)
-    return stream
+    return _mark_printer_bound([stream], db)[0]
 
 
 @router.get("/{stream_id}", response_model=StreamRead)
@@ -141,7 +154,7 @@ def get_stream(stream_id: int, db: Session = Depends(get_db)):
     stream = db.get(Stream, stream_id)
     if not stream:
         raise HTTPException(404, "Stream not found")
-    return stream
+    return _mark_printer_bound([stream], db)[0]
 
 
 @router.put("/{stream_id}", response_model=StreamRead)
@@ -168,7 +181,7 @@ def update_stream(stream_id: int, body: StreamUpdate, db: Session = Depends(get_
 
     db.commit()
     db.refresh(stream)
-    return stream
+    return _mark_printer_bound([stream], db)[0]
 
 
 @router.delete("/{stream_id}", status_code=204)

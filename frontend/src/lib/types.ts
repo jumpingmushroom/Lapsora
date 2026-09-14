@@ -15,6 +15,8 @@ export interface Stream {
 	health_status: string;
 	consecutive_failures: number;
 	last_checked_at: string | null;
+	/** True when the printer integration films this camera. */
+	printer_bound?: boolean;
 	created_at: string;
 	updated_at: string;
 }
@@ -406,7 +408,11 @@ export interface DiagnosticCheck {
 }
 
 /** The capture chain for one camera, worst link first. */
-export type DiagnosticAction = 'add_plan' | 'add_schedule' | 'enable_camera';
+export type DiagnosticAction =
+	| 'add_plan'
+	| 'add_schedule'
+	| 'enable_camera'
+	| 'open_printer_settings';
 
 export interface StreamDiagnostics {
 	status: 'ok' | 'idle' | 'fail';

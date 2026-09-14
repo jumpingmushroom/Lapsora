@@ -280,6 +280,23 @@ def _get_setting(db, key: str) -> str | None:
 _password_error_logged = False
 
 
+def bound_stream_id(db) -> int | None:
+    """The camera the printer integration films, or None.
+
+    Reads only the config blob — no password decryption — so a camera still
+    reports as printer-bound when the stored secret is unreadable. get_config
+    deliberately returns None in that case, which is right for the poller and
+    wrong for "what is this camera for".
+    """
+    blob = _get_setting(db, "prusalink_config")
+    if not blob:
+        return None
+    try:
+        return json.loads(blob).get("stream_id")
+    except (json.JSONDecodeError, TypeError, AttributeError):
+        return None
+
+
 def get_config(db) -> dict | None:
     """Return the merged PrusaLink config (incl. decrypted password), or None if
     unset — or if a stored password can't be decrypted (a corrupted-key state).

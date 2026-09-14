@@ -100,7 +100,7 @@ export const api = {
 	generateTimelapse: (profileId: number, data: TimelapseGenerate) => request<{ status: string; message: string }>(`/profiles/${profileId}/timelapses/generate`, { method: 'POST', body: JSON.stringify(data) }),
 	deleteTimelapse: (id: number) => request<void>(`/timelapses/${id}`, { method: 'DELETE' }),
 	bulkDeleteTimelapses: (ids: number[]) => request<void>('/timelapses/bulk', { method: 'DELETE', body: JSON.stringify({ ids }) }),
-	getPrintJobs: () => request<PrintJob[]>('/print-jobs'),
+	getPrintJobs: (streamId?: number) => request<PrintJob[]>(`/print-jobs${streamId ? `?stream_id=${streamId}` : ''}`),
 	deletePrintJob: (id: number, deleteTimelapse: boolean) =>
 		request<void>(`/print-jobs/${id}?delete_timelapse=${deleteTimelapse}`, { method: 'DELETE' }),
 
