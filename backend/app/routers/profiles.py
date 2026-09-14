@@ -128,6 +128,30 @@ def delete_profile(profile_id: int, db: Session = Depends(get_db)):
         shutil.rmtree(timelapse_dir, ignore_errors=True)
 
 
+@router.get("/profiles/{profile_id}/render-boundary")
+def get_render_boundary(profile_id: int, db: Session = Depends(get_db)):
+    """Whether a render period can be cleanly placed for this plan.
+
+    Its own endpoint rather than a field on ProfileRead: the answer costs four
+    sun computations, and the list endpoint is on the hot path for several
+    pages that do not need it.
+    """
+    from app.routers.timelapse_schedules import PRESET_CRONS
+    from app.services import render_boundary
+
+    profile = db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    default_hour, default_minute = render_boundary.parse_cron_time(PRESET_CRONS["daily"])
+    return {
+        "splits_at_default": render_boundary.boundary_splits_window(
+            profile, db, default_hour, default_minute
+        ),
+        "captures_continuously": render_boundary.captures_continuously(profile, db),
+    }
+
+
 @router.post("/profiles/{profile_id}/enable", response_model=ProfileRead)
 def enable_profile(profile_id: int, db: Session = Depends(get_db)):
     profile = db.get(Profile, profile_id)

@@ -15,6 +15,7 @@ from app.schemas import (
     TimelapseScheduleRead,
     TimelapseScheduleUpdate,
 )
+from app.services import render_boundary
 from app.services.scheduler import (
     add_timelapse_schedule_job,
     remove_timelapse_schedule_job,
@@ -43,14 +44,28 @@ def _validate_cron(expr: str) -> None:
         raise HTTPException(422, f"Invalid cron expression: {e}") from e
 
 
-def _schedule_to_read(schedule: TimelapseSchedule) -> dict:
-    """Convert a schedule to a read dict with next_run."""
+def _schedule_to_read(
+    schedule: TimelapseSchedule, db: Session | None = None, cache: dict | None = None
+) -> dict:
+    """Convert a schedule to a read dict with next_run and its period label."""
     data = TimelapseScheduleRead.model_validate(schedule).model_dump()
     job = scheduler.get_job(f"timelapse_schedule_{schedule.id}")
     if job and job.next_run_time:
         data["next_run"] = job.next_run_time.isoformat()
     else:
         data["next_run"] = None
+
+    if db is not None and schedule.profile is not None:
+        # Sun windows cost four astral computations each; a list of schedules
+        # usually shares a handful of plans, so memoise per profile.
+        cache = cache if cache is not None else {}
+        key = schedule.profile_id
+        if key not in cache:
+            cache[key] = (
+                render_boundary.describe_period(schedule.profile, db, schedule.preset or "custom"),
+                render_boundary.captures_continuously(schedule.profile, db),
+            )
+        data["period_label"], data["captures_continuously"] = cache[key]
     return data
 
 
@@ -63,7 +78,8 @@ def list_schedules(
     if profile_id is not None:
         stmt = stmt.where(TimelapseSchedule.profile_id == profile_id)
     schedules = db.execute(stmt).scalars().all()
-    return [_schedule_to_read(s) for s in schedules]
+    cache: dict = {}
+    return [_schedule_to_read(s, db, cache) for s in schedules]
 
 
 @router.post("/", response_model=TimelapseScheduleRead, status_code=201)
@@ -81,7 +97,10 @@ def create_schedule(
     if body.preset:
         if body.preset not in PRESET_CRONS:
             raise HTTPException(422, f"Unknown preset: {body.preset}")
-        cron = PRESET_CRONS[body.preset]
+        # A preset's default boundary sits near midnight, which is the middle
+        # of every overnight capture window. Shift it when it would split one.
+        # Only presets are realigned: a cron the user typed is theirs.
+        cron = render_boundary.realign_cron(profile, db, PRESET_CRONS[body.preset])
     if not cron:
         raise HTTPException(422, "cron_expression is required when preset is not set")
 
@@ -132,7 +151,7 @@ def create_schedule(
     if schedule.enabled:
         add_timelapse_schedule_job(schedule)
 
-    return _schedule_to_read(schedule)
+    return _schedule_to_read(schedule, db)
 
 
 @router.put("/{schedule_id}", response_model=TimelapseScheduleRead)
@@ -151,7 +170,9 @@ def update_schedule(
     if "preset" in updates and updates["preset"]:
         if updates["preset"] not in PRESET_CRONS:
             raise HTTPException(422, f"Unknown preset: {updates['preset']}")
-        updates["cron_expression"] = PRESET_CRONS[updates["preset"]]
+        updates["cron_expression"] = render_boundary.realign_cron(
+            schedule.profile, db, PRESET_CRONS[updates["preset"]]
+        )
         if "lookback_hours" not in updates:
             updates["lookback_hours"] = PRESET_LOOKBACK.get(updates["preset"])
 
@@ -169,7 +190,51 @@ def update_schedule(
     if schedule.enabled:
         add_timelapse_schedule_job(schedule)
 
-    return _schedule_to_read(schedule)
+    return _schedule_to_read(schedule, db)
+
+
+@router.post("/realign", status_code=200)
+def realign_schedules(stream_id: int, db: Session = Depends(get_db)):
+    """Move this camera's splitting schedule boundaries off the capture window.
+
+    A migration could have rewritten these, but it would change when someone's
+    renders fire without asking. This runs on the user's say-so, from the
+    diagnostic that told them about it.
+    """
+    from app.models import Profile
+    from app.services import render_boundary
+
+    profiles = db.query(Profile).filter(Profile.stream_id == stream_id).all()
+    moved = []
+    for profile in profiles:
+        if render_boundary.captures_continuously(profile, db):
+            continue
+        schedules = (
+            db.query(TimelapseSchedule)
+            .filter(TimelapseSchedule.profile_id == profile.id)
+            .all()
+        )
+        for schedule in schedules:
+            realigned = render_boundary.realign_cron(
+                profile, db, schedule.cron_expression
+            )
+            if realigned == schedule.cron_expression:
+                continue
+            schedule.cron_expression = realigned
+            # The stored preset named a clock time this no longer fires at.
+            # Clearing it makes the list describe the schedule from its cron.
+            schedule.preset = None
+            moved.append({"id": schedule.id, "cron_expression": realigned})
+
+    if moved:
+        db.commit()
+        for entry in moved:
+            schedule = db.get(TimelapseSchedule, entry["id"])
+            remove_timelapse_schedule_job(schedule.id)
+            if schedule.enabled:
+                add_timelapse_schedule_job(schedule)
+
+    return {"moved": moved}
 
 
 @router.delete("/{schedule_id}", status_code=204)

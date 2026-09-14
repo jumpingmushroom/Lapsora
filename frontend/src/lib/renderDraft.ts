@@ -1,4 +1,4 @@
-import { localToUtcNaive } from './utils';
+import { localToUtcNaive, formatCronTime } from './utils';
 import { defaultRenderOptions, renderOptionsFromSchedule } from './renderOptions';
 import type { RenderOptionsValue, TimelapseSchedule } from './types';
 
@@ -191,4 +191,42 @@ export function renderDraftError(draft: RenderDraft, now?: Date): string | null 
 	}
 
 	return null;
+}
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Describe a schedule from the cron it actually holds.
+ *
+ * Descriptions used to come from a constant keyed by preset name, so a
+ * schedule whose cron had been moved — as an overnight plan's now is — was
+ * described by the time it used to fire at. Reading the stored expression
+ * means the label cannot disagree with the schedule it names.
+ *
+ * `periodLabel` comes from the backend and says what the period covers rather
+ * than what the preset is called: an overnight plan rendered "daily" covers a
+ * night, not a calendar day.
+ */
+export function describeSchedule(
+	cron: string,
+	periodLabel?: string | null
+): string {
+	const parts = cron.trim().split(/\s+/);
+	if (parts.length !== 5) return cron;
+	const [min, hr, dom, mon, dow] = parts;
+	if (!/^\d+$/.test(min) || !/^\d+$/.test(hr)) return cron;
+	const at = formatCronTime(Number(hr), Number(min));
+
+	if (dom === '*' && mon === '*' && dow === '*') {
+		return periodLabel === 'nightly' ? `Every night, rendered at ${at}` : `Every day at ${at}`;
+	}
+	if (dom === '*' && mon === '*' && /^\d$/.test(dow)) {
+		const day = DAY_NAMES[Number(dow)] ?? `day ${dow}`;
+		return periodLabel === 'nightly'
+			? `Every week, rendered ${day} at ${at}`
+			: `${day} at ${at}`;
+	}
+	if (/^\d+$/.test(dom) && mon === '*') return `${dom} of each month at ${at}`;
+	if (/^\d+$/.test(dom) && /^\d+$/.test(mon)) return `${dom}/${mon} at ${at}`;
+	return cron;
 }

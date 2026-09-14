@@ -224,6 +224,10 @@ export interface TimelapseSchedule {
 	created_at: string;
 	updated_at: string;
 	next_run: string | null;
+	/** What the period covers — 'nightly' where a daily preset covers a night. */
+	period_label?: string | null;
+	/** True when the plan captures round the clock, so no boundary is clean. */
+	captures_continuously?: boolean;
 }
 
 export interface TimelapseScheduleCreate {
@@ -412,7 +416,8 @@ export type DiagnosticAction =
 	| 'add_plan'
 	| 'add_schedule'
 	| 'enable_camera'
-	| 'open_printer_settings';
+	| 'open_printer_settings'
+	| 'fix_schedule_boundary';
 
 export interface StreamDiagnostics {
 	status: 'ok' | 'idle' | 'fail';

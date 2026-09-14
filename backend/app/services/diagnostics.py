@@ -287,6 +287,29 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         .scalar()
     )
     if schedule_count:
+        # A schedule whose boundary lands inside the capture window renders the
+        # end of one session and the start of the next. Everything else here
+        # reports green for it — the frames are all present and correct — so it
+        # is only findable by watching a video.
+        split = _split_schedules(active, db)
+        if split:
+            name, when = split[0]
+            checks.append(
+                _check(
+                    "render",
+                    "warn",
+                    "A schedule splits the capture window",
+                    f"{name} starts at {when}, mid-session.",
+                )
+            )
+            return _assemble(
+                checks,
+                f"Renders are splitting each session in two: {name} starts at {when}, "
+                "in the middle of the capture window.",
+                status="idle",
+                action="fix_schedule_boundary",
+            )
+
         checks.append(
             _check("render", "ok", f"{schedule_count} render schedule{'s' if schedule_count != 1 else ''}")
         )
@@ -310,6 +333,37 @@ def build_diagnostics(stream: Stream, db, now: datetime | None = None) -> dict:
         status="idle",
         action="add_schedule",
     )
+
+
+def _split_schedules(profiles: list[Profile], db) -> list[tuple[str, str]]:
+    """(schedule name, fire time) for schedules whose boundary cuts a window.
+
+    Only reports the ones that can actually be fixed: a plan capturing round
+    the clock has no clean boundary, so flagging it would be nagging about
+    something the user cannot resolve.
+    """
+    from app.services import render_boundary
+
+    found: list[tuple[str, str]] = []
+    for profile in profiles:
+        if render_boundary.captures_continuously(profile, db):
+            continue
+        schedules = (
+            db.query(TimelapseSchedule)
+            .filter(
+                TimelapseSchedule.profile_id == profile.id,
+                TimelapseSchedule.enabled.is_(True),
+            )
+            .all()
+        )
+        for schedule in schedules:
+            parsed = render_boundary.parse_cron_time(schedule.cron_expression)
+            if parsed is None:
+                continue
+            hour, minute = parsed
+            if render_boundary.boundary_splits_window(profile, db, hour, minute):
+                found.append((schedule.name or "A render schedule", f"{hour:02d}:{minute:02d}"))
+    return found
 
 
 def _printer_diagnostics(

@@ -19,7 +19,8 @@
 		add_plan: 'Add a capture plan',
 		add_schedule: 'Set up a render schedule',
 		enable_camera: 'Enable this camera',
-		open_printer_settings: 'Open printer settings'
+		open_printer_settings: 'Open printer settings',
+		fix_schedule_boundary: 'Move it to midday'
 	};
 
 	let data = $state<StreamDiagnostics | null>(null);

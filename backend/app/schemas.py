@@ -489,6 +489,11 @@ class TimelapseScheduleRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     next_run: str | None = None
+    # What this schedule covers, which is not always what its preset is called:
+    # an overnight plan rendered "daily" covers a night, not a calendar day.
+    period_label: str | None = None
+    # True when the plan captures round the clock, so no boundary is clean.
+    captures_continuously: bool = False
 
 
 # --- Cleanup Schedules ---
